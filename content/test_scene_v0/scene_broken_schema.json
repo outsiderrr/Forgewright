@@ -1,0 +1,149 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "Glades.WayStation#01",
+  "entry_node_id": "arrival_waystation",
+  "scene_anchor": "scene_waystation_of_iron_oath",
+  "character_refs": ["char_vellin", "char_corvan", "char_aelwin"],
+  "nodes": {
+    "arrival_waystation": {
+      "node_id": "arrival_waystation",
+      "type": "dialogue",
+      "narration": "黄昏时分你策马抵达铁誓驿站。山风把塔楼顶的旗帜吹得猎猎作响——那面绣着断剑与铁环的旗已经褪成铜绿色。\n\n推开吱呀作响的橡木门，你看到 Vellin 站在柜台后。她比你记忆里瘦了一圈，左眉骨上多了一道新伤。她抬头，瞳孔先是一缩，又迅速挤出一个笑容。\n\n“……是你啊。没想到铁誓路还有人走。”她一边说，一边把柜台上的几张纸不动声色地推到油灯后面。那叠纸边缘有一道半干的暗红色，像被按过带血的指腹。\n\n她倒了一杯酒推过来。“来得不巧。巡逻官今晚会到。你想住下，还是喝完就走？”",
+      "speaker_ref": "char_vellin",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_confront_letter",
+          "text": "[按住那叠纸] 你手上沾的不是酒。",
+          "target_node_id": "vellin_confession",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_sit_and_wait",
+          "text": "给我续一杯。巡逻官来之前我就是个过路客。",
+          "target_node_id": "patrol_arrives",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_read_the_room",
+          "text": "[观察入微] 那叠纸的折痕是军驿函件的折法。我明白。留我一晚，别让我碰到你的灯。",
+          "target_node_id": "patrol_arrives",
+          "condition": {
+            "all_of": [
+              { "op": "has", "path": "player.traits", "value": "observant" },
+              { "not": { "op": "eq", "path": "flag.read_the_room_used", "value": true } }
+            ]
+          },
+          "effects": [
+            { "op": "set", "path": "flag.read_the_room_used", "value": true },
+            { "op": "inc", "path": "relationship.vellin.trust", "value": 1 }
+          ],
+          "unavailable_behavior": "disable_with_hint"
+        }
+      ]
+    },
+    "vellin_confession": {
+      "node_id": "vellin_confession",
+      "type": "dialogue",
+      "narration": "你直视她的眼睛，把手按在那叠纸上。她没有躲，像是早料到这一刻。沉默了半盏茶的工夫，她把油灯挑亮了些，示意你看那封信。\n\n笔迹潦草，墨水蹭在血上晕开：Aelwin——你记得这个名字，三年前和你一起守过陶窑山口的少年兵——在信里写道自己已经逃出铁誓卫队的补给线，正躲在东边的牧人废屋里等回信。他写道：“我杀的是百夫长 Hael，他把我们当柴火用。我不后悔。只求你让我消失。”\n\nVellin 把信合上，声音压得极低：“如果铁誓拿到这张纸，Aelwin 会被挂在驿站门口风干三天。我想让他消失——真的消失，去北境，改个名字。\n\n但我需要你装作从没来过。明早巡逻官要搜驿站，他听不得我半句谎话。你是过路人，你有借口。”",
+      "speaker_ref": "char_vellin",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [
+        { "op": "set", "path": "flag.player_saw_blood_letter", "value": true }
+      ],
+      "options": [
+        {
+          "option_id": "opt_promise_silence",
+          "text": "Hael 活该。我什么都没看见。",
+          "target_node_id": "end_silent_ally",
+          "condition": null,
+          "effects": [
+            { "op": "inc", "path": "relationship.vellin.trust", "value": 2 },
+            { "op": "set", "path": "flag.oath_broken_conspiracy", "value": true }
+          ],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_report_to_oath",
+          "text": "我欠铁誓一份军饷。明早我会把事情告诉 Corvan。",
+          "target_node_id": "end_iron_blade",
+          "condition": null,
+          "effects": [
+            { "op": "inc", "path": "faction.iron_oath.reputation", "value": 1 },
+            { "op": "set", "path": "flag.aelwin_betrayed", "value": true }
+          ],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "patrol_arrives": {
+      "node_id": "patrol_arrives",
+      "type": "dialogue",
+      "narration": "你含糊地岔开话题，接过酒去靠墙的长凳坐下。Vellin 开始收拾柜台，动作比平时慢了半拍。\n\n三炷香后，门被马靴重重踢开。巡逻官 Corvan 走进来，两名持矛卫兵跟在身后。他摘下头盔，露出你再熟悉不过的那张脸——五年前你们一起在兰岭追过私盐队，也是在这间驿站烤过火。\n\n“Vellin。”他的声音没有寒暄，“我们查到有个逃兵的口信从这里过。你知道规矩。”\n\n他的目光越过 Vellin，落在你身上，停留了两秒。“……你也在。”\n\n你看到 Vellin 的手指无声地扣住了柜台边缘，指节发白。Corvan 的右手已经按在腰间剑柄上——那是他习惯性动作，不一定意味着杀意，但也不意味着他不会动手。\n\n他转回头，对 Vellin 说：“我给你一次机会。信在哪里？”",
+      "speaker_ref": "char_corvan",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_lie_for_vellin",
+          "text": "Corvan，我进门到现在没见过什么信。我用兰岭那年我们烧过的旗发誓。",
+          "target_node_id": "end_silent_ally",
+          "condition": null,
+          "effects": [
+            { "op": "inc", "path": "relationship.vellin.trust", "value": 1 },
+            { "op": "dec", "path": "relationship.corvan.trust", "value": 1 }
+          ],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_reveal_to_corvan",
+          "text": "柜台油灯后面。那是逃兵 Aelwin 的字。",
+          "target_node_id": "end_iron_blade",
+          "condition": null,
+          "effects": [
+            { "op": "inc", "path": "faction.iron_oath.reputation", "value": 2 },
+            { "op": "set", "path": "flag.aelwin_betrayed", "value": true }
+          ],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_invoke_old_bond",
+          "text": "[诉诸旧情] 兰岭那年你差点死在我刀下。今晚这一单，让我和 Vellin 自己了结。",
+          "target_node_id": "end_silent_ally",
+          "condition": {
+            "any_of": [
+              { "op": "gte", "path": "relationship.corvan.trust", "value": 2 },
+              { "op": "has", "path": "player.bonds", "value": "lanridge_shared_past" }
+            ]
+          },
+          "effects": [
+            { "op": "inc", "path": "relationship.vellin.trust", "value": 1 },
+            { "op": "set", "path": "flag.corvan_looked_away", "value": true }
+          ],
+          "unavailable_behavior": "disable"
+        }
+      ]
+    },
+    "end_silent_ally": {
+      "node_id": "end_silent_ally",
+      "type": "end",
+      "narration": "三天后，东边的牧人废屋空了，灶里还留着一把没烧尽的信灰。铁誓卫队没有在补给线上抓到任何人。\n\nVellin 把那杯没动过的酒替你留了一整年——这是后来你在北境收到的第一封她的信里写的。信末尾只有一句：“欠你的，慢慢还。”\n\n断剑与铁环的旗帜仍然挂在驿站顶上，只是你知道，它庇护的早已不是它声称的那些东西。",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "options": []
+    },
+    "end_iron_blade": {
+      "node_id": "end_iron_blade",
+      "type": "end",
+      "narration": "铁誓卫队没有让你失望。Aelwin 被从牧人废屋里拖出来时还穿着你们当年在陶窑山口一起领的那件粗麻内衬。三日后他的尸体挂在驿站门口的铁架上，腐臭味要一整个春天才散得干净。\n\nVellin 被押送回主城受审。临走前她没有看你一眼。\n\nCorvan 把一枚铜环塞进你手心：“铁誓记你这一份。下次缺差事，来找我。”\n\n你收起铜环，上马，没有回头。",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "options": []
+    }
+  }
+}
