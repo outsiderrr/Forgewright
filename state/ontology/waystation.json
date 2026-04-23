@@ -1,0 +1,24 @@
+{
+  "entities": [
+    {
+      "id": "char_vellin",
+      "display_name": "Vellin",
+      "type": "character"
+    },
+    {
+      "id": "char_corvan",
+      "display_name": "Corvan",
+      "type": "character"
+    },
+    {
+      "id": "char_aelwin",
+      "display_name": "Aelwin",
+      "type": "character"
+    },
+    {
+      "id": "scene_waystation_of_iron_oath",
+      "display_name": "Waystation of the Iron Oath",
+      "type": "scene"
+    }
+  ]
+}
