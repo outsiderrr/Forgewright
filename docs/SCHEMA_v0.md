@@ -1,5 +1,9 @@
 # SCHEMA_v0.md — 阶段 0 对话图 Schema 设计
 
+**文档版本**：v0.1.1 · **schema_version**：`0.1.1` · **最后更新**：2026-04-23
+
+**决议记录**：D1–D8 已于 2026-04-23 完成裁决（D5/D6 推迟至状态总线任务）。详见 §6 各条目下的「决议（2026-04-23）」行。
+
 > 本文件是**设计说明**，不是 JSON Schema 源文件。JSON Schema 源文件由后续任务写入 `/schema/` 目录（ADR-003、CLAUDE.md 规则 6）。
 >
 > 本文件只描述抽象结构、字段含义、来源溯源、阶段归属。具体场景示例（如某个酒馆、某个 NPC）由下一个任务完成——本文件只给字段占位符级别的机械示例。
@@ -63,7 +67,7 @@
 - **MINOR**：向后兼容的字段添加（新增 optional 字段、预留命名空间落位）
 - **PATCH**：措辞性修订（描述文本、注释），结构不变
 
-阶段 0 使用 `"0.1.0"`，对应本文件。
+阶段 0 使用 `"0.1.1"`，对应本文件。`0.1.0 → 0.1.1` 是 PATCH 升级：结构未变，仅将 D1–D8 的歧义替换为决议描述。
 
 ### 1.3 播放器与校验器对未知版本的行为
 
@@ -160,7 +164,7 @@
 | 字段 | 阶段 | 类型（抽象） | 说明 |
 |---|---|---|---|
 | `schema_version` | 🟢 | 字符串（semver） | 第 1 节定义 |
-| `graph_id` | 🟢 | 字符串 | 全仓库唯一 |
+| `graph_id` | 🟢 | 字符串 | **全仓库唯一**。正则 `^[a-z0-9_-]+$`，长度 1–128。禁用空格、Unicode、`.`、`:`、`/`。（D7 决议）|
 | `entry_node_id` | 🟢 | 字符串 | 必须存在于 `nodes` 中 |
 | `nodes` | 🟢 | 对象映射（id → Node） | 至少 1 个节点；阶段 0 手写场景 5 个 |
 | `scene_anchor` | 🟢 | 字符串（本体引用） | 指向本体场景/地点 ID |
@@ -177,17 +181,30 @@
 
 | 字段 | 阶段 | 类型（抽象） | 说明 |
 |---|---|---|---|
-| `node_id` | 🟢 | 字符串 | 图内唯一 |
-| `type` | 🟢 | 枚举字符串 | 具体枚举值留 §6 歧义待裁定 |
+| `node_id` | 🟢 | 字符串 | **图内唯一**。正则 `^[a-zA-Z0-9_-]+$`，长度 1–128。禁用空格、Unicode、`.`、`:`、`/`。（D7 决议）|
+| `type` | 🟢 | 枚举字符串 | 枚举值 = `{"dialogue", "end"}`。`dialogue` 表示"有选项可继续"，`end` 表示"终止节点"。旁白由 `speaker_ref = null` 表达，不作为独立类型。（D1 决议）|
 | `narration` | 🟢 | 字符串 | 玩家看到的场景/对白文本 |
-| `speaker_ref` | 🟢 | 字符串（本体引用）或 null | null 表示旁白 |
+| `speaker_ref` | 🟢 | 字符串（本体引用）或 null | null 表示旁白（无具体说话者）。（D1 决议配套）|
 | `location_ref` | 🟢 | 字符串（本体引用） | 继承自图层 `scene_anchor` 或细化 |
-| `options` | 🟢 | Option 数组 | 类型为"终止节点"时应为空；语义留 §6 歧义 |
+| `options` | 🟢 | Option 数组 | **`type="dialogue"` 时必须非空；`type="end"` 时必须为空数组**。校验器按此执行。（D1 决议配套）|
 | `reachability_condition` | 🟡 | StateCondition 或 null | 节点可达性前置条件；阶段 0 手写场景可 null |
-| `on_enter_effects` | 🟡 | StateEffect 数组 | 进入节点即应用；是否启用留 §6 歧义 |
+| `on_enter_effects` | 🟡 | StateEffect 数组 | **启用**。进入节点时按数组顺序应用；运行时执行前校验每个 effect 的合法性。阶段 0 手写场景可为空数组。（D3 决议）|
 | `plugin_metadata` | 🟡 | 对象映射 | 同图层 |
-| `generation_trace` | 🟡 | 对象 | LLM 生成来源、prompt hash、审阅者 |
+| `generation_trace` | 🟡 | 对象（结构固定，见下方注）| LLM 生成来源、prompt hash、审阅者。整个字段为可省略；**若填写则 `source` 必填**。（D8 决议）|
 | `author_notes` | 🔵 | 字符串 | 审阅界面用；阶段 3+ |
+
+**`generation_trace` 最小固定结构（D8 决议）**：六键固定；整个字段可省略，若填写则 `source` 必填，其余允许 null。
+
+| 键 | 类型 | 说明 |
+|---|---|---|
+| `source` | 枚举 `"human" \| "llm"` | 若填写 `generation_trace` 则必填 |
+| `generated_at` | ISO 8601 字符串 或 null | 生成时间戳 |
+| `model_id` | 字符串 或 null | 生成模型标识（source = "llm" 时应填；"human" 时通常为 null）|
+| `prompt_hash` | 字符串 或 null | prompt 内容的哈希，便于复现 |
+| `reviewed_by` | 字符串 或 null | 主编审阅者标识 |
+| `reviewed_at` | ISO 8601 字符串 或 null | 审阅时间戳 |
+
+同一结构适用于 `Node.generation_trace` 与 `Option.generation_trace`。
 
 ---
 
@@ -195,13 +212,13 @@
 
 | 字段 | 阶段 | 类型（抽象） | 说明 |
 |---|---|---|---|
-| `option_id` | 🟢 | 字符串 | 节点内唯一即可；建议全图唯一 |
+| `option_id` | 🟢 | 字符串 | **节点内唯一**（不要求图内或仓库内唯一）。正则 `^[a-zA-Z0-9_-]+$`，长度 1–128。禁用空格、Unicode、`.`、`:`、`/`。（D7 决议）|
 | `text` | 🟢 | 字符串 | 玩家可见文本 |
 | `target_node_id` | 🟢 | 字符串 | 必须存在于同一图的 `nodes` 中 |
 | `condition` | 🟢 | StateCondition 或 null | 前置条件；null 表示无条件可选 |
 | `effects` | 🟢 | StateEffect 数组 | 选中时触发；可空 |
-| `unavailable_behavior` | 🟢 | 枚举字符串 | 不满足 `condition` 时呈现语义；枚举值留 §6 歧义 |
-| `generation_trace` | 🟡 | 对象 | 同 Node |
+| `unavailable_behavior` | 🟢 | 枚举字符串 | 枚举值 = `{"hide", "disable", "disable_with_hint"}`。`hide` = 隐藏；`disable` = 灰显不可选；`disable_with_hint` = 灰显并对玩家给出"为什么不可选"的提示文本。（D2 决议）|
+| `generation_trace` | 🟡 | 对象（结构同 §3.2 下方注） | 见 §3.2 `generation_trace` 最小固定结构。（D8 决议）|
 | `plugin_metadata` | 🟡 | 对象映射 | 同图层 |
 | `style_tags` | 🔵 | 字符串数组 | 语气/风格标签；阶段 1+ 评测需要 |
 | `skill_check` | 🔵 | 对象 | 能力检定；阶段 1+ 才考虑是否引入 |
@@ -212,8 +229,8 @@
 
 | 字段 | 阶段 | 类型（抽象） | 说明 |
 |---|---|---|---|
-| `op` | 🟢 | 枚举字符串 | 白名单操作类型；具体枚举值留 §6 歧义 |
-| `path` | 🟢 | 字符串 | 状态总线键路径（点分或段数组，留 §6 歧义） |
+| `op` | 🟢 | 枚举字符串 | 白名单操作类型。候选起点：`set`/`inc`/`dec`/`add`/`remove`。**最终枚举推迟至状态总线 Schema 任务固定**（D6 决议）。 |
+| `path` | 🟢 | 字符串 或 段数组（占位） | 状态总线键路径，暂以占位符 `<state_bus_path>` 表述。**具体表示法（点分字符串 vs 段数组）推迟至状态总线 Schema 任务固定**（D5 决议）。 |
 | `value` | 🟢 | 任意基本类型 | 具体意义由 `op` 决定 |
 | `ontology_ref` | 🟡 | 字符串 或 null | 当 `op` 涉及本体实体时填写 |
 | `faction_clock_op` | 🟡 | 对象 或 null | 阵营时钟专用子结构；阶段 0 不触发 |
@@ -225,13 +242,20 @@
 
 | 字段 | 阶段 | 类型（抽象） | 说明 |
 |---|---|---|---|
-| `op` | 🟢 | 枚举字符串 | `eq`/`neq`/`gt`/`gte`/`lt`/`lte`/`has`/`has_not` 为候选起点；最终枚举留 §6 歧义 |
-| `path` | 🟢 | 字符串 | 同 StateEffect |
-| `value` | 🟢 | 任意基本类型 | 与 `path` 指向值比较 |
-| `all_of` / `any_of` / `not` | 🟡 | 条件数组 / 条件 | 复合条件结构；阶段 0 是否启用留 §6 歧义 |
+| `op` | 🟢（叶条件形态必需） | 枚举字符串 | 候选起点：`eq`/`neq`/`gt`/`gte`/`lt`/`lte`/`has`/`has_not`。**最终枚举推迟至状态总线 Schema 任务固定**（D6 决议）。 |
+| `path` | 🟢（叶条件形态必需） | 字符串 或 段数组（占位） | 同 §3.4 StateEffect，**具体表示法推迟至状态总线 Schema 任务**（D5 决议）。 |
+| `value` | 🟢（叶条件形态必需） | 任意基本类型 | 与 `path` 指向值比较 |
+| `all_of` | 🟢（复合条件形态之一）| StateCondition 数组 | **启用**。所有子条件均为真时整体为真。（D4 决议）|
+| `any_of` | 🟢（复合条件形态之一）| StateCondition 数组 | **启用**。任一子条件为真时整体为真。（D4 决议）|
+| `not` | 🟢（复合条件形态之一）| StateCondition | **启用**。子条件为假时整体为真。（D4 决议）|
 | `ontology_ref` | 🟡 | 字符串 或 null | 同 StateEffect |
 
-**注**：`op/path/value` 与 `all_of/any_of/not` 在同一对象内如何互斥表达（"叶条件 vs 复合条件"），属于结构性歧义，见 §6。
+**互斥规则（D4 决议）**：一个 `StateCondition` 对象必须采取以下两种形态之一，**不可混用**：
+
+- **叶条件形态**：包含 `op` + `path` + `value` 三个键，不包含 `all_of` / `any_of` / `not`
+- **复合条件形态**：包含 `all_of` / `any_of` / `not` 中**恰好一个**键，不包含 `op` / `path` / `value`
+
+`ontology_ref` 可出现在任一形态中。校验器需强制检查形态互斥性；违反者拒收。嵌套深度无 v0 硬上限（但建议 ≤ 8 层，阶段 2+ 评测时再量化）。
 
 ---
 
@@ -241,7 +265,7 @@
 
 ```json
 {
-  "schema_version": "0.1.0",
+  "schema_version": "0.1.1",
   "graph_id": "<graph_id>",
   "entry_node_id": "<node_id_A>",
   "scene_anchor": "<ontology_scene_ref>",
@@ -249,10 +273,17 @@
   "nodes": {
     "<node_id_A>": {
       "node_id": "<node_id_A>",
-      "type": "<node_type_enum>",
+      "type": "dialogue",
       "narration": "<narration_text>",
       "speaker_ref": "<ontology_character_ref | null>",
       "location_ref": "<ontology_location_ref>",
+      "on_enter_effects": [
+        {
+          "op": "<effect_op>",
+          "path": "<state_bus_path>",
+          "value": "<effect_value>"
+        }
+      ],
       "options": [
         {
           "option_id": "<option_id>",
@@ -270,12 +301,41 @@
               "value": "<effect_value>"
             }
           ],
-          "unavailable_behavior": "<unavailable_behavior_enum>"
+          "unavailable_behavior": "hide"
         }
-      ]
+      ],
+      "generation_trace": {
+        "source": "human",
+        "generated_at": null,
+        "model_id": null,
+        "prompt_hash": null,
+        "reviewed_by": null,
+        "reviewed_at": null
+      }
     },
-    "<node_id_B>": { "... ": "..." }
+    "<node_id_B>": {
+      "node_id": "<node_id_B>",
+      "type": "end",
+      "narration": "<narration_text>",
+      "speaker_ref": null,
+      "location_ref": "<ontology_location_ref>",
+      "options": []
+    }
   }
+}
+```
+
+**复合条件形态占位示例（D4）**：
+
+```json
+{
+  "all_of": [
+    { "op": "<condition_op>", "path": "<state_bus_path>", "value": "<v1>" },
+    { "any_of": [
+        { "op": "<condition_op>", "path": "<state_bus_path>", "value": "<v2>" },
+        { "not": { "op": "<condition_op>", "path": "<state_bus_path>", "value": "<v3>" } }
+    ] }
+  ]
 }
 ```
 
@@ -317,11 +377,15 @@
 
 不同选择影响播放器渲染逻辑和校验器对"节点必有 options vs 终止节点 options 必为空"的规则。
 
+**决议（2026-04-23）**：采纳 **A**。`Node.type` 枚举值 = `{"dialogue", "end"}`。旁白由 `speaker_ref = null` 表示，不作为独立类型。校验器强制：`type="dialogue"` ⇒ `options` 非空；`type="end"` ⇒ `options` 为空数组。
+
 ### D2. `Option.unavailable_behavior` 的枚举值
 
 - **A**：`{"hide", "disable"}`（隐藏 vs 灰显）
 - **B**：`{"hide", "disable", "disable_with_hint"}`（后者额外给玩家提示"为什么不可选"）
 - **C**：不放入 schema，完全由 UI 层自定——但这违反 ADR-004"极简运行时"需要确定性数据
+
+**决议（2026-04-23）**：采纳 **B**。`Option.unavailable_behavior` 枚举值 = `{"hide", "disable", "disable_with_hint"}`。
 
 ### D3. 节点级 `on_enter_effects` 是否启用
 
@@ -329,6 +393,8 @@
 - **B**：不启用——所有状态变更只能由选项触发，节点是纯显示单元
 
 选择 B 更极简，但会强迫某些自然状态变更必须依附在前一个节点的某个选项上，可能不符合作者心智。
+
+**决议（2026-04-23）**：采纳 **A**。启用 `Node.on_enter_effects` 字段。进入节点时按数组顺序执行；运行时在执行前对每个 effect 做合法性校验（白名单 op、本体锚点存在等）。
 
 ### D4. `StateCondition` 的复合结构在 v0 是否启用
 
@@ -338,6 +404,8 @@
 
 手写 5 节点场景多数只需 A。但 A 到 B/C 的升级是 MAJOR bump 风险大。
 
+**决议（2026-04-23）**：采纳 **C**。`StateCondition` 支持完整布尔代数。互斥规则：单个条件对象要么是**叶条件形态**（`op` + `path` + `value`），要么是**复合条件形态**（`all_of` / `any_of` / `not` 中恰好一个键）；两形态不可混用。详见 §3.5 字段表下方的互斥规则。
+
 ### D5. `path`（状态总线键路径）的表示法
 
 - **A**：点分字符串 `"faction.iron_guild.reputation"`
@@ -345,22 +413,47 @@
 
 A 对作者手写友好；B 对含点号的键名健壮。状态总线 Schema 未定，此处与其强耦合。建议此条**推迟到状态总线 Schema 任务时再决**，v0 先用占位符 `"<state_bus_path>"` 表述，定义时对齐。
 
+**决议（2026-04-23）**：**推迟**至未来 `/state` 状态总线 Schema 任务。本文件 `path` 字段保留占位符 `<state_bus_path>`，表示法（A vs B）在状态总线任务中与 `op` 枚举一并确定。
+
 ### D6. `StateEffect.op` 和 `StateCondition.op` 的具体枚举值
 
 - 本文件只列候选起点（`set/inc/dec/add/remove` for effects；`eq/neq/gt/gte/lt/lte/has/has_not` for conditions）
 - 实际枚举需要与状态总线 Schema 一同确定（ADR-008 白名单化）
 - 建议此条同样**推迟到状态总线 Schema 任务**
 
+**决议（2026-04-23）**：**推迟**至未来 `/state` 状态总线 Schema 任务。本文件列出候选起点但不固定枚举。候选集在状态总线任务中转为 ADR-008 白名单。
+
 ### D7. `graph_id` / `node_id` / `option_id` 的命名空间规则
 
 - 是否要求全仓库唯一？还是只要求图内唯一？ID 是否可含点/斜杠/UUID？
 - 影响校验器跨图引用、生成追溯、评测日志定位
+
+**决议（2026-04-23）**：ID 规则如下——
+
+| ID | 唯一性作用域 | 正则 | 长度 |
+|---|---|---|---|
+| `graph_id` | 全仓库唯一 | `^[a-z0-9_-]+$` | 1–128 |
+| `node_id` | 图内唯一 | `^[a-zA-Z0-9_-]+$` | 1–128 |
+| `option_id` | 节点内唯一 | `^[a-zA-Z0-9_-]+$` | 1–128 |
+
+**禁用**：空格、Unicode 字符、`.`、`:`、`/`。校验器拒收任何违反正则或长度的 ID。
 
 ### D8. 生成追溯（`generation_trace`）字段的内部结构
 
 - 虽然标注为 🟡 预留，但"预留"需要有最小结构骨架才能真正保留兼容性
 - 可以完全留空（`object`）；也可以先写死几个键（`source: "human"|"llm"`，`prompt_hash: string|null`，`reviewed_by: string|null`）
 - 阶段 0 不触发 LLM 生成，但**结构冻结得越早，后续兼容性越好**
+
+**决议（2026-04-23）**：`generation_trace` 最小固定 **6 键**——
+
+- `source`：枚举 `"human" | "llm"`（**若填写 `generation_trace` 则此键必填**，相当于阶段 0 必填内部键）
+- `generated_at`：ISO 8601 字符串 或 null
+- `model_id`：字符串 或 null
+- `prompt_hash`：字符串 或 null
+- `reviewed_by`：字符串 或 null
+- `reviewed_at`：ISO 8601 字符串 或 null
+
+整个 `generation_trace` 字段本身仍为 🟡 预留（可省略）；一旦写入则六键结构冻结。参见 §3.2 字段表下方注。
 
 ---
 
@@ -370,9 +463,9 @@ A 对作者手写友好；B 对含点号的键名健壮。状态总线 Schema �
 
 `/docs/SCHEMA_v0.md`（本文件）
 
-### 7.2 字段总数统计
+### 7.2 字段总数统计（v0.1.1）
 
-按三类阶段归属分别统计：
+按三类阶段归属分别统计（字段数按 §3 字段表行数计）：
 
 | 对象 | 🟢 阶段 0 必需 | 🟡 阶段 0 预留 | 🔵 阶段 1+ 再加 | 小计 |
 |---|---|---|---|---|
@@ -380,8 +473,10 @@ A 对作者手写友好；B 对含点号的键名健壮。状态总线 Schema �
 | Node | 6 | 4 | 1 | 11 |
 | Option | 6 | 2 | 2 | 10 |
 | StateEffect | 3 | 2 | 1 | 6 |
-| StateCondition | 3 | 2 | 0 | 5 |
-| **合计** | **24** | **13** | **6** | **43** |
+| StateCondition | 6 | 1 | 0 | 7 |
+| **合计** | **27** | **12** | **6** | **45** |
+
+**注**：StateCondition 的 🟢 字段数从 v0.1.0 的 3 升至 6，原因是 D4 决议将 `all_of` / `any_of` / `not` 从"合并一行的 🟡 预留"拆为三个独立 🟢 字段（形态互斥，见 §3.5）。此为字段表展示形式的变化，不是 JSON Schema 结构变化——故仍记为 PATCH。
 
 ### 7.3 每类对象阶段 0 必需字段数
 
@@ -389,26 +484,45 @@ A 对作者手写友好；B 对含点号的键名健壮。状态总线 Schema �
 - **Node**：6 个（`node_id`、`type`、`narration`、`speaker_ref`、`location_ref`、`options`）
 - **Option**：6 个（`option_id`、`text`、`target_node_id`、`condition`、`effects`、`unavailable_behavior`）
 - **StateEffect**：3 个（`op`、`path`、`value`）
-- **StateCondition**：3 个（`op`、`path`、`value`）
+- **StateCondition**：按**形态**计（D4 决议）：
+  - 叶条件形态 3 个必填键（`op`、`path`、`value`）
+  - 复合条件形态 1 个必填键（`all_of` / `any_of` / `not` 三选一）
+  - 字段表共列 6 个 🟢 字段（两形态的所有可能键）
 
-### 7.4 遇到的设计歧义
+### 7.4 遇到的设计歧义（状态更新 2026-04-23）
 
-共 **8 条**（D1–D8），**未自行决定**，已在第 6 节列出等待作者裁定。
+共 **8 条**（D1–D8），作者于 2026-04-23 给出裁决。
 
-其中 **D5、D6** 建议推迟到后续"状态总线 Schema"任务一并确定（此时两者强耦合）；**D1、D2、D3、D4、D7、D8** 属于对话图自身设计，需在转入 JSON Schema 编码任务（即 `/schema/` 目录落地）前闭环。
+| 歧义 | 状态 |
+|---|---|
+| D1 `Node.type` 枚举 | ✅ 已决议（采纳 A） |
+| D2 `Option.unavailable_behavior` 枚举 | ✅ 已决议（采纳 B） |
+| D3 `on_enter_effects` 启用 | ✅ 已决议（采纳 A） |
+| D4 `StateCondition` 布尔代数 | ✅ 已决议（采纳 C） |
+| D5 `path` 表示法 | ⏸ 推迟至 `/state` 状态总线 Schema 任务 |
+| D6 `op` 白名单枚举 | ⏸ 推迟至 `/state` 状态总线 Schema 任务 |
+| D7 ID 命名空间规则 | ✅ 已决议 |
+| D8 `generation_trace` 内部结构 | ✅ 已决议（6 键固定） |
 
-### 7.5 暂停报告
+### 7.5 解锁状态（T-0.3 与 T-0.5 解锁）
 
-**按 CLAUDE.md 规则 7、规则 8，现在停下等待指示**：
+- **T-0.3（对话图 JSON Schema 落地，`/schema/` 目录）**：**解锁**。D1–D4、D7、D8 已足以进入 JSON Schema 编码阶段。`path` 与 `op` 以 D5/D6 的占位符形态出现，待状态总线任务回填。
+- **T-0.5（状态总线 Schema，`/state/` 目录）**：**解锁**。D5、D6 作为该任务输入一并确定。完成后需在本文件做 MINOR 或 PATCH bump 回填 `path` 表示法与 `op` 白名单。
+- 其他阶段 0 模块（`/engine` 极简播放器、`/validator` 校验器、手写测试场景）在 T-0.3、T-0.5 完成后依路线图并行启动。
 
-- 第 6 节 8 条歧义中，D1–D4、D7、D8 这 6 条需要作者裁定才能进入 JSON Schema 编码阶段
-- D5、D6 可以暂搁，但需要作者确认"推迟到状态总线任务"的处理方式
-
-在作者就上述歧义给出指示前，**不启动** `/schema/` 目录下任何 JSON Schema 文件的编写、**不**自行扩展本文档的字段决定。
+**CLAUDE.md 规则 7、8 状态**：本次裁决范围限于 D1–D8；任何超出范围的架构演化仍需作者指示。
 
 ---
 
 ## 版本
 
-本文件版本：v0.1（阶段 0 对话图 Schema 设计初稿）
+本文件版本：v0.1.1（D1–D8 决议并入）
+schema_version：`0.1.1`
 最后更新：2026-04-23
+
+### 变更历史
+
+| 版本 | 日期 | 变更 |
+|---|---|---|
+| v0.1 (`0.1.0`) | 2026-04-23 | 阶段 0 对话图 Schema 设计初稿；D1–D8 列为待决议 |
+| v0.1.1 (`0.1.1`) | 2026-04-23 | D1–D4、D7、D8 决议并入字段表；D5、D6 明确推迟至状态总线 Schema 任务；结构未变（PATCH）|
