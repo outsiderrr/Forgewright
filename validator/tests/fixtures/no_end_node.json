@@ -1,0 +1,27 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "fixture_no_end_node",
+  "entry_node_id": "start",
+  "scene_anchor": "scene_waystation_of_iron_oath",
+  "character_refs": ["char_vellin"],
+  "nodes": {
+    "start": {
+      "node_id": "start",
+      "type": "dialogue",
+      "narration": "No end node exists; self-loop only.",
+      "speaker_ref": "char_vellin",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_loop",
+          "text": "Go around in a circle.",
+          "target_node_id": "start",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    }
+  }
+}

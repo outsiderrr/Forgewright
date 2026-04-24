@@ -1,0 +1,43 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "fixture_duplicate_option_id",
+  "entry_node_id": "start",
+  "scene_anchor": "scene_waystation_of_iron_oath",
+  "character_refs": ["char_vellin"],
+  "nodes": {
+    "start": {
+      "node_id": "start",
+      "type": "dialogue",
+      "narration": "Two options share the same option_id.",
+      "speaker_ref": "char_vellin",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_dup",
+          "text": "First.",
+          "target_node_id": "end",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_dup",
+          "text": "Second (duplicated id).",
+          "target_node_id": "end",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end": {
+      "node_id": "end",
+      "type": "end",
+      "narration": "Fin.",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "options": []
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "fixture_entry_missing",
+  "entry_node_id": "not_in_nodes",
+  "scene_anchor": "scene_waystation_of_iron_oath",
+  "character_refs": ["char_vellin"],
+  "nodes": {
+    "start": {
+      "node_id": "start",
+      "type": "dialogue",
+      "narration": "Entry node id does not match any node.",
+      "speaker_ref": "char_vellin",
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_go",
+          "text": "Leave.",
+          "target_node_id": "end",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end": {
+      "node_id": "end",
+      "type": "end",
+      "narration": "Fin.",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "options": []
+    }
+  }
+}
