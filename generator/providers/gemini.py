@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any
 
 from google import genai
@@ -18,6 +19,24 @@ from google.genai import types as genai_types
 from generator.llm_provider import ProviderError, StructuredResponse
 
 DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
+
+# httpx default is 5s read timeout, which is too short for Gemini calls on
+# longer prompts (parent chain + character cards). 120s is a generous upper
+# bound for single-node generation.
+_HTTP_TIMEOUT_SEC = 120
+
+# Socket-level transient errors. Gemini SDK's built-in retry_options only
+# covers HTTP status codes, so we add our own pass for raw connection failures
+# (proxy hiccups, mid-flight resets). One retry only — costs are real.
+_TRANSIENT_ERROR_SUBSTRINGS = (
+    "Server disconnected",
+    "Connection reset",
+    "Read timeout",
+    "ReadTimeout",
+    "ConnectError",
+    "RemoteProtocolError",
+)
+_TRANSIENT_RETRY_DELAY_SEC = 2.0
 
 # Gemini 3 Pro public pricing (USD per 1M tokens), input ≤ 200K context tier.
 # Source: https://ai.google.dev/gemini-api/docs/pricing
@@ -51,7 +70,10 @@ class GeminiProvider:
         # Lazy init: avoid HTTP/proxy setup at construction so callers (and
         # tests) can instantiate the provider without immediate side effects.
         if self._client_cache is None:
-            self._client_cache = genai.Client(api_key=self._api_key)
+            self._client_cache = genai.Client(
+                api_key=self._api_key,
+                http_options=genai_types.HttpOptions(timeout=_HTTP_TIMEOUT_SEC),
+            )
         return self._client_cache
 
     def generate_structured(
@@ -65,16 +87,7 @@ class GeminiProvider:
             response_mime_type="application/json",
             response_schema=_sanitize_schema_for_gemini(json_schema),
         )
-        try:
-            response = self._client.models.generate_content(
-                model=self.model_id,
-                contents=user_prompt,
-                config=config,
-            )
-        except genai_errors.APIError as exc:
-            raise ProviderError(f"Gemini API error: {exc}") from exc
-        except Exception as exc:  # network / SDK-internal failure
-            raise ProviderError(f"Gemini call failed: {exc}") from exc
+        response = self._call_with_transient_retry(config=config, user_prompt=user_prompt)
 
         raw_text = _extract_text(response)
         if raw_text is None:
@@ -116,6 +129,30 @@ class GeminiProvider:
             + output_tokens * _OUTPUT_USD_PER_MTOK
         ) / 1_000_000
 
+    def _call_with_transient_retry(
+        self,
+        *,
+        config: genai_types.GenerateContentConfig,
+        user_prompt: str,
+    ) -> genai_types.GenerateContentResponse:
+        for attempt in range(2):  # 1 initial + 1 retry on transient
+            try:
+                return self._client.models.generate_content(
+                    model=self.model_id,
+                    contents=user_prompt,
+                    config=config,
+                )
+            except genai_errors.APIError as exc:
+                # SDK-classified API errors (4xx/5xx etc.) — never auto-retry,
+                # let the caller decide.
+                raise ProviderError(f"Gemini API error: {exc}") from exc
+            except Exception as exc:  # connection-level failure
+                if not _is_transient_network_error(exc) or attempt == 1:
+                    raise ProviderError(f"Gemini call failed: {exc}") from exc
+                time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
+        # The loop always returns or raises; this satisfies type checkers.
+        raise ProviderError("Gemini call failed: retry loop exited unexpectedly")
+
 
 # Gemini's response_schema accepts a subset of JSON Schema. Passing keywords
 # it doesn't recognise (e.g. additionalProperties) makes the API reject the
@@ -123,6 +160,11 @@ class GeminiProvider:
 # We strip known-unsupported keywords here; the original schema is left intact
 # so the validator layer keeps using the strict version.
 _GEMINI_UNSUPPORTED_KEYWORDS = frozenset({"additionalProperties", "$schema", "$id"})
+
+
+def _is_transient_network_error(exc: Exception) -> bool:
+    msg = f"{type(exc).__name__}: {exc}"
+    return any(p in msg for p in _TRANSIENT_ERROR_SUBSTRINGS)
 
 
 def _sanitize_schema_for_gemini(schema: Any) -> Any:
