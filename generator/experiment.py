@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from dotenv import load_dotenv
+
 from generator import budget
 from generator.context_assembler import GraphContext, NodeRequirement
 from generator.generate_node import GenerationResult, generate_node
@@ -381,6 +383,8 @@ def _build_default_provider() -> LLMProvider:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
+
     parser = argparse.ArgumentParser(
         prog="python -m generator.experiment",
         description="Run a batch of generate_node iterations and dump results.",
