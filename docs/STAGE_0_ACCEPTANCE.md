@@ -41,7 +41,7 @@
 | T-0.7 | d1485aa | 状态总线 + 本体 stub `/state/` |
 | T-0.8 | afa4cd5 | 手写测试场景 JSON 落地 `/content/` |
 | T-0.9 | 3bd7a58 | 三层 validator（schema / graph / consistency）|
-| 验收 | ad1e7f5 | 本验收报告签字 |
+| 验收 | 见 git log 最新记录 | 本验收报告签字 |
 
 ## 5. 遗留问题
 
