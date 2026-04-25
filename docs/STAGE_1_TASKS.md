@@ -336,7 +336,7 @@ class StructuredResponse:
 
 ## 2. /generator/providers/gemini.py
 class GeminiProvider 实现 LLMProvider：
-- 构造接受 api_key（默认从 os.environ["GEMINI_API_KEY"] 取）+ model_id（默认 "gemini-3.1-pro"，但允许 override）
+- 构造接受 api_key（默认从 os.environ["GEMINI_API_KEY"] 取）+ model_id（默认 "gemini-3.1-pro-preview"，但允许 override；作者已确认这是当前可用的 preview 版 model id）
 - generate_structured 用 google.genai SDK；config 传 response_mime_type="application/json" + response_schema=json_schema
 - 单次调用失败（API 错误 / 网络）→ 抛 ProviderError；不在此层重试
 - estimate_cost 按 Gemini 3.1 Pro 当前公开单价（执行时从官方文档查到，硬编码为常量 + 注释来源 URL + 取数日期）；如未来调价由后续 PR 更新
