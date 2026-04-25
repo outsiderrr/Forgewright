@@ -199,9 +199,70 @@
 
 ---
 
+## ADR-011：LLM 提供商默认 Gemini 3.1 Pro + LLMProvider 可插拔接口
+
+**状态**：已接受（2026-04-25）
+
+**背景**：阶段 1 首次引入 LLM。项目长期目标是开源框架，开源用户必须能换模型，不能把仓库绑死在单一供应商上。
+
+**决策**：默认提供商 = Google Gemini 3.1 Pro。`/generator/` 内部定义最小 `LLMProvider` Protocol，包含两个方法：`generate_structured` 与 `estimate_cost`。阶段 1 实现 `GeminiProvider`；OpenAI / Anthropic / 本地模型由后续或社区实现。
+
+**替代方案及否决理由**：
+- 直接绑定单一 SDK（无 Protocol）：阻碍开源用户换模型，违反长期目标
+- 引入 LangChain / LiteLLM 等重抽象层：违反 ADR-004 的极简精神
+
+**后果**：
+- `/generator/llm_provider.py` 是新关键接口
+- 阶段 1 任务清单含一条专门的"接口设计"工作
+
+---
+
+## ADR-012：成本治理与密钥管理
+
+**状态**：已接受（2026-04-25）
+
+**背景**：阶段 1 首次产生 API 调用成本，需要早期防失控（避免凌晨耗尽预算之类的事故）。
+
+**决策**：
+- **密钥**：环境变量 `GEMINI_API_KEY`；开发期通过 `.env` 文件加载（gitignore），仓库提供 `.env.example` 模板
+- **硬卡**：`/generator/budget.py` 模块；默认每日 $10、单次调用 $0.50，可由配置覆盖；超额抛 `BudgetExceeded` 异常
+- **落地日志**：`/generator/cost_log.jsonl`（gitignore），每次调用一行，含 `timestamp` / `model` / `input_tokens` / `output_tokens` / `cost_usd`
+- **阶段 1 总盘子建议**：$30
+
+**替代方案及否决理由**：
+- 不做硬卡、靠云控制台预警：反应慢、可能凌晨耗尽预算
+- 把密钥写入仓库（即便加密）：开源后社区无法自行替换
+
+**后果**：
+- 每个 LLM 调用必须经 `budget.check_and_charge()` 拦一次
+
+---
+
+## ADR-013：Structured Output 策略
+
+**状态**：已接受（2026-04-25）
+
+**背景**：阶段 1 目标 Schema 合格率 ≥ 95%，不能靠重试堆 token 来达成。
+
+**决策**：
+- **主策略**：Gemini `response_mime_type="application/json"` + `response_schema=<DialogueNode JSON Schema>`
+- **重试**：最多 2 次（共 3 次），失败时把 validator 错误回喂模型
+- **重试不换 prompt**（保持可重现）；3 次都失败 → 标记 `generation_failed`，写日志，**不抛异常**
+- **其他 provider**：实现 `LLMProvider` 时各自映射本平台的结构化输出能力（OpenAI `json_schema` / Anthropic tool use / 本地模型 free-text + 校验）
+
+**替代方案及否决理由**：
+- 自由文本 + 校验重试为主：烧 token，不可预测
+- 不重试：阶段 1 95% 合格率难达标
+
+**后果**：
+- `generate_node` 有清晰的"3 次试错预算"语义
+- 超时由调用方决定是否人工介入
+
+---
+
 ## 变更历史
 
-（暂无。首次变更时在此记录）
+- 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
 
 ## 版本
 
