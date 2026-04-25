@@ -52,3 +52,8 @@ coverage.xml
 
 # Claude Code
 .claude/
+
+# Forgewright runtime artifacts (dev-only, never committed)
+.env
+/generator/cost_log.jsonl
+/generator/experiments/

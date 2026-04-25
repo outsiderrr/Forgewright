@@ -10,6 +10,9 @@ requires-python = ">=3.11"
 dependencies = [
     "jsonschema>=4",
     "networkx>=3",
+    "google-genai>=1.73",
+    "datamodel-code-generator>=0.56",
+    "python-dotenv>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -18,4 +21,15 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["schema", "engine", "state", "validator", "content"]
+packages = [
+    "schema",
+    "engine",
+    "state",
+    "validator",
+    "content",
+    "generator",
+    "generator.prompts",
+    "generator.providers",
+    "generator.models",
+    "generator.models._generated",
+]
