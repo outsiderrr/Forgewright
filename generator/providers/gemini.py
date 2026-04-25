@@ -63,7 +63,7 @@ class GeminiProvider:
         config = genai_types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
-            response_schema=json_schema,
+            response_schema=_sanitize_schema_for_gemini(json_schema),
         )
         try:
             response = self._client.models.generate_content(
@@ -115,6 +115,26 @@ class GeminiProvider:
             input_tokens * _INPUT_USD_PER_MTOK
             + output_tokens * _OUTPUT_USD_PER_MTOK
         ) / 1_000_000
+
+
+# Gemini's response_schema accepts a subset of JSON Schema. Passing keywords
+# it doesn't recognise (e.g. additionalProperties) makes the API reject the
+# request server-side — the caller burns input-token cost without a response.
+# We strip known-unsupported keywords here; the original schema is left intact
+# so the validator layer keeps using the strict version.
+_GEMINI_UNSUPPORTED_KEYWORDS = frozenset({"additionalProperties", "$schema", "$id"})
+
+
+def _sanitize_schema_for_gemini(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        return {
+            k: _sanitize_schema_for_gemini(v)
+            for k, v in schema.items()
+            if k not in _GEMINI_UNSUPPORTED_KEYWORDS
+        }
+    if isinstance(schema, list):
+        return [_sanitize_schema_for_gemini(item) for item in schema]
+    return schema
 
 
 def _extract_text(response: genai_types.GenerateContentResponse) -> str | None:

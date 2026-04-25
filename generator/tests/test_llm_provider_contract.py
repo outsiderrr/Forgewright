@@ -15,6 +15,7 @@ import pytest
 
 from generator.llm_provider import LLMProvider, ProviderError, StructuredResponse
 from generator.providers import GeminiProvider
+from generator.providers.gemini import _sanitize_schema_for_gemini
 
 
 class FakeProvider:
@@ -96,3 +97,45 @@ def test_gemini_provider_accepts_explicit_model_override(
     monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
     provider = GeminiProvider(model_id="gemini-3.1-flash-preview")
     assert provider.model_id == "gemini-3.1-flash-preview"
+
+
+def test_sanitize_strips_unsupported_keywords_recursively() -> None:
+    original = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "node.schema.json",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "options": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {"id": {"type": "string"}},
+                },
+            },
+            "metadata": {
+                "type": "object",
+                "$id": "nested",
+                "properties": {"k": {"type": "string"}},
+            },
+        },
+    }
+    sanitized = _sanitize_schema_for_gemini(original)
+
+    # Top-level unsupported keys are gone.
+    assert "additionalProperties" not in sanitized
+    assert "$schema" not in sanitized
+    assert "$id" not in sanitized
+
+    # Nested ones are gone too.
+    assert "additionalProperties" not in sanitized["properties"]["options"]["items"]
+    assert "$id" not in sanitized["properties"]["metadata"]
+
+    # Supported keys survive.
+    assert sanitized["type"] == "object"
+    assert sanitized["properties"]["options"]["items"]["properties"]["id"]["type"] == "string"
+
+    # Original is not mutated.
+    assert original["additionalProperties"] is False
+    assert "$schema" in original
