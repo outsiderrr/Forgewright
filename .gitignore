@@ -54,6 +54,7 @@ coverage.xml
 .claude/
 
 # Forgewright runtime artifacts (dev-only, never committed)
-.env
+.env*
+!.env.example
 /generator/cost_log.jsonl
 /generator/experiments/
