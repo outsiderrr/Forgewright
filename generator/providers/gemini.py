@@ -23,18 +23,28 @@ DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
 # httpx default is 5s read timeout, which is too short for Gemini calls on
 # longer prompts (parent chain + character cards). 120s is a generous upper
 # bound for single-node generation.
-_HTTP_TIMEOUT_SEC = 120
+#
+# WARNING: google.genai's HttpOptions.timeout is documented as `int | None`
+# with no unit hint, but the SDK treats it as MILLISECONDS internally. Passing
+# an unconverted seconds value (e.g. 120) gets you a ~0.12s ConnectTimeout —
+# fast enough that a TLS handshake (~0.8s through a SOCKS5 proxy) never
+# completes. Always express this constant in ms.
+_HTTP_TIMEOUT_MS = 120_000
 
 # Socket-level transient errors. Gemini SDK's built-in retry_options only
 # covers HTTP status codes, so we add our own pass for raw connection failures
-# (proxy hiccups, mid-flight resets). One retry only — costs are real.
+# (proxy hiccups, mid-flight resets, TLS handshake hiccups). One retry only —
+# costs are real.
 _TRANSIENT_ERROR_SUBSTRINGS = (
     "Server disconnected",
     "Connection reset",
     "Read timeout",
     "ReadTimeout",
     "ConnectError",
+    "ConnectTimeout",
     "RemoteProtocolError",
+    "handshake",
+    "timed out",
 )
 _TRANSIENT_RETRY_DELAY_SEC = 2.0
 
@@ -72,7 +82,7 @@ class GeminiProvider:
         if self._client_cache is None:
             self._client_cache = genai.Client(
                 api_key=self._api_key,
-                http_options=genai_types.HttpOptions(timeout=_HTTP_TIMEOUT_SEC),
+                http_options=genai_types.HttpOptions(timeout=_HTTP_TIMEOUT_MS),
             )
         return self._client_cache
 
