@@ -160,6 +160,21 @@ Schema 定稿后可并行三路：
 - 新增 ADR：角色槽位（role slot casting）与动态选角 —— 支持 BG3 式"同一剧情功能由不同角色填充"模式
 - validator 扩展：结局可达性保证（graceful degradation validation）—— 证明任意合法状态组合下至少有 1 个结局可达
 
+### 启动闸门（Round 5 综合后）
+
+> 占位指针——具体范围 / 落地形态由阶段 2 规划师拍板，本节不替它细化。详见 [`/docs/reviews/master_plan/2026-04-30_synthesis.md` §6](reviews/master_plan/2026-04-30_synthesis.md)。
+
+**硬闸门（5 项）**：
+- **C1**：本体最小可生成契约（character / location / relation / state path 边界 schema）—— 待阶段 2 规划师立 ADR-016+ 决定范围
+- **C3**：R 项（R2/R3/R4/R8）作为阶段 2 启动 cleanup gate —— 不能只藏在 HANDOFF / 验收报告尾巴；详见 `/docs/STAGE_1_ACCEPTANCE.md` §4
+- **U-GPT-1**：ADR-009 第二层方法论拆 **2A 拓扑 + 2B 抽样验证 / 有界符号执行** —— 当前 schema 缺状态变量定义域 / 初始状态集合 / effect 边界，"证明任意合法状态组合可达结局"目前不可判定；待阶段 2 规划师立 ADR-016+
+- **U-GPT-4**：阶段 2 baseline 协议（样本数 / 重试规则 / AI 判官权重 / 接受口径）—— 70% 接受率口径必须先定义再写代码
+- **U-GPT-5**：角色槽位持久化形态决策（synthesis 推荐：持久化层仍 concrete `character_refs`，抽象槽作为 generator 中间产物 + `generation_trace` 记录）
+
+**强建议（2 项，非硬闸门）**：
+- **U-CL-4**：Chapter/Act schema 前移到阶段 2 起手期（与本体最小 Schema 打包做）—— 否则阶段 1/2 已生成内容到阶段 3 需回填层级
+- **C5**：开源剥离边界清单从阶段 2/3 起维护（fixture / 资产版权 / provider 假设三类）—— 阶段 4 再执行剥离，但边界 hook 早留
+
 ### 禁止事项
 
 - 不得跨场景生成（阶段 3 再做）
@@ -185,6 +200,16 @@ Schema 定稿后可并行三路：
 ### 重点工作
 
 - Chapter/Act 层级结构设计 —— 支持分层叙事的容器结构，位于世界本体层而非对话图层
+
+### 完成标志强化项（Round 5 综合后）
+
+> 占位指针——具体阈值 / 落地形态由阶段 3 规划师拍板。详见 [`/docs/reviews/master_plan/2026-04-30_synthesis.md` §7](reviews/master_plan/2026-04-30_synthesis.md)。
+
+- **C2**：ADR-009 第三层 playtest bots 写入完成标志 —— 至少 N 个 bot persona / 每场景 M 条模拟路径 / 输出 worst-10% 场景清单；否则"完整内容生产流水线"名不副实，阶段 4 才发现 worst-bucket 路径
+- **C6**：内容依赖索引（`content_dependency_index` sidecar）—— 记录每个生成产物读过哪些 ontology ids / state paths / prompt template hash / visual asset ids；本体变更时定向反向 propagate 而非全量重审
+- **U-CL-1**：完成标志加质量门槛指标 —— 在 ≥ X% 单次接受率下作者每周稳定吞吐 Y 场景（具体数字待阶段 3 规划师拍板，参考阶段 2 70% 接受率）；当前"一周 10 场景"是过程指标而非产品指标
+- **U-CL-5**：长对话一致性缓解策略 ADR / 任务 —— DEBATE_NOTES §9.2 列为未解问题但路线图当前无任何缓解任务；记忆流机制（Generative Agents 风格）或上下文管理策略需要显式规划
+- **U-GPT-7**（建议）：审阅 UI 第一版含图视图 —— graph/mermaid/dot 视图 + 路径列表 + validator issues 面板 + visual asset thumbnail；避免后期重做审阅心智模型
 
 ### 禁止事项
 
@@ -221,6 +246,7 @@ Schema 定稿后可并行三路：
 - **2026-04-25**：阶段 1.5「视觉资产生成」段落插入；ADR-011/012/013 立项
 - **2026-04-30**：阶段 1 验收**有条件通过**（见 `/docs/STAGE_1_ACCEPTANCE.md`）。Schema 合格率 85%（净模型层 ≈ 95%）；AI 判官接受率 100%。R1–R8 遗留项归阶段 1.5 / 阶段 2 处理
 - **2026-04-30**：阶段 1 验收签字；阶段 1.5 任务规划落地（`/docs/STAGE_1.5_TASKS.md` v0.1）；ADR-014（视觉资产双模生成策略）立项
+- **2026-04-30**：Round 5 总规划综合评审完成（Claude × GPT-5.5）；ADR-015（阶段 1.5 与阶段 2 sequencing）立项；ROADMAP 阶段 2 启动闸门 + 阶段 3 完成标志强化项占位增订；详见 `/docs/DEBATE_NOTES.md` Round 5 段落与 `/docs/reviews/master_plan/`
 
 ## 版本
 

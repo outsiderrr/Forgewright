@@ -272,8 +272,91 @@ story-bench 只覆盖第一层。第二层和第三层需要本项目自己实�
 
 ---
 
+## Round 5：Claude × GPT-5.5（2026-04-30）
+
+> 前 4 轮均为 Claude × Gemini。Round 5 是 Claude × GPT-5.5 第一次交手——双方独立 critique 同一份前向路线图（阶段 1.5 / 2 / 3 / 4 + 跨阶段架构），作者综合后产出锁定 + 开放决策清单。完整记录在 `/docs/reviews/master_plan/`：
+> - [`2026-04-30_claude_critique.md`](reviews/master_plan/2026-04-30_claude_critique.md) — Claude (cold-start)，🔴4 🟡7 🟢3 = 14
+> - [`2026-04-30_gpt55_critique.md`](reviews/master_plan/2026-04-30_gpt55_critique.md) — GPT-5.5 via Codex，🔴3 🟡10 🟢3 = 16
+> - [`2026-04-30_round2_claude_response.md`](reviews/master_plan/2026-04-30_round2_claude_response.md) — Claude 应答 GPT
+> - [`2026-04-30_synthesis.md`](reviews/master_plan/2026-04-30_synthesis.md) — 综合 memo（作者拍板用）
+
+### 共识 8 条（双方独立得出相同结论 — 高 confidence）
+
+- **C1** — 阶段 2 启动前需要"本体最小可生成契约"（角色 / 地点 / 关系 / 状态路径事实卡）；否则 R4/R5 在多节点指数化放大成场景级污染。⏳ **待阶段 2 规划师**拍板范围 + 立 ADR-016+
+- **C2** — ADR-009 第三层 playtest bots 必须在阶段 3 完成标志里；否则阶段 4 才发现 50–100 场景里有 worst-bucket 路径。⏳ **待阶段 3 规划师**写入完成标志
+- **C3** — R 项升级为阶段 2 启动 cleanup gate（R2/R3/R4/R8 必先合入），不能只藏在 HANDOFF / 验收报告尾巴。⏳ **待阶段 2 规划师**纳入 STAGE_2_TASKS.md 起手任务
+- **C4** — dev/prod prompt 同源是假设不是事实——1.5 验收前至少跑 3 条 prompt 的 manual vs API 对比 smoke test，未做就显式列遗留 R1.5-*。⏳ **阶段 1.5 软闸门**，由 L2 规划师纳入 STAGE_1.5_TASKS.md
+- **C5** — 开源剥离边界 hook 从阶段 2/3 起维护清单（fixture / 资产版权 / provider 假设三类），阶段 4 再执行剥离。⏳ **待阶段 2/3 规划师**建立机制
+- **C6** — 阶段 3 一致性维护需要内容依赖索引（`content_dependency_index` sidecar）——本体变更如何反向 propagate 到生成产物当前没有设计。⏳ **待阶段 3 规划师**
+- **C7** — 总时长偏乐观（阶段 0/1 节奏不可外推；内容审阅 + 视觉返工 + 外部用户验证另算）；建议拆估为"工程 4.5–7 月 + 内容/开源另 6–10 月"。⏳ §综合开放决策 9.9 待**作者**拍板
+- **C8** — 阶段 1.5 API stretch goal 验收三态口径（manual passed / API implemented / API parity validated）必须明示。⏳ **阶段 1.5 硬闸门**，由 L2 规划师纳入 STAGE_1.5_TASKS.md
+
+### 互补 12 条（跨 LLM 评审实际增益）
+
+跨模型评审的事项增益主要在这 12 条——单方评审会漏掉一半。
+
+- **Claude 漏抓 7 条（GPT-5.5 独家）**：U-GPT-1 ~ U-GPT-7
+  - **U-GPT-1** 🔴："证明任意合法状态组合可达结局"目前不可判定——schema 缺状态变量定义域 / 初始状态集合 / effect 边界；建议把 ADR-009 第二层拆 **2A 纯拓扑** + **2B 有界状态符号执行**；若只做抽样模拟要在完成标志里明说，别写"证明"
+  - **U-GPT-2** 🟡 — 1.5 vs 2 sequencing 文档间冲突（HANDOFF 仍写"1.5 已推迟"与 ADR-014 manual 模式消除阻塞冲突）✅ **已落地**（HANDOFF v0.2 修订 + ADR-015）
+  - **U-GPT-3** 🟡 — 背景图无一等引用位置 → manifest 孤儿资产风险；ImageAsset 加 `target_ref` + `target_type` + `asset_role`
+  - **U-GPT-4** 🟡 — 阶段 2 70% 接受率缺 baseline 协议（样本数 / 重试规则 / AI 判官权重 / 机械失败口径）
+  - **U-GPT-5** 🟡 — 角色槽位"抽象槽 vs 具体角色"持久化决策；推荐持久化层仍 concrete `character_refs`
+  - **U-GPT-6** 🟡 — 视觉资产 provenance / 版权元数据进 manifest（`source_mode` / `prompt_hash` / `reference_ids` / `reference_license_note` / `open_source_ok` / `commercial_ok`）；阶段 4 商业化合规黑箱预防
+  - **U-GPT-7** 🟢 — 阶段 3 审阅 UI 应有图视图作为第一公民
+- **GPT 漏抓 5 条（Claude 独家）**：U-CL-1 ~ U-CL-5
+  - **U-CL-1** 🔴 — 阶段 3 完成标志"一周 10 场景"是过程指标，无质量门槛（接受率 / 返工率）
+  - **U-CL-2** 🟡 — 阶段 1.5 完成标志多处不可测（manifest 完整性 100% / 接受率分母分子）
+  - **U-CL-3** 🟡 — 角色一致性 C+B 兜底无硬指标；建议 vellin 5 张 mini probe 作为 T-1.5.6 启动 gate
+  - **U-CL-4** 🟡 — Chapter/Act schema 推到阶段 3 = 阶段 1/2 内容回填；建议前移到阶段 2 起手期
+  - **U-CL-5** 🟡 — DEBATE §9.2 长对话一致性路线图无任何缓解措施
+
+完整出处见 synthesis [`§3 + §4`](reviews/master_plan/2026-04-30_synthesis.md)。
+
+### 严重度分歧 1 条 + 综合修正
+
+- **C7 总时长偏乐观**：Claude 🔴，GPT 🟡 → 综合后修正为 **🟡**。GPT 拆估法（"工程 MVP 4.5–7 月" + "内容/开源 v0.1 另 6–10 月"）比 Claude "阶段 4 拆 4a/4b" 更建设性，问题指向相同。
+
+### 直接矛盾 0 条
+
+双方未在任何议题上"一边说 X 另一边说非 X"——这是 Round 5 健康度的强信号（与 Round 1–4 中 Claude × Gemini 多次正面对撞形成对比）。
+
+### 综合后 Top 3 担心（按"如不处理 project 最可能在哪里翻车"）
+
+1. **阶段 2 在本体桩态启动 → 场景级污染 + 校验"通过"假象**（C1；Claude §3.3 + GPT §3.1 合流）
+2. **ADR-009 第三层缺位 → 阶段 4 才发现 worst-bucket 路径**（C2；Claude §3.2 + GPT §3.3 合流）
+3. **阶段 3 审阅 UI / 一致性维护 / 内容依赖索引一起被低估 → 阶段 3 时间黑洞 + 作者中段失去动力**（U-CL-5 + GPT §4.9 + §5.2 复合风险；单看任一份评审不会这么严重，是综合后浮现的复合风险）
+
+### 综合开放决策清单（9 项 — 待作者 / 后续阶段规划师拍板）
+
+按 synthesis §9 顺序：
+
+1. ✅ **已落地**：阶段 1.5 vs 阶段 2 sequencing 口径（**ADR-015** 闭环：1.5 manual 主线先启动 / 阶段 2 schema 可并行起草 / commit 串行）
+2. ⏳ **待阶段 2 规划师**：阶段 2 是否必须先落地正式本体最小 Schema？范围到角色 / 地点 / 关系 / 状态路径哪一级？（C1）
+3. ⏳ **待阶段 2 规划师**：角色槽位是否进入持久化 JSON？还是只作为 generator 中间产物？（U-GPT-5；synthesis 推荐持久化层仍 concrete `character_refs`）
+4. ⏳ **待阶段 1.5 L2 规划师**：背景资产挂载 — location/scene 加 `visual_assets`，还是 manifest 用 `target_ref` / `target_type` / `asset_role` 解决？（U-GPT-3；synthesis 推荐 manifest 含 target_ref）
+5. ⏳ **待阶段 2 规划师**："任意合法状态组合可达结局"真实义 — 严格证明 / 有界符号执行 / 抽样模拟？直接影响完成标志措辞（U-GPT-1；synthesis 推荐拆 2A 拓扑 + 2B 抽样验证 / 有界符号执行）
+6. ⏳ **待阶段 3 规划师**：playtest bots 阶段位 — 阶段 3 / 阶段 4 / 推到开源剥离后？（C2；synthesis 推荐写入阶段 3 完成标志）
+7. ⏳ **待阶段 2 规划师**：Chapter/Act schema 时机 — 阶段 2 起手期 / 保持阶段 3？（U-CL-4；synthesis 推荐前移到阶段 2，与本体最小 Schema 打包做）
+8. ⏳ **待阶段 2 规划师**：开源剥离边界清单何时开始维护？（C5；synthesis 推荐阶段 2/3 起）
+9. ⏳ **待作者拍板**：总时长拆估 — 采纳 GPT "工程 4.5–7 月 + 内容/开源另 6–10 月"？（C7；synthesis 推荐采纳；ROADMAP 阶段概览总估算暂不动直至作者拍板）
+
+### 跨 LLM 评审元增益数据
+
+- **共识 8 条（33%）** = 单方评审就能抓到的事项（冗余确认）
+- **互补 12 条（50%）** = 跨模型增益，单独一份评审会漏抓一半（Claude 漏 7 含 1 条 🔴；GPT 漏 5 含 1 条 🔴）
+- **严重度分歧 1 条（4%）** + 综合修正
+- **直接矛盾 0 条（0%）**
+
+**结论**：跨 LLM 评审在 Round 5 体现 ~50% 事项增益，不是冗余开销。建议在阶段 2/3 关键决策点继续保留这一工作流（master_plan_battle_*.md prompt 已 stable，复用即可）。
+
+### 这 8 条原则总览仍然有效（Round 5 未推翻 Round 1–4 任一）
+
+上文「原则总览」段的 8 条原则在 Round 5 未被任何 critique 翻案。Round 5 全部 finding 都是 forward stages 的 sequencing / scope / risk / gap，不涉及原则层。
+
+---
+
 ## 版本
 
-本文件版本：v0.1（项目启动版）
+本文件版本：v0.1（项目启动版；2026-04-30 追加 Round 5 段落）
 最后更新：[作者填写日期]
-基于：四轮 Claude × Gemini 对抗性同行评审
+基于：四轮 Claude × Gemini 对抗性同行评审 + Round 5 Claude × GPT-5.5 综合评审
