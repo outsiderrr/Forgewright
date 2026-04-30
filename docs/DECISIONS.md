@@ -260,9 +260,43 @@
 
 ---
 
+## ADR-014：视觉资产双模生成策略 + GPT-Image 默认 + 一致性策略
+
+**状态**：已接受（2026-04-30）
+
+**背景**：阶段 1.5 引入视觉资产生成。作者订阅 ChatGPT Plus（$20/月，含 GPT-Image 网页生成额度）。直接调 OpenAI Image API 单张 $0.04–$0.17，开源用户无 API 预算时无法跑通流水线。需要一种既能让作者立即开工（无需先配 API key）、又能让开源用户在零 API 预算下走通流水线、还保留批量自动化能力的策略。
+
+**决策**：
+
+- **双模并存**：
+  - **Dev 模式（主推）**：作者把 prompt 复制到 chatgpt.com 手动生成、人工审、合适的下载入库；摊薄边际成本 ≈ $0/张（订阅是 sunk cost）
+  - **API 模式（生产/批量）**：用 OpenAI Image API 自动批量；单张约 $0.04–$0.17
+- **图像提供商**：默认 GPT-Image（OpenAI 系；与 ChatGPT Plus 订阅同源；dev/prod 共用一套 prompt）。其他提供商（Imagen / Flux / Midjourney / 本地 SDXL）由 ImageProvider 接口预留扩展位
+- **角色一致性策略**：**C + B 兜底**——容忍同一角色不同立绘细微差异（C）；prompt 显式描述固定特征（眼睛颜色 / 发型 / 服装细节）做兜底（B）。GPT-Image 不支持 ControlNet/LoRA；如未来一致性要求极高，可另开本地 SDXL 渠道，但代价是开源用户门槛上升
+- **manual 模式契约（两段式）**：第一段 `generate_character_sheet(mode='manual')` 产出 prompt 包到 `/content/visuals/_pending/<asset_id>/`；作者人工生成下载；第二段 `image_import` CLI 扫描 → 校验 → 入库
+- **预算治理**：API 部分总盘子 $20–$40；单次硬卡 $1.00；image cost log 独立于文本（`/generator/image_cost_log.jsonl`）；manual 模式 `estimate_cost=0` 仍走 budget 接口（统一）
+
+**替代方案及否决理由**：
+
+- 仅 API 模式：开源用户无 API 预算时无法跑通流水线，违反长期开源目标
+- 仅 manual 模式：无法批量；规模化产线不可行
+- 强制角色一致性方案 A（GPT-Image character reference 输入）：API 接口稳定性未验证；推到后续 PR
+- 自训本地 SDXL：开源用户门槛过高（需 GPU + 模型权重 + ControlNet）
+
+**后果**：
+
+- ImageProvider 接口必须支持两种实现：`ManualImportProvider` + `OpenAIImageProvider`
+- `generate_character_sheet` / `generate_scene_background` 在 manual 模式下变两段式
+- 1.5 启动不需立即配 OpenAI API key，作者可马上开始
+- 这同样是开源价值点——开源用户没有 API 预算时同样能用 manual 模式跑通流水线
+- 一致性策略 C+B 决定 prompt 模板必须包含"角色固定特征描述"段；规划师 T-1.5.6 落地
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
+- 2026-04-30：作者明确授权新增 ADR-014（视觉资产双模生成策略），属 CLAUDE.md 规则 10 的明示例外（阶段 1.5 路径 C 例外）。
 
 ## 版本
 

@@ -102,13 +102,19 @@ Schema 定稿后可并行三路：
 
 - `generate_character_sheet(character_ref)` → N 张表情/姿势立绘
 - `generate_scene_background(location_ref)` → 1–3 张背景
-- 资产入库 `/content/visuals/` + `manifest.json`
+- 资产入库 `/content/visuals/` + `manifest.json`（manifest.json 完整性 100%）
 - Schema 已扩展：本体角色实体新增 `visual_assets` 字段（已授权动 Schema，路径 C）
+- 至少为《铁誓驿站》3 个角色 + 1 个场景完成资产生成 + 入库：vellin = **重档**（10–15 张）；corvan / aelwin = **轻档**（4–6 张）；1 场景背景
+- 接受率 ≥ 50%（**作者本人** + 机械预检 + AI 判官辅助；不替代）
+- **manual 路径全跑通**（dev 模式 = ChatGPT Plus 网页手动生成 + import CLI 入库）；**API 路径作为 stretch goal**（不阻塞 1.5 验收）
 
 ### 重点工作
 
-- NPC 分级：轻档（4–6 张）+ 重档（10–15 张）双档可选
-- 视觉提供商选择（暂未拍板；候选 GPT-Image / Imagen / Midjourney API）
+- 双模架构（manual + API）—— Dev 模式用 ChatGPT Plus 网页手动生成（订阅 sunk cost）；API 模式用 OpenAI Image API 自动批量
+- ADR-014（双模生成策略 + GPT-Image 默认 + 一致性策略）+ Schema 扩展（path A：仅扩展数据，不正式化角色 Schema）
+- ImageProvider Protocol（`ManualImportProvider` + `OpenAIImageProvider` 两实现；接口预留 Imagen / Flux / Midjourney / 本地 SDXL 扩展位）
+- 机械预检器（`image_validator`：分辨率 / 格式 / 文件大小等可数值化属性预检；继承阶段 1 R8 思路）
+- 视觉 AI 判官 prompt（粗起一版；视觉判官能力差异大，需重新校准）
 - 资产清单（manifest）格式：`asset_id` 间接引用，未来切换 PNG → 视频不动 schema
 
 ### 禁止事项
@@ -116,11 +122,17 @@ Schema 定稿后可并行三路：
 - 不做实时合成（违反 ADR-002）
 - 不做立绘内 PSD 分层套娃（保持完整 PNG）
 - 不做审阅 UI（阶段 3）
+- 不正式化角色 Schema（推到阶段 2+；阶段 1.5 走 path A：扩展角色桩 JSON 的 `visual_assets` 字段即可）
+- 不实现 ControlNet / LoRA / 自训本地 SDXL 模型（开源用户门槛过高）
+- 不做立绘审阅 Web UI（阶段 3）
 
 ### 依赖
 
 - 阶段 1 完成（`generate_node` 跑通；本体桩仍可用）
-- 详细任务在阶段 1 验收后由专门规划师会话产出
+- ADR-014 立项（已落地：2026-04-30）
+- 作者侧前置：2–3 张视觉风格基准图（自购或 Pinterest 收藏，放 `/content/visuals/_reference/`，不入 git）
+- 作者侧后置：OpenAI API key（仅 API 模式必需；可推后到 1.5 末段，不阻塞验收）
+- 详细任务见 [docs/STAGE_1.5_TASKS.md](STAGE_1.5_TASKS.md)
 
 ---
 
@@ -208,6 +220,7 @@ Schema 定稿后可并行三路：
 - **2026-04-24**：阶段 0 验收通过（见 `/docs/STAGE_0_ACCEPTANCE.md`）
 - **2026-04-25**：阶段 1.5「视觉资产生成」段落插入；ADR-011/012/013 立项
 - **2026-04-30**：阶段 1 验收**有条件通过**（见 `/docs/STAGE_1_ACCEPTANCE.md`）。Schema 合格率 85%（净模型层 ≈ 95%）；AI 判官接受率 100%。R1–R8 遗留项归阶段 1.5 / 阶段 2 处理
+- **2026-04-30**：阶段 1 验收签字；阶段 1.5 任务规划落地（`/docs/STAGE_1.5_TASKS.md` v0.1）；ADR-014（视觉资产双模生成策略）立项
 
 ## 版本
 
