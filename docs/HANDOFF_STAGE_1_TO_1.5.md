@@ -53,10 +53,23 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 - 至少为《铁誓驿站》3 个角色 + 1 个场景 完成资产生成 + 入库
 - 接受率（用 AI 判官或作者本人）≥ 50%
 
-**预算治理（建议规划师重新拍板）**：
-- 文本 LLM 单调用约 $0.02；图像生成单调用 **$0.05–$0.40**（视提供商）
-- 阶段 1.5 总盘子建议 $50–$80（高于阶段 1 的 $30）
-- 单次硬卡建议 $1.00（高于阶段 1 的 $0.50，因为图像生成单价高）
+**预算治理（作者已重新拍板：2026-04-30 决策）**：
+
+作者订阅了 ChatGPT Plus（$20/月，含网页端 GPT-Image 生成额度），决定采用**双模生成策略**：
+
+- **Dev 模式（主推）**：作者把 prompt 复制到 chatgpt.com，手动生成图、人工审、合适的下载入库。**摊薄边际成本 ≈ $0/张**（订阅是 sunk cost）
+- **API 模式（生产/批量）**：等 prompt 模板成熟后，用 OpenAI Image API 自动批量。单张约 $0.04–$0.17（GPT-Image-1）
+
+**实质影响**：
+- 阶段 1.5 启动**不需要立即配 API 密钥**，作者可以马上开始
+- 总盘子从 $50–$80 降为 **API 部分 $20–$40**（订阅费摊到 1.5 / 2 / 3 共担，不计入 1.5）
+- 单次硬卡 $1.00 仍然保留（API 模式启用时）
+- 这是**架构层面的决策**，需要作为新 ADR 落地（ADR-014 候选）
+
+**对架构的连锁影响（规划师必须吸收）**：
+- ImageProvider 接口必须支持**两种实现**：`ManualImportProvider`（监视目录，等待人工导入）+ `OpenAIImageProvider`（API 自动）
+- generate_character_sheet / generate_scene_background 在 manual 模式下变成**两段式**：先产出 prompt 包（含 ChatGPT 可直接用的提示词 + 元数据 stub）；作者人工生成图后用 import CLI 入库
+- 这同样是**开源价值点**——开源用户没有 API 预算时同样能用 manual 模式跑通流水线
 
 ## ⚠️ Schema 扩展警示（CLAUDE.md 规则 2 + 9 的特殊情况）
 
@@ -75,27 +88,37 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 
 ### 关键架构决策（需作者拍板）
 
-1. **图像提供商选择**：候选 Imagen 4 / GPT-Image-1 / Flux 1.1 Pro / Midjourney（API 化的 v7）/ 本地 SDXL
-   - 跟 LLM 不同，图像 API **没有 LLMProvider 那么标准化的接口**；每家的提示语法、控制选项、并发模式差异大
-   - 作者已表态"我看看有没有可以参考的（开源框架）"——规划师应预留时间帮作者比较 ComfyUI、A1111、Replicate 等生态
-2. **风格定义**：类 BG3 的"半写实 + 油画感 + 戏剧光影"——但执行会话需要锚定的"风格基准图"才能稳定生成；建议作者提供 2–3 张参考图（自购或 Pinterest 收藏）
-3. **角色一致性**：同一角色不同表情/姿势保持脸/服装一致——是 1.5 最硬的骨头
-   - 候选方案：A. ControlNet + reference image；B. IPAdapter；C. LoRA fine-tune；D. 接受图片间细微差异
-   - 不同提供商对 A/B/C 的支持度差异大，跟 #1 强耦合
-4. **NPC 分级**：ROADMAP 提的轻档（4–6 张）+ 重档（10–15 张）双档——具体分给哪些 NPC 由作者决定
-5. **Schema 扩展形态**：`ImageAsset` schema 字段（width / height / format / asset_id / generation_metadata 等）；`visual_assets` 在角色实体里如何引用
+**已由作者于 2026-04-30 决定，规划师可直接采纳：**
 
-### 任务拆分粗预判（阶段 1 是 8 任务，阶段 1.5 估计 6–10 任务）
+0. **生成模式**：**双模并存**（manual chat + API）。Dev 阶段用 ChatGPT Plus 网页界面手动生成（订阅成本摊薄）；API 模式留给最终自动化。**新 ADR-014 候选**。
+1. **图像提供商**：**默认 GPT-Image**（OpenAI 系，与 ChatGPT Plus 订阅同源，dev/prod 可共用一套 prompt）。其他提供商（Imagen / Flux / Midjourney / 本地 SDXL）由 ImageProvider 接口预留扩展位
+
+**仍需规划师与作者校准：**
+
+2. **风格定义**：类 BG3 的"半写实 + 油画感 + 戏剧光影"——但执行会话需要锚定的"风格基准图"才能稳定生成；建议作者提供 2–3 张参考图（自购或 Pinterest 收藏）。GPT-Image 接受"reference style image"作为输入
+3. **角色一致性**：同一角色不同表情/姿势保持脸/服装一致——是 1.5 最硬的骨头
+   - 候选方案：A. GPT-Image 的 character reference 输入；B. 在 prompt 里明确描述固定特征（眼睛颜色 / 发型 / 服装细节）；C. 接受图片间细微差异
+   - GPT-Image 不支持 ControlNet / LoRA；如对一致性要求极高，规划师可建议作者另开本地 SDXL 渠道，但代价是开源用户门槛上升
+4. **NPC 分级**：ROADMAP 提的轻档（4–6 张）+ 重档（10–15 张）双档——具体分给哪些 NPC 由作者决定
+5. **Schema 扩展形态**：`ImageAsset` schema 字段（width / height / format / asset_id / generation_metadata / source_mode = "manual"|"api" 等）；`visual_assets` 在角色实体里如何引用
+
+### 任务拆分粗预判（阶段 1 是 8 任务，阶段 1.5 估计 8–12 任务）
+
+考虑到双模架构，比之前粗估多 2 项：
 
 - T-1.5.0：HANDOFF 阅读 + 校准（规划师）
-- T-1.5.1：新 ADR（图像提供商选择 + 一致性策略 + 视觉风格基准）
-- T-1.5.2：Schema 扩展（image_asset.schema.json + 角色 ontology 加 visual_assets）— **串行关键路径**
-- T-1.5.3：图像 provider 接口 + 默认实现（Imagen / GPT-Image-1）
-- T-1.5.4：generate_character_sheet 主函数（含一致性策略）
-- T-1.5.5：generate_scene_background 主函数
-- T-1.5.6：资产入库 + manifest.json + /content/visuals/ 目录组织
-- T-1.5.7：experiment + review CLI（图像版；review CLI 要能在终端展示缩略图或开浏览器）
-- T-1.5.8：阶段 1.5 验收报告
+- T-1.5.1：新 ADR-014（双模生成策略 + GPT-Image 默认 + 一致性策略 + 视觉风格基准）
+- T-1.5.2：Schema 扩展（image_asset.schema.json + 角色 ontology 加 visual_assets，含 source_mode 字段）— **串行关键路径**
+- T-1.5.3：ImageProvider Protocol + ManualImportProvider 实现（**dev 模式主推；不需要 API key**）
+- T-1.5.4：OpenAIImageProvider 实现（API 模式；可在 1.5 后期作者准备好 API key 时再做）
+- T-1.5.5：generate_character_sheet 主函数（manual 模式产出 prompt 包；API 模式直接调）
+- T-1.5.6：generate_scene_background 主函数（同上）
+- T-1.5.7：图像入库 CLI（监视目录 → 验证 → manifest 落盘）
+- T-1.5.8：资产组织 + manifest.json + /content/visuals/ 目录约定
+- T-1.5.9：experiment + review CLI（图像版；终端缩略图或自动打开浏览器）
+- T-1.5.10：阶段 1.5 验收报告
+
+**关键并行可能性**：T-1.5.3（manual provider）+ T-1.5.5（generate_character_sheet）可早早开始，不依赖 OpenAI API；T-1.5.4 可推后到作者拿到 API key 再做
 
 ## 与作者协作的风格备忘（继承自阶段 0/1）
 
