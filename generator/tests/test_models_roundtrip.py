@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from generator.models import DialogueGraph
+from generator.models import DialogueGraph, ImageAsset
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCENE_PATH = REPO_ROOT / "content" / "test_scene_v0" / "scene.json"
@@ -36,3 +36,32 @@ def test_dialogue_graph_roundtrip_preserves_scene() -> None:
     # Python dict equality is recursive and order-insensitive, which gives us
     # the "modulo key order and whitespace" comparison the task spec requires.
     assert roundtripped == original
+
+
+def test_image_asset_roundtrip_minimal_valid_object() -> None:
+    """Minimum-required-fields ImageAsset survives validate -> dump -> reload.
+
+    This locks the codegen step: if the second `datamodel-code-generator` pass
+    in `regenerate_models.sh` ever drops a required field, mistypes an enum,
+    or loosens a pattern, the load or the equality assertion will catch it.
+    """
+    original = {
+        "asset_id": "img_vellin_neutral",
+        "asset_kind": "character_sheet",
+        "source_mode": "manual",
+        "format": "png",
+        "width": 1024,
+        "height": 1024,
+        "file_path": "content/visuals/vellin/img_vellin_neutral.png",
+        # Pydantic AwareDatetime normalizes UTC to the trailing "Z" form on
+        # dump. Use it in the fixture too so dump == load is bit-identical.
+        "created_at": "2026-05-01T12:00:00Z",
+        "target_ref": "char_vellin",
+        "target_type": "character",
+        "asset_role": "character_sheet",
+    }
+
+    asset = ImageAsset.model_validate(original)
+    dumped = json.loads(asset.model_dump_json(exclude_unset=True))
+
+    assert dumped == original

@@ -4,15 +4,24 @@
 # Source of truth: /schema/*.json (CLAUDE.md rule 6 + ADR-003).
 # Do NOT hand-edit anything in /generator/models/_generated/.
 #
-# Strategy:
-#   1. datamodel-codegen runs in directory-output mode against the entry schema
-#      (dialogue_graph.schema.json). It follows $ref to the other 4 schemas and
-#      emits one .py per schema (the entry one ends up in __init__.py).
-#   2. _postprocess_models.py renames the codegen-default `Schema` /
-#      `SchemaModel*` classes to their schema-title-derived names (Node, Option,
-#      StateEffect, StateConditionLeaf/AllOf/AnyOf/Not, StateCondition) and
-#      moves the entry root from __init__.py to dialogue_graph.py.
-#   3. A "do not edit" header is prepended to each .py file.
+# Strategy (two-pass; T-1.5.3 carryover from T-1.5.2 #4.1):
+#   1. Wipe stale generated .py files once, before any codegen run.
+#   2. Codegen pass #1 — entry = dialogue_graph.schema.json (multi-file via
+#      $ref). With `--output dir/ --class-name DialogueGraph`, codegen names
+#      the entry root file after the class (dialogue_graph.py) and emits
+#      sibling files for each $ref'd schema (node, option, state_effect,
+#      state_condition).
+#   3. Codegen pass #2 — entry = image_asset.schema.json (standalone; no
+#      $refs). For a single-root, no-$ref entry, codegen needs an explicit
+#      output FILE (not a directory) — passing the directory triggers an
+#      IsADirectoryError inside its writer.
+#   4. _postprocess_models.py renames the codegen-default `Schema` /
+#      `SchemaModel*` classes in pass-#1 outputs to their schema-title-derived
+#      names (Node, Option, StateEffect, StateConditionLeaf/AllOf/AnyOf/Not,
+#      StateCondition). image_asset.py is already correctly named via
+#      `--class-name ImageAsset` and needs no class rename — postprocess
+#      leaves it alone and just writes the marker __init__.py.
+#   5. A "do not edit" header is prepended to each .py file.
 #
 # Usage: bash generator/scripts/regenerate_models.sh   (run from anywhere; paths
 # are resolved relative to this script's location).
@@ -26,10 +35,10 @@ OUT_DIR="$REPO_ROOT/generator/models/_generated"
 
 mkdir -p "$OUT_DIR"
 
-# Wipe stale generated .py files (we'll re-emit __init__.py at the end).
+# Wipe stale generated .py files (single wipe, before any codegen run).
 find "$OUT_DIR" -maxdepth 1 -type f -name '*.py' -delete
 
-echo "[regenerate_models] running datamodel-codegen -> $OUT_DIR"
+echo "[regenerate_models] codegen #1: dialogue_graph (multi-file via \$ref) -> $OUT_DIR"
 datamodel-codegen \
   --input "$SCHEMA_DIR/dialogue_graph.schema.json" \
   --input-file-type jsonschema \
@@ -43,6 +52,21 @@ datamodel-codegen \
   --formatters black isort \
   --disable-timestamp \
   --class-name DialogueGraph
+
+echo "[regenerate_models] codegen #2: image_asset (standalone) -> $OUT_DIR/image_asset.py"
+datamodel-codegen \
+  --input "$SCHEMA_DIR/image_asset.schema.json" \
+  --input-file-type jsonschema \
+  --output "$OUT_DIR/image_asset.py" \
+  --output-model-type pydantic_v2.BaseModel \
+  --use-schema-description \
+  --use-double-quotes \
+  --target-python-version 3.11 \
+  --use-standard-collections \
+  --use-union-operator \
+  --formatters black isort \
+  --disable-timestamp \
+  --class-name ImageAsset
 
 echo "[regenerate_models] post-processing class names"
 python3 "$SCRIPT_DIR/_postprocess_models.py" "$OUT_DIR"

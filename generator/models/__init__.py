@@ -9,6 +9,7 @@ re-tuned.
 """
 
 from generator.models._generated.dialogue_graph import DialogueGraph
+from generator.models._generated.image_asset import ImageAsset
 from generator.models._generated.node import Node
 from generator.models._generated.option import Option
 from generator.models._generated.state_condition import (
@@ -22,6 +23,7 @@ from generator.models._generated.state_effect import StateEffect
 
 __all__ = [
     "DialogueGraph",
+    "ImageAsset",
     "Node",
     "Option",
     "StateCondition",
