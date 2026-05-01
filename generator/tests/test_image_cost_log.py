@@ -8,6 +8,7 @@ via FORGEWRIGHT_IMAGE_COST_LOG so the real
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 
 import pytest
@@ -105,3 +106,33 @@ def test_manual_row_is_written_with_zero_cost(isolated_log):
     assert parsed["mode"] == "manual"
     assert parsed["cost_usd"] == 0.0
     assert parsed["input_tokens"] is None
+
+
+def test_concurrent_appends_yield_valid_jsonl(isolated_log):
+    """Mirrors test_budget.test_concurrent_appends_yield_valid_jsonl;
+    locks down the same write-atomicity guarantee for the image log so
+    parallel batch experiments cannot tear lines.
+    """
+    n_writers = 16
+    per_writer = 5
+
+    def worker(wid: int) -> None:
+        for i in range(per_writer):
+            image_cost_log.append(
+                _record(
+                    "2026-05-01T12:00:00+00:00",
+                    asset_id_stub=f"w{wid}_{i}",
+                )
+            )
+
+    threads = [threading.Thread(target=worker, args=(w,)) for w in range(n_writers)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    raw = isolated_log.read_text(encoding="utf-8").splitlines()
+    assert len(raw) == n_writers * per_writer
+    for line in raw:
+        rec = json.loads(line)
+        assert rec["asset_id_stub"].startswith("w")
