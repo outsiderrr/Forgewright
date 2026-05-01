@@ -8,7 +8,7 @@
 
 - **运行时（`/engine`）严禁 import 本模块下任何符号**（ADR-002 / ADR-004）。本模块只在开发期执行。
 - **LLM 调用必须走 `LLMProvider` 接口**（ADR-011）。业务代码不得直接 `import google.genai`；只允许 `/generator/providers/` 下的具体 provider 实现持有该 import。
-- **任何 API 调用前必须经 `budget.check_and_charge()` 拦一次**（ADR-012）。无例外，包括重试、调试脚本。超额抛 `BudgetExceeded`。
+- **任何文本 LLM API 调用前必须经 `budget.check_and_charge()` 拦一次**（ADR-012）。无例外，包括重试、调试脚本。超额抛 `BudgetExceeded`。图像 API 走独立的 `image_budget`（见下方阶段 1.5 边界）。
 - **结构化输出走 provider 原生能力**（ADR-013）：Gemini 用 `response_schema`；最多 3 次（含初次）尝试，失败标记 `generation_failed` 并写日志，**不抛异常**。
 - **`/generator/models/_generated/` 由 `datamodel-code-generator` 从 `/schema/*.json` 自动生成**，不得手动编辑。源头唯一是 JSON Schema（CLAUDE.md 规则 6）。
 - **提示词模板放 `/generator/prompts/`**，按节点类型分文件；不要把模板硬编码到调度逻辑里。
@@ -20,7 +20,7 @@
   - 通过 `image_import` CLI 修改 `/state/ontology/waystation.json` 的 `entities[]` 中 `type=character` 项的 `visual_assets` 数组（仅 `visual_assets` 字段；不动其它任何字段）
 - **阶段 1.5 边界仍在**：
   - 不得直接 `import google.genai` 或 `import openai` 到业务代码（必须经 `ImageProvider` 接口；ADR-011 + ADR-014）
-  - 任何 image API 调用前必须经 `image_budget.check_and_charge()`（ADR-012 + ADR-014）
+  - 任何 image API 调用前必须经 T-1.5.5 定义的 `image_budget.check()` 预算拦截；provider 成功返回后用 `image_budget.log_charge()` 记账（ADR-012 + ADR-014）
   - 运行时（`/engine`）严禁依赖本模块（ADR-002 + ADR-004 不变）
   - 不得修改 `/state/ontology/waystation.json` 的 `entities[]` 内非 `visual_assets` 字段（保护本体真相之源 ADR-006）
 - **跨模块改动约束**：默认禁止编辑 `/schema/`、`/state/`、`/engine/`、`/validator/`、`/content/`、`/docs/`。需要 Schema 变更时，停下来报告作者（规则 2 / 7）。**阶段 1.5 例外**（已授权）：`image_import` CLI 经过 `image_validator` 校验后可写 `/state/ontology/waystation.json` 的 `entities[].visual_assets` 字段；T-1.5.7 的模块边界对此显式列出。
