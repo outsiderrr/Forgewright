@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from generator import image_budget, image_cost_log
 from generator.image_provider import ImageProvider, ImageProviderError
 from generator.providers import ManualImportProvider, OpenAIImageProvider
 
@@ -60,7 +61,10 @@ _logger = logging.getLogger(__name__)
 
 _DEFAULT_EXPERIMENTS_ROOT = Path("generator/experiments")
 _DEFAULT_PENDING_ROOT = Path("content/visuals/_pending")
-_DEFAULT_COST_LOG = Path("generator/image_cost_log.jsonl")
+# The smoke estimates against gpt-image-1's smallest supported size, which
+# matches what the smoke test itself requests. Doubles as the upstream
+# budget pre-reservation tier (review of T-1.5.9 #3.1).
+_SMOKE_SIZE: tuple[int, int] = (1024, 1024)
 
 _PROMPT_ID_RE = re.compile(r"^[a-zA-Z0-9_]{1,64}$")
 # Mirrors /schema/image_asset.schema.json `asset_id` pattern. Validating here
@@ -87,7 +91,6 @@ def run_parity_smoke(
     *,
     output_root: Path = _DEFAULT_EXPERIMENTS_ROOT,
     pending_root: Path = _DEFAULT_PENDING_ROOT,
-    cost_log_path: Path = _DEFAULT_COST_LOG,
     manual_provider: ImageProvider | None = None,
     api_provider: ImageProvider | None = None,
     api_provider_unavailable_reason: str | None = None,
@@ -100,8 +103,6 @@ def run_parity_smoke(
             for the schema; use `validate_prompts` to validate raw JSON).
         output_root: Where the per-run dir is created (default: experiments/).
         pending_root: Where manual prompt packages go (default: _pending/).
-        cost_log_path: Where to append the API cost line (default:
-            generator/image_cost_log.jsonl). Skipped when no API call ran.
         manual_provider: Defaults to a ManualImportProvider rooted at
             `<pending_root>/parity/`.
         api_provider: Defaults to None ⇒ caller decides. The CLI builds an
@@ -112,6 +113,14 @@ def run_parity_smoke(
             OPENAI_API_KEY" — matches the dominant cause in practice.
         now: Override timestamp (test seam).
 
+    Side effects:
+        Writes one summary row to image_cost_log (path resolved by
+        `image_cost_log._log_path()`; honors `FORGEWRIGHT_IMAGE_COST_LOG`)
+        when at least one API call succeeded. Pre-call `image_budget.check()`
+        is invoked when an API provider is supplied; on `ImageBudgetExceeded`
+        the exception propagates uncaught — the smoke is one logical batch
+        and the operator should see the failure (review of T-1.5.9 #3.1).
+
     Returns:
         {
           "run_dir": Path to experiments/parity_smoke_<ts>,
@@ -120,7 +129,8 @@ def run_parity_smoke(
           "api_total_cost_usd": float,
         }
     """
-    timestamp = (now or _dt.datetime.now(_dt.timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
+    now_dt = now or _dt.datetime.now(_dt.timezone.utc)
+    timestamp = now_dt.strftime("%Y%m%dT%H%M%SZ")
     run_dir = output_root / f"parity_smoke_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     api_dir = run_dir / "api"
@@ -137,6 +147,17 @@ def run_parity_smoke(
     api_unavailable_reason = api_provider_unavailable_reason or (
         "skipped: no OPENAI_API_KEY"
     )
+
+    # Budget guard (review of T-1.5.9 #3.1): pre-reserve aggregate cost
+    # before any API call, mirroring the contract /generator/CLAUDE.md
+    # imposes for image API calls (ADR-012 + ADR-014). The smoke is one
+    # logical batch — if its estimate would push the daily ceiling over,
+    # raise rather than silently bill some prompts and skip others.
+    if api is not None:
+        estimated_total = sum(
+            api.estimate_cost(n=1, size=_SMOKE_SIZE) for _ in prompts
+        )
+        image_budget.check(estimated_cost_usd=estimated_total, mode="api")
 
     pair_results: list[_PairResult] = []
     api_total_cost = 0.0
@@ -185,8 +206,7 @@ def run_parity_smoke(
 
     if api_total_cost > 0:
         _append_cost_log(
-            cost_log_path=cost_log_path,
-            timestamp=timestamp,
+            now_dt=now_dt,
             run_dir=run_dir,
             pair_results=pair_results,
             api_total_cost=api_total_cost,
@@ -371,22 +391,31 @@ def _render_report(
 
 def _append_cost_log(
     *,
-    cost_log_path: Path,
-    timestamp: str,
+    now_dt: _dt.datetime,
     run_dir: Path,
     pair_results: list[_PairResult],
     api_total_cost: float,
 ) -> None:
-    cost_log_path.parent.mkdir(parents=True, exist_ok=True)
-    record = {
-        "timestamp": timestamp,
-        "source": "visual_parity_smoke",
-        "run_dir": str(run_dir),
-        "n_api_calls": sum(1 for p in pair_results if p.api_status == "ok"),
-        "total_cost_usd": round(api_total_cost, 6),
-    }
-    with cost_log_path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    """Append one summary row through `image_cost_log.append()` so the
+    same path resolution (incl. `FORGEWRIGHT_IMAGE_COST_LOG`) and durability
+    semantics as `image_budget.log_charge()` apply. The `cost_usd` field is
+    what `image_budget.today_total_usd()` reads — naming it differently
+    (the original `total_cost_usd` bug) made smoke spend invisible to the
+    daily ceiling (review of T-1.5.9 #3.1)."""
+    n_api_calls = sum(1 for p in pair_results if p.api_status == "ok")
+    image_cost_log.append(
+        {
+            "timestamp": now_dt.isoformat(),
+            "source": "visual_parity_smoke",
+            "mode": "api",
+            "provider_id": "openai_image",
+            "run_dir": str(run_dir),
+            "n_api_calls": n_api_calls,
+            "n": n_api_calls,
+            "cost_usd": round(api_total_cost, 6),
+            "total_cost_usd": round(api_total_cost, 6),
+        }
+    )
 
 
 def _build_default_api_provider() -> tuple[ImageProvider | None, str | None]:

@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from generator import visual_parity_smoke
+from generator import image_budget, image_cost_log, visual_parity_smoke
 from generator.image_provider import ImageGenerationResult, ImageProvider, ImageProviderError
 from generator.visual_parity_smoke import (
     _PairResult,
@@ -27,6 +27,22 @@ from generator.visual_parity_smoke import (
     run_parity_smoke,
     validate_prompts,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_image_cost_log(tmp_path_factory, monkeypatch):
+    """Redirect image_cost_log writes/reads to a per-test tmp file so daily
+    totals don't leak between tests and tests don't pollute the repo log."""
+    log = tmp_path_factory.mktemp("cost_log") / "image_cost_log.jsonl"
+    monkeypatch.setenv("FORGEWRIGHT_IMAGE_COST_LOG", str(log))
+    return log
+
+
+@pytest.fixture(autouse=True)
+def _generous_daily_budget(monkeypatch):
+    """Daily ceiling defaults to $5.00; tests usually want plenty of head
+    room. Individual tests override this when exercising budget exhaustion."""
+    monkeypatch.setenv("FORGEWRIGHT_DAILY_IMAGE_BUDGET_USD", "100.0")
 
 
 _PROMPTS_FIXTURE = [
@@ -109,7 +125,6 @@ def _make_dirs(tmp_path: Path) -> dict[str, Path]:
     return {
         "output_root": tmp_path / "experiments",
         "pending_root": tmp_path / "pending",
-        "cost_log": tmp_path / "image_cost_log.jsonl",
     }
 
 
@@ -187,7 +202,9 @@ def test_main_returns_exit_2_on_invalid_enum(tmp_path: Path, monkeypatch) -> Non
     assert rc == 2
 
 
-def test_happy_path_writes_report_and_cost_log(tmp_path: Path) -> None:
+def test_happy_path_writes_report_and_cost_log(
+    tmp_path: Path, _isolated_image_cost_log: Path
+) -> None:
     dirs = _make_dirs(tmp_path)
     fake_api = _FakeApiProvider()
 
@@ -195,7 +212,6 @@ def test_happy_path_writes_report_and_cost_log(tmp_path: Path) -> None:
         _PROMPTS_FIXTURE,
         output_root=dirs["output_root"],
         pending_root=dirs["pending_root"],
-        cost_log_path=dirs["cost_log"],
         api_provider=fake_api,
     )
 
@@ -220,23 +236,30 @@ def test_happy_path_writes_report_and_cost_log(tmp_path: Path) -> None:
     assert (manual_dir / "prompt.md").is_file()
     assert (manual_dir / "meta.json").is_file()
 
-    # Cost log has exactly one line and tracks 3 api calls.
-    cost_lines = dirs["cost_log"].read_text(encoding="utf-8").splitlines()
+    # Cost log has exactly one line and tracks 3 api calls (review of
+    # T-1.5.9 #3.1: the row uses `cost_usd`, not `total_cost_usd`, so
+    # image_budget.today_total_usd() can see the spend).
+    cost_lines = _isolated_image_cost_log.read_text(encoding="utf-8").splitlines()
     assert len(cost_lines) == 1
     record = json.loads(cost_lines[0])
     assert record["source"] == "visual_parity_smoke"
+    assert record["mode"] == "api"
+    assert record["provider_id"] == "openai_image"
     assert record["n_api_calls"] == 3
-    assert record["total_cost_usd"] == pytest.approx(0.51)
+    assert record["cost_usd"] == pytest.approx(0.51)
+    # Visible to image_budget.today_total_usd(): the canonical field.
+    assert image_budget.today_total_usd() == pytest.approx(0.51)
 
 
-def test_no_api_key_degrades_gracefully(tmp_path: Path) -> None:
+def test_no_api_key_degrades_gracefully(
+    tmp_path: Path, _isolated_image_cost_log: Path
+) -> None:
     dirs = _make_dirs(tmp_path)
 
     result = run_parity_smoke(
         _PROMPTS_FIXTURE,
         output_root=dirs["output_root"],
         pending_root=dirs["pending_root"],
-        cost_log_path=dirs["cost_log"],
         api_provider=None,
     )
 
@@ -255,11 +278,13 @@ def test_no_api_key_degrades_gracefully(tmp_path: Path) -> None:
         assert (manual_dir / "prompt.md").is_file()
 
     # Cost log untouched.
-    assert not dirs["cost_log"].exists()
+    assert not _isolated_image_cost_log.exists()
     assert result["api_total_cost_usd"] == 0.0
 
 
-def test_api_call_exception_marks_partial_fail(tmp_path: Path) -> None:
+def test_api_call_exception_marks_partial_fail(
+    tmp_path: Path, _isolated_image_cost_log: Path
+) -> None:
     dirs = _make_dirs(tmp_path)
     fake_api = _FakeApiProvider(raises=ImageProviderError("rate limited"))
 
@@ -268,7 +293,6 @@ def test_api_call_exception_marks_partial_fail(tmp_path: Path) -> None:
         _PROMPTS_FIXTURE,
         output_root=dirs["output_root"],
         pending_root=dirs["pending_root"],
-        cost_log_path=dirs["cost_log"],
         api_provider=fake_api,
     )
 
@@ -280,7 +304,7 @@ def test_api_call_exception_marks_partial_fail(tmp_path: Path) -> None:
     api_dir = result["run_dir"] / "api"
     assert list(api_dir.iterdir()) == []
     assert result["api_total_cost_usd"] == 0.0
-    assert not dirs["cost_log"].exists()
+    assert not _isolated_image_cost_log.exists()
 
     # All 3 attempted (smoke shouldn't short-circuit on first failure).
     assert fake_api.calls == 3
@@ -309,7 +333,6 @@ def test_api_provider_returning_none_image_bytes_is_partial_fail(tmp_path: Path)
         _PROMPTS_FIXTURE[:1],
         output_root=dirs["output_root"],
         pending_root=dirs["pending_root"],
-        cost_log_path=dirs["cost_log"],
         api_provider=_NoBytesProvider(),
     )
 
@@ -379,3 +402,105 @@ def test_pair_result_dataclass_carries_expected_fields() -> None:
 def test_fake_api_provider_satisfies_image_provider_protocol() -> None:
     fake = _FakeApiProvider()
     assert isinstance(fake, ImageProvider)
+
+
+def test_image_budget_check_called_before_api(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """With an API provider, image_budget.check must run before any API
+    call (review of T-1.5.9 #3.1: budget guard mandated by /generator/CLAUDE.md
+    阶段 1.5 硬规则)."""
+    dirs = _make_dirs(tmp_path)
+    fake_api = _FakeApiProvider()
+
+    calls: list[dict] = []
+
+    real_check = image_budget.check
+
+    def _spy_check(**kwargs):
+        calls.append(kwargs)
+        return real_check(**kwargs)
+
+    monkeypatch.setattr(visual_parity_smoke.image_budget, "check", _spy_check)
+
+    run_parity_smoke(
+        _PROMPTS_FIXTURE,
+        output_root=dirs["output_root"],
+        pending_root=dirs["pending_root"],
+        api_provider=fake_api,
+    )
+
+    assert len(calls) == 1
+    # 3 prompts × $0.17 estimated upper bound
+    assert calls[0]["estimated_cost_usd"] == pytest.approx(0.51)
+    assert calls[0]["mode"] == "api"
+
+
+def test_image_budget_skipped_when_no_api_provider(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Manual-only path doesn't bill anything, so image_budget.check should
+    not be invoked — keeps the manual workflow free of API budget concerns."""
+    dirs = _make_dirs(tmp_path)
+    calls: list[dict] = []
+
+    monkeypatch.setattr(
+        visual_parity_smoke.image_budget,
+        "check",
+        lambda **kw: calls.append(kw),
+    )
+
+    run_parity_smoke(
+        _PROMPTS_FIXTURE,
+        output_root=dirs["output_root"],
+        pending_root=dirs["pending_root"],
+        api_provider=None,
+    )
+
+    assert calls == []
+
+
+def test_image_budget_exceeded_blocks_api_calls(
+    tmp_path: Path, monkeypatch, _isolated_image_cost_log: Path
+) -> None:
+    """When image_budget.check raises ImageBudgetExceeded, the API
+    provider must NOT be invoked and the exception propagates so the
+    operator sees a real budget failure (review of T-1.5.9 #3.1)."""
+    dirs = _make_dirs(tmp_path)
+    # Squeeze the daily ceiling below the smoke's $0.51 estimate.
+    monkeypatch.setenv("FORGEWRIGHT_DAILY_IMAGE_BUDGET_USD", "0.20")
+    fake_api = _FakeApiProvider()
+
+    with pytest.raises(image_budget.ImageBudgetExceeded):
+        run_parity_smoke(
+            _PROMPTS_FIXTURE,
+            output_root=dirs["output_root"],
+            pending_root=dirs["pending_root"],
+            api_provider=fake_api,
+        )
+
+    # Provider was never called; no cost log line written.
+    assert fake_api.calls == 0
+    assert not _isolated_image_cost_log.exists()
+
+
+def test_cost_log_record_uses_iso_timestamp_for_today_total(
+    tmp_path: Path, _isolated_image_cost_log: Path
+) -> None:
+    """`image_cost_log.read_today()` parses timestamps via fromisoformat;
+    the parity smoke summary row must use ISO format so its spend counts
+    toward today's total (review of T-1.5.9 #3.1)."""
+    dirs = _make_dirs(tmp_path)
+    fake_api = _FakeApiProvider()
+
+    run_parity_smoke(
+        _PROMPTS_FIXTURE[:1],
+        output_root=dirs["output_root"],
+        pending_root=dirs["pending_root"],
+        api_provider=fake_api,
+    )
+
+    today_records = image_cost_log.read_today()
+    assert len(today_records) == 1
+    # cost_usd present and positive ⇒ counted by image_budget.today_total_usd.
+    assert today_records[0]["cost_usd"] == pytest.approx(0.17)
