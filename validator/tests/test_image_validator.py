@@ -63,6 +63,17 @@ def test_format_not_allowed_via_magic_bytes(fixtures_dir: Path):
     )
 
 
+def test_format_not_allowed_via_extension(fixtures_dir: Path):
+    """PNG 内容但扩展名 .jpg → 即便 magic bytes 合法，扩展名也不在 allowed_formats，应拒收（SCHEMA_v0.2 §2 file_path pattern 只允许 .png / .webp）。"""
+    errors = validate_image_asset(
+        fixtures_dir / "wrong_extension.jpg", asset_kind="character_sheet"
+    )
+    assert "FORMAT_NOT_ALLOWED" in _codes(errors)
+    assert any(
+        e.code == "FORMAT_NOT_ALLOWED" and e.severity == "error" for e in errors
+    )
+
+
 def test_file_size_exceeded(fixtures_dir: Path):
     cfg = ImageValidationConfig(max_file_size_bytes=128)  # 128 bytes 任意 PNG 都超
     errors = validate_image_asset(

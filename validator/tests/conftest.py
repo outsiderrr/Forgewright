@@ -37,6 +37,13 @@ def fixtures_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         jpeg_path, format="JPEG"
     )
 
+    # PNG content with disallowed .jpg extension — extension-vs-content mismatch
+    # probe (the inverse of jpeg_disguised). Validator must reject because
+    # SCHEMA_v0.2 §2 file_path pattern only allows .png / .webp suffixes.
+    Image.new("RGBA", (1024, 1280), color=(0, 0, 0, 0)).save(
+        base / "wrong_extension.jpg", format="PNG"
+    )
+
     # PNG with EXIF — Pillow's Exif object lets us inject a tag before saving.
     exif_path = base / "with_exif.png"
     img_exif = Image.new("RGBA", (1024, 1280), color=(0, 0, 0, 0))

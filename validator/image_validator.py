@@ -113,20 +113,23 @@ def validate_image_asset(
         )
 
     detected = _detect_format_by_magic(image_path)
-    if detected not in cfg.allowed_formats:
+    extension = image_path.suffix.lower().lstrip(".")
+    # Both axes must agree with allowed_formats. Magic bytes catch content
+    # forgery (jpeg renamed to .png); extension catches the inverse — PNG
+    # bytes saved as .jpg, which would later fail SCHEMA_v0.2 §2 file_path
+    # pattern (^content/visuals/[A-Za-z0-9_/-]+\.(png|webp)$).
+    if detected not in cfg.allowed_formats or extension not in cfg.allowed_formats:
         errors.append(
             ImageValidationError(
                 code="FORMAT_NOT_ALLOWED",
                 message=(
-                    f"detected format {detected!r} (from magic bytes) not in allowed "
-                    f"formats {cfg.allowed_formats}; file extension is "
-                    f"{image_path.suffix.lower()!r}"
+                    f"detected format {detected!r} (from magic bytes) and file "
+                    f"extension {extension!r} must both be in allowed formats "
+                    f"{cfg.allowed_formats}"
                 ),
                 severity="error",
             )
         )
-        # Magic bytes lie about the format → don't trust extension; still try to
-        # open with Pillow to surface dimension/alpha errors, but skip if it fails.
 
     try:
         with Image.open(image_path) as img:
