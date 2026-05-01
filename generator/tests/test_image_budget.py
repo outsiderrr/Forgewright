@@ -177,12 +177,34 @@ def test_api_mode_log_charge_writes_full_row(isolated_log):
         "provider_id": "openai_image_gpt-image-1",
         "asset_kind": "scene_background",
         "asset_id_stub": "bg_waystation_dawn_v1",
+        "batch_name": None,
         "n": 1,
         "size_w": 1536,
         "size_h": 1024,
         "input_tokens": 180,
         "cost_usd": 0.05,
     }
+
+
+def test_log_charge_persists_batch_name_for_metrics(isolated_log):
+    """T-1.5.8 visual_metrics groups image_cost_log rows by batch_name;
+    the field must round-trip through log_charge() to disk.
+    """
+    timestamp = datetime(2026, 5, 1, 12, 0, 0, tzinfo=timezone.utc)
+    image_budget.log_charge(
+        timestamp=timestamp,
+        mode="api",
+        provider_id="openai_image_gpt-image-1",
+        asset_kind="character_sheet",
+        asset_id_stub="char_vellin_v1",
+        n=1,
+        size=(1024, 1536),
+        cost_usd=0.04,
+        input_tokens=200,
+        batch_name="vellin_probe",
+    )
+    rec = json.loads(isolated_log.read_text(encoding="utf-8").splitlines()[0])
+    assert rec["batch_name"] == "vellin_probe"
 
 
 def test_api_mode_normal_call_passes_check_and_logs(isolated_log, monkeypatch):

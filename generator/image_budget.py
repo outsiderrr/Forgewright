@@ -99,10 +99,14 @@ def log_charge(
     size: tuple[int, int],
     cost_usd: float,
     input_tokens: int | None = None,
+    batch_name: str | None = None,
 ) -> None:
     """Write one row to image_cost_log.jsonl after a provider call returned.
 
     Manual rows (cost_usd=0.0) are written just like API rows.
+    `batch_name` is the visual experiment batch this call belongs to;
+    T-1.5.8 visual_metrics groups image_cost_log rows by it for per-batch
+    cost reporting.
     """
     width, height = size
     image_cost_log.append(
@@ -112,6 +116,7 @@ def log_charge(
             "provider_id": provider_id,
             "asset_kind": asset_kind,
             "asset_id_stub": asset_id_stub,
+            "batch_name": batch_name,
             "n": n,
             "size_w": width,
             "size_h": height,
