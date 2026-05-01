@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/image_asset.schema.json",
+  "title": "ImageAsset",
+  "description": "SCHEMA_v0.2.md §2 的 ImageAsset。视觉资产元数据：角色立绘（character_sheet）或场景背景（scene_background）。本对象 schema_version 起步 0.2.0；existing /schema/*.json 保持 0.1.1 不联动（STAGE_1.5_TASKS.md P0.5；沿用阶段 1 T-1.0 先例）。__留给 image_validator 的语义约束__：(1) target_type=character ⇒ character_ref==target_ref AND location_ref==null；(2) target_type∈{location,scene} ⇒ location_ref==target_ref AND character_ref==null；(3) asset_kind 与 asset_role 当前等价（重合是有意——asset_kind 是向后兼容名，asset_role 是 Round 5 U-GPT-3 硬闸门预留扩展位）；(4) target_ref / character_ref / location_ref 在本体花名册中可解析；(5) has_alpha 与 asset_role 一致性（character_sheet 应 true，scene_background 应 false）。一致性约束**不在 schema 层用 if/then/else / oneOf 表达**——阶段 1 baseline_001 教训：datamodel-code-generator 与 Gemini schema 子集对复合形态有已知坑（STAGE_1.5_TASKS.md P0.1）。",
+  "type": "object",
+  "required": [
+    "asset_id",
+    "asset_kind",
+    "source_mode",
+    "format",
+    "width",
+    "height",
+    "file_path",
+    "created_at",
+    "target_ref",
+    "target_type",
+    "asset_role"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "本 ImageAsset 对象的 schema 版本（SCHEMA_v0.2.md §1）。项目首次新增 schema 文件起步 0.2.0；可省略，若填则必为 '0.2.0'。",
+      "const": "0.2.0"
+    },
+    "asset_id": {
+      "description": "全仓库唯一资产 ID。pattern：'img_' 前缀 + 小写字母/数字/下划线（后缀 1–64 字符）。唯一性留给 image_validator。",
+      "type": "string",
+      "pattern": "^img_[a-z0-9_]{1,64}$"
+    },
+    "asset_kind": {
+      "description": "资产种类（向后兼容名；与 asset_role 当前等价）。character_sheet=角色立绘；scene_background=场景背景。",
+      "enum": ["character_sheet", "scene_background"]
+    },
+    "target_ref": {
+      "description": "Round 5 U-GPT-3 硬闸门：通用挂载锚点 ID（如 'char_vellin' / 'scene_waystation_of_iron_oath'）。本体花名册闭合性留给 image_validator。",
+      "type": "string",
+      "minLength": 1
+    },
+    "target_type": {
+      "description": "Round 5 U-GPT-3 硬闸门：锚点类型。决定 character_ref / location_ref 镜像字段的语义有效性（在 image_validator 校验）。",
+      "enum": ["character", "location", "scene"]
+    },
+    "asset_role": {
+      "description": "Round 5 U-GPT-3 硬闸门：资产在叙事中扮演的角色。当前与 asset_kind 等价；枚举预留未来扩展（如 'item_icon' / 'ui_portrait'）的命名空间。",
+      "enum": ["character_sheet", "scene_background"]
+    },
+    "character_ref": {
+      "description": "🟡 向后兼容镜像字段（与 target_ref + target_type=character 等价）。target_type=character 时，image_validator 要求 character_ref==target_ref；否则要求为 null。",
+      "type": ["string", "null"]
+    },
+    "location_ref": {
+      "description": "🟡 向后兼容镜像字段（与 target_ref + target_type∈{location,scene} 等价）。target_type∈{location,scene} 时，image_validator 要求 location_ref==target_ref；否则要求为 null。",
+      "type": ["string", "null"]
+    },
+    "source_mode": {
+      "description": "ADR-014 双模生成策略。manual=作者从 ChatGPT 网页端手动生成后人工导入；api=OpenAI Image API 自动调用。",
+      "enum": ["manual", "api"]
+    },
+    "format": {
+      "description": "图像文件格式。",
+      "enum": ["png", "webp"]
+    },
+    "width": {
+      "description": "宽度像素。最小 256（缩略图最低边界），最大 4096（API 上限 + 入库存储上限）。",
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 4096
+    },
+    "height": {
+      "description": "高度像素。边界同 width。",
+      "type": "integer",
+      "minimum": 256,
+      "maximum": 4096
+    },
+    "file_size_bytes": {
+      "description": "🟡 文件字节数；可选预检字段（R8 机械预检器）。",
+      "type": "integer",
+      "minimum": 1
+    },
+    "has_alpha": {
+      "description": "🟡 透明通道是否存在；与 asset_role 一致性留给 image_validator（character_sheet 应 true，scene_background 应 false）。",
+      "type": "boolean"
+    },
+    "file_path": {
+      "description": "相对仓库根的路径（如 'content/visuals/vellin/img_vellin_neutral.png'）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_hash": {
+      "description": "🟡 生成时 prompt 文本的 sha256 hex；用于追溯。",
+      "type": "string"
+    },
+    "generation_metadata": {
+      "description": "🟡 自由 dict：含 prompt 文本 / 风格基准引用 / 时间戳 / API 调用元数据等；schema 不约束内部结构。",
+      "type": "object"
+    },
+    "style_reference_id": {
+      "description": "🟡 指向 _reference/ 内的基准图标识；可选。",
+      "type": ["string", "null"]
+    },
+    "reference_ids": {
+      "description": "Round 5 U-GPT-6 软闸门：本资产生成时引用的 _reference/ 基准图 ID 数组；用于 trace 风格依赖。开源剥离合规预防（C5 共识）。",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "default": []
+    },
+    "reference_license_note": {
+      "description": "Round 5 U-GPT-6 软闸门：自由文本，作者填写每张引用基准图的来源 + 许可（如 'ref_001: own photograph CC0'）。开源剥离合规预防（C5 共识）。",
+      "type": "string",
+      "default": ""
+    },
+    "open_source_ok": {
+      "description": "Round 5 U-GPT-6 软闸门：本资产是否能进开源 release dataset。默认 false 安全侧。开源剥离合规预防（C5 共识）。",
+      "type": "boolean",
+      "default": false
+    },
+    "commercial_ok": {
+      "description": "Round 5 U-GPT-6 软闸门：本资产是否能进商业版。默认 false 安全侧。开源剥离合规预防（C5 共识）。",
+      "type": "boolean",
+      "default": false
+    },
+    "created_at": {
+      "description": "ISO 8601 / RFC 3339 date-time 字符串（format 由 image_validator 严格校验；schema 层仅约束类型）。",
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

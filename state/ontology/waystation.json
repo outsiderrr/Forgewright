@@ -3,17 +3,20 @@
     {
       "id": "char_vellin",
       "display_name": "Vellin",
-      "type": "character"
+      "type": "character",
+      "visual_assets": []
     },
     {
       "id": "char_corvan",
       "display_name": "Corvan",
-      "type": "character"
+      "type": "character",
+      "visual_assets": []
     },
     {
       "id": "char_aelwin",
       "display_name": "Aelwin",
-      "type": "character"
+      "type": "character",
+      "visual_assets": []
     },
     {
       "id": "scene_waystation_of_iron_oath",
