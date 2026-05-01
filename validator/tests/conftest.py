@@ -31,6 +31,12 @@ def fixtures_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     _save_png(base / "too_small.png", (100, 100), "RGBA")
     _save_png(base / "alpha_in_bg.png", (1024, 1024), "RGBA")
 
+    # WebP positive coverage — the other half of allowed_formats. Saved
+    # opaque (no alpha) so it's a valid scene_background under defaults.
+    Image.new("RGB", (1024, 1024), color=(0, 0, 0)).save(
+        base / "perfect_background.webp", format="WEBP"
+    )
+
     # JPEG content with .png file extension — magic-byte forgery probe.
     jpeg_path = base / "jpeg_disguised.png"
     Image.new("RGB", (1024, 1024), color=(255, 255, 255)).save(

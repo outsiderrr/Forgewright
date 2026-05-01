@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from PIL import Image
+from PIL import Image, features
 
 from validator import (
     ImageValidationConfig,
@@ -36,6 +36,15 @@ def test_perfect_character_passes_default(fixtures_dir: Path):
 def test_perfect_background_passes_default(fixtures_dir: Path):
     errors = validate_image_asset(
         fixtures_dir / "perfect_background.png", asset_kind="scene_background"
+    )
+    assert errors == [], f"expected empty list, got {errors}"
+
+
+@pytest.mark.skipif(not features.check("webp"), reason="Pillow built without WebP support")
+def test_perfect_webp_background_passes_default(fixtures_dir: Path):
+    """WebP 是 allowed_formats 默认的另一半；锁住 magic-byte 判断 + 默认配置兼容。"""
+    errors = validate_image_asset(
+        fixtures_dir / "perfect_background.webp", asset_kind="scene_background"
     )
     assert errors == [], f"expected empty list, got {errors}"
 
