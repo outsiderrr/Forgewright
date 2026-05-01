@@ -30,7 +30,7 @@
 - `pytest` 通过
 - `grep -R "from generator" engine/ state/ schema/ validator/` 无任何匹配（确认运行时未沾染本模块）
 - 新增/修改的业务代码无直接 `import google.genai`（必须经 provider 间接使用）
-- 未触碰 `/state/ontology/`
+- 未触碰 `/state/ontology/`，但阶段 1.5 已授权的 `image_import` CLI 例外除外：仅可经 `image_validator` 校验后写 `/state/ontology/waystation.json` 的 `entities[].visual_assets`，不得改任何非 `visual_assets` 字段
 - 1.5 阶段：确认未直接 `import google.genai` / `import openai`；确认所有 image API 调用经过 `image_budget`
 
 ## TODO（阶段 1 任务清单的执行单参见 /docs/）
