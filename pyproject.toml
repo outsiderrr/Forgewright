@@ -29,7 +29,11 @@ packages = [
     "content",
     "generator",
     "generator.prompts",
+    "generator.prompts.visual",
     "generator.providers",
     "generator.models",
     "generator.models._generated",
 ]
+
+[tool.setuptools.package-data]
+"generator.prompts.visual" = ["*.md"]
