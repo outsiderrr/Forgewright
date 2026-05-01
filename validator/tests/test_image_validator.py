@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from PIL import Image
+
 from validator import (
     ImageValidationConfig,
     ImageValidationError,
@@ -93,6 +95,22 @@ def test_resolution_too_high(fixtures_dir: Path):
         config=cfg,
     )
     assert "RESOLUTION_TOO_HIGH" in _codes(errors)
+
+
+def test_decompression_bomb_does_not_crash(
+    fixtures_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """畸形超大 PNG 不能让 validator 抛 DecompressionBombError；必须返回 RESOLUTION_TOO_HIGH（R8 机械层硬卡）。"""
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
+    errors = validate_image_asset(
+        fixtures_dir / "perfect_character.png", asset_kind="character_sheet"
+    )
+    assert "RESOLUTION_TOO_HIGH" in _codes(errors)
+    assert all(
+        e.severity == "error"
+        for e in errors
+        if e.code == "RESOLUTION_TOO_HIGH"
+    )
 
 
 def test_alpha_required(fixtures_dir: Path):

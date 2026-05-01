@@ -130,10 +130,26 @@ def validate_image_asset(
 
     try:
         with Image.open(image_path) as img:
-            img.load()
             width, height = img.size
             mode = img.mode
             exif = img.getexif()
+            # Defer pixel decode until size is known to be in-range — guards
+            # against decompression-bomb / OOM on adversarially huge images.
+            if width <= cfg.max_width and height <= cfg.max_height:
+                img.load()
+    except Image.DecompressionBombError as exc:
+        # Pillow's open()/load() refused the IHDR-declared pixel count. Surface
+        # as RESOLUTION_TOO_HIGH (the resolution is by definition above the
+        # bomb threshold) so callers get a structured error instead of a raw
+        # exception (R8: mechanical layer must hard-cap untrusted input).
+        errors.append(
+            ImageValidationError(
+                code="RESOLUTION_TOO_HIGH",
+                message=f"Pillow refused image as decompression bomb: {exc}",
+                severity="error",
+            )
+        )
+        return errors
     except (UnidentifiedImageError, OSError) as exc:
         # Pillow refuses the file outright; FORMAT_NOT_ALLOWED above already
         # signalled the format issue if applicable. Surface a single error so
