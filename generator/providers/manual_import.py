@@ -25,15 +25,23 @@ import datetime as _dt
 import hashlib
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Literal
 
-from generator.image_provider import ImageGenerationResult
+from generator.image_provider import ImageGenerationResult, ImageProviderError
 
 _logger = logging.getLogger(__name__)
 
 _DEFAULT_PENDING_ROOT = Path("content/visuals/_pending")
 _DEFAULT_PROMPT_TEMPLATE_DIR = Path("generator/prompts/visual")
+
+# Mirrors /schema/image_asset.schema.json `asset_id` pattern. Validating the
+# stub here (a) closes a path-traversal write (".."/"/" never match) and
+# (b) guarantees the eventual ImageAsset.asset_id will be schema-valid, so
+# image_import (T-1.5.7) doesn't have to discard already-written prompt
+# packages.
+_ASSET_ID_RE = re.compile(r"^img_[a-z0-9_]{1,64}$")
 
 _PLACEHOLDER_PROMPT_BODY = (
     "[PLACEHOLDER from T-1.5.3 — T-1.5.6 will fill]\n"
@@ -112,7 +120,24 @@ class ManualImportProvider:
         else:
             prompt_body = prompt
 
-        package_dir = self.pending_root / asset_id_stub
+        if not _ASSET_ID_RE.fullmatch(asset_id_stub):
+            raise ImageProviderError(
+                "asset_id_stub must match ImageAsset.asset_id pattern "
+                "^img_[a-z0-9_]{1,64}$"
+            )
+
+        # Defense in depth: even with the regex above, resolve and confirm
+        # package_dir stays under pending_root. Catches symlink shenanigans /
+        # future regex loosening.
+        pending_root = self.pending_root.resolve()
+        package_dir = (pending_root / asset_id_stub).resolve()
+        try:
+            package_dir.relative_to(pending_root)
+        except ValueError as exc:
+            raise ImageProviderError(
+                f"asset_id_stub escapes pending_root: {asset_id_stub!r}"
+            ) from exc
+
         package_dir.mkdir(parents=True, exist_ok=True)
 
         prompt_md_path = package_dir / "prompt.md"

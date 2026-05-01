@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from generator.image_provider import ImageGenerationResult
+from generator.image_provider import ImageGenerationResult, ImageProviderError
 from generator.providers import ManualImportProvider
 
 _BILINGUAL_PROMPT = (
@@ -169,6 +169,24 @@ def test_estimate_cost_is_always_zero(tmp_path: Path) -> None:
     provider = _make_provider(tmp_path)
     assert provider.estimate_cost(n=1, size=(1024, 1024)) == 0.0
     assert provider.estimate_cost(n=4, size=(2048, 2048)) == 0.0
+
+
+def test_invalid_asset_id_stub_blocks_path_traversal(tmp_path: Path) -> None:
+    """`asset_id_stub="../escaped"` must raise ImageProviderError and write
+    nothing — protects against the directory-escape vector from review #3.1."""
+    provider = _make_provider(tmp_path)
+    with pytest.raises(ImageProviderError):
+        provider.generate(
+            prompt=_BILINGUAL_PROMPT,
+            asset_kind="character_sheet",
+            target_ref="char_vellin",
+            target_type="character",
+            asset_role="character_sheet",
+            asset_id_stub="../escaped",
+        )
+    # Sibling-of-pending must not have been created.
+    assert not (tmp_path / "escaped").exists()
+    assert not (tmp_path / "pending" / "..").resolve().joinpath("escaped").exists()
 
 
 def test_empty_prompt_falls_back_to_placeholder_with_warning(
