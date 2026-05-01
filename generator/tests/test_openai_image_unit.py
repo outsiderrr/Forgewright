@@ -243,6 +243,33 @@ def test_generate_raises_on_malformed_base64(monkeypatch) -> None:
         )
 
 
+def test_generate_rejects_n_greater_than_one(monkeypatch) -> None:
+    """n>1 would be billed but only first image returned (review of
+    T-1.5.9 #4.3). Provider must reject before any API call happens."""
+    provider, mock_client = _make_provider_with_mock_client(monkeypatch)
+
+    with pytest.raises(ImageProviderError, match=r"n=1 only"):
+        provider.generate(
+            prompt="x",
+            n=2,
+            asset_kind="character_sheet",
+            target_ref="char_x",
+            target_type="character",
+            asset_role="character_sheet",
+            asset_id_stub="img_x_neutral",
+        )
+    # The API was NOT called — rejection happens before the network step.
+    assert mock_client.images.generate.call_count == 0
+
+
+def test_estimate_cost_scales_linearly_for_n_above_one(monkeypatch) -> None:
+    """estimate_cost still scales linearly so upstream budget can pre-reserve
+    for batched workflows even though generate() rejects n>1."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake")
+    provider = OpenAIImageProvider()
+    assert provider.estimate_cost(n=4, size=(1024, 1024)) == pytest.approx(0.68)
+
+
 def test_client_construction_failure_wraps_as_provider_error(monkeypatch) -> None:
     """SDK constructor side effects (e.g. ImportError under socks proxy
     without `socksio`) must surface as ImageProviderError, not bare SDK

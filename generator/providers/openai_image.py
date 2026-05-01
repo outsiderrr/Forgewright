@@ -117,6 +117,18 @@ class OpenAIImageProvider:
         asset_id_stub: str,
         variant_label: str = "",
     ) -> ImageGenerationResult:
+        # ImageGenerationResult carries a single `image_bytes` payload, so
+        # n>1 would silently discard the extras while still being billed for
+        # them. Reject up front; estimate_cost still scales linearly so the
+        # upstream budget can pre-reserve for batched manual workflows.
+        if n != 1:
+            raise ImageProviderError(
+                f"OpenAIImageProvider currently supports n=1 only "
+                f"(got n={n}); ImageGenerationResult carries a single "
+                f"image_bytes payload, so additional images would be billed "
+                f"but discarded."
+            )
+
         # Fallback ref-image handling: append textual paths to the prompt so
         # the model gets a hint without us uploading bytes (deferred to a
         # later PR; ADR-014 calls character-reference upload "Strategy A" not
