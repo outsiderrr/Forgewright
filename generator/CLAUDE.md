@@ -4,7 +4,7 @@
 
 开发期的 LLM 调用层：把 `/schema/` 与 `/state/ontology/` 喂给 LLM，产出候选 JSON，交给 `/validator/` 校验。
 
-## 硬性约束（继承自 /CLAUDE.md，并补充阶段 1 三条 ADR）
+## 硬性约束（继承自 /CLAUDE.md，并补充阶段 1 / 1.5 ADR）
 
 - **运行时（`/engine`）严禁 import 本模块下任何符号**（ADR-002 / ADR-004）。本模块只在开发期执行。
 - **LLM 调用必须走 `LLMProvider` 接口**（ADR-011）。业务代码不得直接 `import google.genai`；只允许 `/generator/providers/` 下的具体 provider 实现持有该 import。
