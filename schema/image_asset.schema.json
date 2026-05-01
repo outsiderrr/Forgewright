@@ -89,8 +89,9 @@
       "minLength": 1
     },
     "prompt_hash": {
-      "description": "🟡 生成时 prompt 文本的 sha256 hex；用于追溯。",
-      "type": "string"
+      "description": "🟡 生成时 prompt 文本的 sha256 hex；用于追溯。pattern 强制 64 位小写 hex（review of T-1.5.2 #4.2）。",
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     },
     "generation_metadata": {
       "description": "🟡 自由 dict：含 prompt 文本 / 风格基准引用 / 时间戳 / API 调用元数据等；schema 不约束内部结构。",

@@ -39,7 +39,7 @@
 | `file_size_bytes` | integer | ✗ | minimum 1 | 文件字节数；R8 机械预检字段。 |
 | `has_alpha` | boolean | ✗ | — | 透明通道存在；`character_sheet` 应 true / `scene_background` 应 false（语义层校验）。 |
 | `file_path` | string | ✓ | minLength 1 | 相对仓库根的路径（如 `content/visuals/vellin/img_vellin_neutral.png`）。 |
-| `prompt_hash` | string | ✗ | — | 生成时 prompt 文本的 sha256 hex；用于追溯。 |
+| `prompt_hash` | string | ✗ | `^[a-f0-9]{64}$` | 生成时 prompt 文本的 sha256 hex（64 位小写 hex）；用于追溯。 |
 | `generation_metadata` | object | ✗ | 自由 dict | prompt 文本 / 风格基准引用 / 时间戳 / API 元数据；schema 不约束内部结构。 |
 | `style_reference_id` | string \| null | ✗ | — | 指向 `_reference/` 内的基准图标识。 |
 | `reference_ids` | array of string | ✗ | default `[]` | **Round 5 U-GPT-6 软闸门**：本资产引用的 `_reference/` 基准图 ID 数组；trace 风格依赖。 |
@@ -83,7 +83,7 @@ character_sheet 实例（角色立绘）：
   "file_size_bytes": 1843200,
   "has_alpha": true,
   "file_path": "content/visuals/vellin/img_vellin_neutral.png",
-  "prompt_hash": "a3f1...e7c9",
+  "prompt_hash": "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7",
   "generation_metadata": {
     "prompt_text": "Vellin, a stoic mercenary in worn leather armor; neutral expression; ...",
     "model_id": "gpt-image-1",

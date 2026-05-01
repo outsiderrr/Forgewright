@@ -211,3 +211,35 @@ def test_file_path_outside_visuals_rejected():
     sample = make_valid_character_asset()
     sample["file_path"] = "content/not_visuals/img.png"
     assert not v.is_valid(sample)
+
+
+# ---------------------------------------------------------------------------
+# 负样本：prompt_hash sha256 hex（review of T-1.5.2 #4.2）
+# ---------------------------------------------------------------------------
+
+def test_invalid_prompt_hash_rejected():
+    """prompt_hash 必须是 64 位小写 hex；任意字符串 / 大写 / 长度不符 / 非 hex 字符均拒收。"""
+    v = _validator()
+    sample = make_valid_character_asset()
+
+    sample["prompt_hash"] = "not-sha256"
+    assert not v.is_valid(sample)
+
+    sample["prompt_hash"] = "a3f1...e7c9"
+    assert not v.is_valid(sample)
+
+    # 长度不足（63 位）
+    sample["prompt_hash"] = "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca"
+    assert not v.is_valid(sample)
+
+    # 大写 hex（pattern 仅允许小写）
+    sample["prompt_hash"] = "9B71D224BD62F3785D96D46AD3EA3D73319BFBC2890CAADAE2DFF72519673CA7"
+    assert not v.is_valid(sample)
+
+
+def test_valid_prompt_hash_accepted():
+    """正样本：64 位小写 hex 通过。"""
+    v = _validator()
+    sample = make_valid_character_asset()
+    sample["prompt_hash"] = "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca7"
+    assert v.is_valid(sample)
