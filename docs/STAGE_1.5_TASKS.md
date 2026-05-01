@@ -130,6 +130,16 @@ Wave H (验收):       T-1.5.10
 
 **强制：每个 T-1.5.X 都要产出**（包括纯文档任务——doc 评审能抓"事实错误 / 规则违反 / 不一致"）。
 
+**执行会话 push 前自检**（避免 placeholder 漏替换；T-1.5.1A 实测踩过 `[REVIEW_COMMIT]` / `[REVIEW_STATS]` 漏填）：
+
+```bash
+# 在产出文件中搜剩余字面 placeholder：除 [REPORT_DATE] 外应零命中
+grep -nE '\[(TASK_ID|TASK_TITLE|REVIEW_COMMIT|REVIEW_STATS|MODULE_BOUNDARIES|KEY_DECISIONS|KNOWN_CONSTRAINTS|EXTRA_READING)\]' docs/reviews/_prompts/T-1.5.X_codex_review.md
+# 若有任何一行命中 → 回去替换；只有 [REPORT_DATE] 应保留字面（由 Codex 自填）
+```
+
+完成报告里需明确**已 grep 自检并零命中**——这是与"已 commit + push"同级的 push 前必做。
+
 ---
 
 ### 模板正文
