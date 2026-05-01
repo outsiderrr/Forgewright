@@ -13,6 +13,7 @@ dependencies = [
     "google-genai>=1.73",
     "datamodel-code-generator>=0.56",
     "python-dotenv>=1.0",
+    "Pillow>=10",
 ]
 
 [project.optional-dependencies]

@@ -6,13 +6,29 @@
   - Layer 3 (cons)：跨对象一致性 + 本体引用闭合性
 
 公开 API：validate(graph_dict) -> ValidationReport。三层全跑，不短路。
+
+视觉资产（T-1.5.4）独立成第四入口：validate_image_asset(path, asset_kind=...) →
+list[ImageValidationError]。它针对**单个图像文件**而非 graph dict，因此与上面三
+层并行而非纳入 ValidationReport（定位单位不同）。
 """
 from __future__ import annotations
 
 from . import consistency_check, graph_check, schema_check
+from .image_validator import (
+    ImageValidationConfig,
+    ImageValidationError,
+    validate_image_asset,
+)
 from .report import Issue, ValidationReport
 
-__all__ = ["validate", "Issue", "ValidationReport"]
+__all__ = [
+    "validate",
+    "Issue",
+    "ValidationReport",
+    "validate_image_asset",
+    "ImageValidationError",
+    "ImageValidationConfig",
+]
 
 
 def validate(graph_dict: dict) -> ValidationReport:
