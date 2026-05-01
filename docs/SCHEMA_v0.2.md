@@ -38,7 +38,7 @@
 | `height` | integer | ✓ | 256 ≤ h ≤ 4096 | 高度像素（同 `width`）。 |
 | `file_size_bytes` | integer | ✗ | minimum 1 | 文件字节数；R8 机械预检字段。 |
 | `has_alpha` | boolean | ✗ | — | 透明通道存在；`character_sheet` 应 true / `scene_background` 应 false（语义层校验）。 |
-| `file_path` | string | ✓ | minLength 1 | 相对仓库根的路径（如 `content/visuals/vellin/img_vellin_neutral.png`）。 |
+| `file_path` | string | ✓ | `^content/visuals/[A-Za-z0-9_/-]+\.(png\|webp)$` | 相对仓库根、仅允许入库后的 `content/visuals/` 下 PNG/WEBP 路径（pattern 阻断目录穿越 / 绝对路径 / 非 visuals 目录）。 |
 | `prompt_hash` | string | ✗ | `^[a-f0-9]{64}$` | 生成时 prompt 文本的 sha256 hex（64 位小写 hex）；用于追溯。 |
 | `generation_metadata` | object | ✗ | 自由 dict | prompt 文本 / 风格基准引用 / 时间戳 / API 元数据；schema 不约束内部结构。 |
 | `style_reference_id` | string \| null | ✗ | — | 指向 `_reference/` 内的基准图标识。 |
@@ -138,7 +138,7 @@ scene_background 实例（场景背景，target_type=scene 试点）：
 
 理由：
 
-1. 简化层次。`manifest.json` 也是全量存（不分文件、不索引），与本体保持一致。
+1. 简化层次。`manifest.json` 也保存完整 ImageAsset 对象（可按 `asset_id` 建索引；T-1.5.7 草案为 `assets: dict[str, ImageAsset]`），而不是只存 `asset_id` stub；与本体中的嵌入对象保持字段一致。
 2. 引用层次太多会让 image_validator 闭合性校验复杂化（要先解析 `asset_id` → `manifest.json` 查表 → 才能拿到完整对象）。
 3. 当前本体规模小（3 个角色 × ~10 张立绘 ≈ 30 个嵌入对象），全量存的成本可忽略。
 4. 阶段 4 开源剥离时若需要分文件，再做反向迁移即可。
