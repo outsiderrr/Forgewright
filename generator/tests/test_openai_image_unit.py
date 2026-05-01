@@ -243,6 +243,32 @@ def test_generate_raises_on_malformed_base64(monkeypatch) -> None:
         )
 
 
+def test_client_construction_failure_wraps_as_provider_error(monkeypatch) -> None:
+    """SDK constructor side effects (e.g. ImportError under socks proxy
+    without `socksio`) must surface as ImageProviderError, not bare SDK
+    exceptions — Protocol contract (review of T-1.5.9 #4.1)."""
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake")
+
+    def _exploding_constructor(*args, **kwargs):
+        raise ImportError("Using SOCKS proxy, but the 'socksio' package is not installed.")
+
+    monkeypatch.setattr(
+        "generator.providers.openai_image.OpenAI", _exploding_constructor
+    )
+
+    provider = OpenAIImageProvider()
+    with pytest.raises(ImageProviderError, match="client setup failed") as ei:
+        provider.generate(
+            prompt="x",
+            asset_kind="character_sheet",
+            target_ref="char_x",
+            target_type="character",
+            asset_role="character_sheet",
+            asset_id_stub="img_x_neutral",
+        )
+    assert isinstance(ei.value.__cause__, ImportError)
+
+
 def test_estimate_cost_uses_conservative_upper_bound(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-fake")
     provider = OpenAIImageProvider()

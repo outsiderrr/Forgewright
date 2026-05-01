@@ -87,11 +87,20 @@ class OpenAIImageProvider:
     def _client(self) -> OpenAI:
         # Lazy: avoid network setup at construction so tests can build the
         # provider without side effects (mirrors GeminiProvider).
+        # Wrap construction failures (e.g. missing optional `socksio` under
+        # `all_proxy=socks5://...`, or any other ImportError/RuntimeError
+        # the SDK may raise at __init__) in ImageProviderError so callers
+        # never see a bare SDK exception — Protocol contract.
         if self._client_cache is None:
-            self._client_cache = OpenAI(
-                api_key=self._api_key,
-                timeout=_HTTP_TIMEOUT_SEC,
-            )
+            try:
+                self._client_cache = OpenAI(
+                    api_key=self._api_key,
+                    timeout=_HTTP_TIMEOUT_SEC,
+                )
+            except Exception as exc:
+                raise ImageProviderError(
+                    f"OpenAI client setup failed: {exc}"
+                ) from exc
         return self._client_cache
 
     def generate(
