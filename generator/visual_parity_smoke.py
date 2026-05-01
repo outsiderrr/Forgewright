@@ -63,6 +63,13 @@ _DEFAULT_PENDING_ROOT = Path("content/visuals/_pending")
 _DEFAULT_COST_LOG = Path("generator/image_cost_log.jsonl")
 
 _PROMPT_ID_RE = re.compile(r"^[a-zA-Z0-9_]{1,64}$")
+# Mirrors /schema/image_asset.schema.json `asset_id` pattern. Validating here
+# (rather than letting ManualImportProvider raise mid-loop) gives the CLI a
+# clean ValueError → exit 2 boundary; matches T-1.5.9 review #4.2.
+_ASSET_ID_RE = re.compile(r"^img_[a-z0-9_]{1,64}$")
+_ASSET_KINDS = {"character_sheet", "scene_background"}
+_TARGET_TYPES = {"character", "location", "scene"}
+_ASSET_ROLES = {"character_sheet", "scene_background"}
 
 
 @dataclass
@@ -229,8 +236,23 @@ def _run_api_half(
     return image_path, "ok", result.cost_usd
 
 
+def _require_nonempty_str(entry: dict, key: str, i: int) -> str:
+    value = entry[key]
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"prompt entry [{i}] field {key!r} must be a non-empty string"
+        )
+    return value
+
+
 def validate_prompts(raw: Any) -> list[dict]:
-    """Validate the JSON body of a `--prompts` file and return it."""
+    """Validate the JSON body of a `--prompts` file and return it.
+
+    Validation is strict because anything that passes here flows directly
+    into provider.generate() — bad enums or non-string types must not
+    reach ManualImportProvider (review of T-1.5.9 #4.2). Errors are
+    raised as ValueError so the CLI can map them to exit code 2 cleanly.
+    """
     if not isinstance(raw, list) or not raw:
         raise ValueError(
             f"--prompts must contain a non-empty JSON list of prompt entries"
@@ -253,11 +275,38 @@ def validate_prompts(raw: Any) -> list[dict]:
             raise ValueError(
                 f"prompt entry [{i}] missing required fields: {sorted(missing)}"
             )
-        if not _PROMPT_ID_RE.fullmatch(entry["prompt_id"]):
+
+        prompt_id = _require_nonempty_str(entry, "prompt_id", i)
+        _require_nonempty_str(entry, "prompt", i)
+        _require_nonempty_str(entry, "target_ref", i)
+        asset_id_stub = _require_nonempty_str(entry, "asset_id_stub", i)
+
+        if not _PROMPT_ID_RE.fullmatch(prompt_id):
             # Used as a filesystem segment for the API image; reject anything
             # that could escape the run dir.
             raise ValueError(
-                f"prompt_id {entry['prompt_id']!r} must match {_PROMPT_ID_RE.pattern}"
+                f"prompt entry [{i}] prompt_id {prompt_id!r} must match "
+                f"{_PROMPT_ID_RE.pattern}"
+            )
+        if not _ASSET_ID_RE.fullmatch(asset_id_stub):
+            raise ValueError(
+                f"prompt entry [{i}] asset_id_stub {asset_id_stub!r} must "
+                f"match {_ASSET_ID_RE.pattern} (mirrors ImageAsset.asset_id)"
+            )
+        if entry["asset_kind"] not in _ASSET_KINDS:
+            raise ValueError(
+                f"prompt entry [{i}] asset_kind {entry['asset_kind']!r} must "
+                f"be one of {sorted(_ASSET_KINDS)}"
+            )
+        if entry["target_type"] not in _TARGET_TYPES:
+            raise ValueError(
+                f"prompt entry [{i}] target_type {entry['target_type']!r} "
+                f"must be one of {sorted(_TARGET_TYPES)}"
+            )
+        if entry["asset_role"] not in _ASSET_ROLES:
+            raise ValueError(
+                f"prompt entry [{i}] asset_role {entry['asset_role']!r} must "
+                f"be one of {sorted(_ASSET_ROLES)}"
             )
     return raw
 

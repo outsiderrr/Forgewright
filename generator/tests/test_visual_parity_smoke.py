@@ -136,6 +136,57 @@ def test_validate_prompts_rejects_unsafe_prompt_id() -> None:
         validate_prompts([bad])
 
 
+def test_validate_prompts_rejects_non_string_prompt_id() -> None:
+    """Non-string prompt_id must yield a clean ValueError, not an
+    uncaught TypeError from re.fullmatch (review of T-1.5.9 #4.2)."""
+    bad = {**_PROMPTS_FIXTURE[0], "prompt_id": 123}
+    with pytest.raises(ValueError, match="prompt_id"):
+        validate_prompts([bad])
+
+
+def test_validate_prompts_rejects_empty_prompt() -> None:
+    bad = {**_PROMPTS_FIXTURE[0], "prompt": "   "}
+    with pytest.raises(ValueError, match="'prompt'"):
+        validate_prompts([bad])
+
+
+def test_validate_prompts_rejects_invalid_asset_id_stub() -> None:
+    """asset_id_stub mirrors ImageAsset.asset_id pattern; CLI should reject
+    early so ManualImportProvider doesn't have to (review of T-1.5.9 #4.2)."""
+    bad = {**_PROMPTS_FIXTURE[0], "asset_id_stub": "../escape"}
+    with pytest.raises(ValueError, match="asset_id_stub"):
+        validate_prompts([bad])
+
+
+def test_validate_prompts_rejects_invalid_asset_kind() -> None:
+    bad = {**_PROMPTS_FIXTURE[0], "asset_kind": "concept_art"}
+    with pytest.raises(ValueError, match="asset_kind"):
+        validate_prompts([bad])
+
+
+def test_validate_prompts_rejects_invalid_target_type() -> None:
+    bad = {**_PROMPTS_FIXTURE[0], "target_type": "faction"}
+    with pytest.raises(ValueError, match="target_type"):
+        validate_prompts([bad])
+
+
+def test_validate_prompts_rejects_invalid_asset_role() -> None:
+    bad = {**_PROMPTS_FIXTURE[0], "asset_role": "concept_art"}
+    with pytest.raises(ValueError, match="asset_role"):
+        validate_prompts([bad])
+
+
+def test_main_returns_exit_2_on_invalid_enum(tmp_path: Path, monkeypatch) -> None:
+    """CLI must surface validation errors as exit 2, not a stack trace."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    bad = [{**_PROMPTS_FIXTURE[0], "asset_kind": "concept_art"}]
+    prompts_path = tmp_path / "prompts.json"
+    prompts_path.write_text(json.dumps(bad), encoding="utf-8")
+    rc = main(["--prompts", str(prompts_path)])
+    assert rc == 2
+
+
 def test_happy_path_writes_report_and_cost_log(tmp_path: Path) -> None:
     dirs = _make_dirs(tmp_path)
     fake_api = _FakeApiProvider()
