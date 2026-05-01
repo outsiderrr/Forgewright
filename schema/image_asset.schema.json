@@ -83,8 +83,9 @@
       "type": "boolean"
     },
     "file_path": {
-      "description": "相对仓库根的路径（如 'content/visuals/vellin/img_vellin_neutral.png'）。",
+      "description": "相对仓库根、仅允许入库后的 content/visuals/ 下 PNG/WEBP 路径（如 'content/visuals/vellin/img_vellin_neutral.png'）。pattern 阻断目录穿越（'..' 含点不在字符类内）/ 绝对路径 / 非 content/visuals/ 目录 — schema 源头收窄路径安全（review of T-1.5.2 #4.1）。",
       "type": "string",
+      "pattern": "^content/visuals/[A-Za-z0-9_/-]+\\.(png|webp)$",
       "minLength": 1
     },
     "prompt_hash": {

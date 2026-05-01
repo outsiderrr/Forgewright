@@ -183,3 +183,31 @@ def test_schema_version_wrong_value_rejected():
     sample = make_valid_character_asset()
     sample["schema_version"] = "0.1.1"
     assert not v.is_valid(sample)
+
+
+# ---------------------------------------------------------------------------
+# 负样本：file_path 路径安全（review of T-1.5.2 #4.1）
+# ---------------------------------------------------------------------------
+
+def test_file_path_directory_traversal_rejected():
+    """目录穿越路径拒收：'..' 含点不在 pattern 字符类内。"""
+    v = _validator()
+    sample = make_valid_character_asset()
+    sample["file_path"] = "../outside/secret.png"
+    assert not v.is_valid(sample)
+
+
+def test_file_path_absolute_rejected():
+    """绝对路径拒收：pattern 锚定 'content/visuals/' 前缀，不允许 '/' 起头。"""
+    v = _validator()
+    sample = make_valid_character_asset()
+    sample["file_path"] = "/tmp/secret.png"
+    assert not v.is_valid(sample)
+
+
+def test_file_path_outside_visuals_rejected():
+    """content/ 下但非 visuals/ 子目录拒收。"""
+    v = _validator()
+    sample = make_valid_character_asset()
+    sample["file_path"] = "content/not_visuals/img.png"
+    assert not v.is_valid(sample)
