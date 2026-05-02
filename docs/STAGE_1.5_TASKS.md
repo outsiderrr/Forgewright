@@ -130,15 +130,36 @@ Wave H (验收):       T-1.5.10
 
 **强制：每个 T-1.5.X 都要产出**（包括纯文档任务——doc 评审能抓"事实错误 / 规则违反 / 不一致"）。
 
-**执行会话 push 前自检**（避免 placeholder 漏替换；T-1.5.1A 实测踩过 `[REVIEW_COMMIT]` / `[REVIEW_STATS]` 漏填）：
+**执行会话 push 前自检**（避免 placeholder 漏替换 + 漏填 / prose-substitute；T-1.5.1A / T-1.5.5 / T-1.5.7 实测踩过）：
 
 ```bash
-# 在产出文件中搜剩余字面 placeholder：除 [REPORT_DATE] 外应零命中
-grep -nE '\[(TASK_ID|TASK_TITLE|REVIEW_COMMIT|REVIEW_STATS|MODULE_BOUNDARIES|KEY_DECISIONS|KNOWN_CONSTRAINTS|EXTRA_READING)\]' docs/reviews/_prompts/T-1.5.X_codex_review.md
-# 若有任何一行命中 → 回去替换；只有 [REPORT_DATE] 应保留字面（由 Codex 自填）
+PROMPT=docs/reviews/_prompts/T-1.5.X_codex_review.md  # 替换为本任务实际路径
+
+# Check 1: 不允许残留字面 [PLACEHOLDER]（除 [REPORT_DATE]）—— 防 T-1.5.1A 风格漏替换
+grep -nE '\[(TASK_ID|TASK_TITLE|REVIEW_COMMIT|REVIEW_STATS|MODULE_BOUNDARIES|KEY_DECISIONS|KNOWN_CONSTRAINTS|EXTRA_READING)\]' "$PROMPT"
+# 期望：零命中（grep 退出码 1）
+
+# Check 2: Commit 行必须是 7+ 位 hex hash —— 防 T-1.5.5 / T-1.5.7 风格 prose-substitute
+#   反例（不通过）：**Commit**：T-1.5.7 实现 commit（作者会在执行修复时给出 hash）
+#   正例（通过）：  **Commit**：b460c73
+grep -cE '^- \*\*Commit\*\*：[0-9a-f]{7,40}\b' "$PROMPT"
+# 期望：输出 1（恰好 1 行匹配）；输出 0 = 散文化或空，需替换为真 hash
+
+# Check 3: Statistics 行必须含 +<数字> 模式 —— 粗略防数值漂移
+#   反例（不通过）：**Statistics**：3 业务文件 + 3 测试 + ...（文字描述无数字加号）
+#   正例（通过）：  **Statistics**：8 文件 / +2077 行
+grep -cE '^- \*\*Statistics\*\*：.*\+[0-9]+' "$PROMPT"
+# 期望：输出 1
+
+# Check 4: stats 数值与实际 git diff 一致 —— 防数值写错（如"约 +1300 行" vs 实际 +2077）
+git diff --shortstat HEAD~1 HEAD
+# 把这行输出（如 "8 files changed, 2077 insertions(+)"）与 prompt 内 **Statistics**：行的数字目视对照；
+# 文件数 / 行数任一不匹配 → 修
 ```
 
-完成报告里需明确**已 grep 自检并零命中**——这是与"已 commit + push"同级的 push 前必做。
+完成报告里需明确**全部 4 条自检通过**——这是与"已 commit + push"同级的 push 前必做。Check 1–3 是机器可验证（grep / git 命令一行 pass/fail），Check 4 是 1 秒目视对照。
+
+**为何不只用 Check 1**：grep 找的是 `[X]` 字面残留；执行会话只要把 `[REVIEW_COMMIT]` 整段删掉换成散文（如"作者会在执行修复时给出 hash"），Check 1 就误判通过。Check 2（hash 正则）+ Check 3（stats 含数字加号）从机器层面拦死这种逃逸。Check 4 兜底数值漂移。
 
 ---
 
