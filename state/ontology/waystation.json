@@ -1,27 +1,153 @@
 {
-  "entities": [
-    {
-      "id": "char_vellin",
-      "display_name": "Vellin",
-      "type": "character",
-      "visual_assets": []
-    },
-    {
-      "id": "char_corvan",
-      "display_name": "Corvan",
-      "type": "character",
-      "visual_assets": []
-    },
-    {
-      "id": "char_aelwin",
-      "display_name": "Aelwin",
-      "type": "character",
-      "visual_assets": []
-    },
-    {
-      "id": "scene_waystation_of_iron_oath",
-      "display_name": "Waystation of the Iron Oath",
-      "type": "scene"
-    }
-  ]
+    "entities": [
+        {
+            "id": "char_vellin",
+            "display_name": "Vellin",
+            "type": "character",
+            "visual_assets": [
+                {
+                    "schema_version": "0.2.0",
+                    "asset_id": "img_vellin_looking_distant_torso_up_05",
+                    "asset_kind": "character_sheet",
+                    "target_ref": "char_vellin",
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "character_ref": "char_vellin",
+                    "location_ref": null,
+                    "source_mode": "manual",
+                    "format": "png",
+                    "width": 1254,
+                    "height": 1254,
+                    "file_size_bytes": 2735344,
+                    "has_alpha": true,
+                    "file_path": "content/visuals/vellin/img_vellin_looking_distant_torso_up_05.png",
+                    "prompt_hash": "66d9a0f7c547a5a0739bbedc4242311702e56ea9f4dddc842455be7c23370f2b",
+                    "generation_metadata": null,
+                    "style_reference_id": null,
+                    "reference_ids": [],
+                    "reference_license_note": "",
+                    "open_source_ok": false,
+                    "commercial_ok": false,
+                    "created_at": "2026-05-02T08:24:26.069346Z"
+                },
+                {
+                    "schema_version": "0.2.0",
+                    "asset_id": "img_vellin_neutral_torso_up_01",
+                    "asset_kind": "character_sheet",
+                    "target_ref": "char_vellin",
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "character_ref": "char_vellin",
+                    "location_ref": null,
+                    "source_mode": "manual",
+                    "format": "png",
+                    "width": 1254,
+                    "height": 1254,
+                    "file_size_bytes": 2715757,
+                    "has_alpha": true,
+                    "file_path": "content/visuals/vellin/img_vellin_neutral_torso_up_01.png",
+                    "prompt_hash": "b8c8f78e789c1d133fae4012edffda719255db6272e0a5b94f0cb5e2146f42b6",
+                    "generation_metadata": null,
+                    "style_reference_id": null,
+                    "reference_ids": [],
+                    "reference_license_note": "",
+                    "open_source_ok": false,
+                    "commercial_ok": false,
+                    "created_at": "2026-05-02T08:24:26.067545Z"
+                },
+                {
+                    "schema_version": "0.2.0",
+                    "asset_id": "img_vellin_smiling_torso_up_02",
+                    "asset_kind": "character_sheet",
+                    "target_ref": "char_vellin",
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "character_ref": "char_vellin",
+                    "location_ref": null,
+                    "source_mode": "manual",
+                    "format": "png",
+                    "width": 1254,
+                    "height": 1254,
+                    "file_size_bytes": 2335180,
+                    "has_alpha": true,
+                    "file_path": "content/visuals/vellin/img_vellin_smiling_torso_up_02.png",
+                    "prompt_hash": "d39502f3b2c9014a2bfd0b61080c303f3d3e4a07b78a4a8b7a2ea1cf14ebfbcf",
+                    "generation_metadata": null,
+                    "style_reference_id": null,
+                    "reference_ids": [],
+                    "reference_license_note": "",
+                    "open_source_ok": false,
+                    "commercial_ok": false,
+                    "created_at": "2026-05-02T08:24:26.068181Z"
+                },
+                {
+                    "schema_version": "0.2.0",
+                    "asset_id": "img_vellin_tense_torso_up_04",
+                    "asset_kind": "character_sheet",
+                    "target_ref": "char_vellin",
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "character_ref": "char_vellin",
+                    "location_ref": null,
+                    "source_mode": "manual",
+                    "format": "png",
+                    "width": 1254,
+                    "height": 1254,
+                    "file_size_bytes": 2332581,
+                    "has_alpha": true,
+                    "file_path": "content/visuals/vellin/img_vellin_tense_torso_up_04.png",
+                    "prompt_hash": "c9b1892d41d1db746f629682cc0dbdc4441c7dee350278f8cc44c81dfa709c18",
+                    "generation_metadata": null,
+                    "style_reference_id": null,
+                    "reference_ids": [],
+                    "reference_license_note": "",
+                    "open_source_ok": false,
+                    "commercial_ok": false,
+                    "created_at": "2026-05-02T08:24:26.068974Z"
+                },
+                {
+                    "schema_version": "0.2.0",
+                    "asset_id": "img_vellin_wary_torso_up_03",
+                    "asset_kind": "character_sheet",
+                    "target_ref": "char_vellin",
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "character_ref": "char_vellin",
+                    "location_ref": null,
+                    "source_mode": "manual",
+                    "format": "png",
+                    "width": 1254,
+                    "height": 1254,
+                    "file_size_bytes": 2235686,
+                    "has_alpha": true,
+                    "file_path": "content/visuals/vellin/img_vellin_wary_torso_up_03.png",
+                    "prompt_hash": "f0f2b9723d9c521d8a195d74e7b3a113a5e9b5ae7e520da5978a0b9eef02cfed",
+                    "generation_metadata": null,
+                    "style_reference_id": null,
+                    "reference_ids": [],
+                    "reference_license_note": "",
+                    "open_source_ok": false,
+                    "commercial_ok": false,
+                    "created_at": "2026-05-02T08:24:26.068566Z"
+                }
+            ]
+        },
+        {
+            "id": "char_corvan",
+            "display_name": "Corvan",
+            "type": "character",
+            "visual_assets": []
+        },
+        {
+            "id": "char_aelwin",
+            "display_name": "Aelwin",
+            "type": "character",
+            "visual_assets": []
+        },
+        {
+            "id": "scene_waystation_of_iron_oath",
+            "display_name": "Waystation of the Iron Oath",
+            "type": "scene"
+        }
+    ]
 }
