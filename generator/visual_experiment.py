@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 from datetime import datetime, timezone
@@ -76,6 +77,23 @@ DEFAULT_EXPRESSIONS: list[str] = [
 ]
 DEFAULT_POSES: list[str] = ["torso_up"]
 DEFAULT_TIMES_OF_DAY: list[str] = ["dusk", "night", "dawn", "midday"]
+
+# review of T-1.5.8 #4.1: batch_name lands in `<ts>_<batch_name>` directory
+# names and downstream log filters; an input like `x/../oops` would let an
+# accidental keystroke write outside experiments/. Restrict to a
+# filename-safe charset and a sane length cap (80 + leading char). The
+# pattern intentionally rejects leading dot/dash so a stray flag never
+# becomes a directory name.
+_BATCH_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
+
+
+def _validate_batch_name(batch_name: str) -> str:
+    if not isinstance(batch_name, str) or not _BATCH_NAME_RE.fullmatch(batch_name):
+        raise ValueError(
+            "batch_name must match ^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$ — "
+            "letters, digits, '.', '_' or '-' only; no path separators."
+        )
+    return batch_name
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +243,20 @@ def run_visual_experiment(
     if n < 1:
         raise ValueError("n must be >= 1")
 
+    safe_batch_name = _validate_batch_name(batch_name)
     ts = timestamp or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    batch_dir = out_root / f"{ts}_{batch_name}"
+    # Resolve before joining + after, so a hostile out_root that contains a
+    # symlink trick still has to land inside out_root.resolve(). The
+    # batch_name regex above already blocks `..` / `/` / `\\`, but defending
+    # in depth is cheap.
+    out_root_resolved = Path(out_root).resolve()
+    batch_dir = (out_root_resolved / f"{ts}_{safe_batch_name}").resolve()
+    try:
+        batch_dir.relative_to(out_root_resolved)
+    except ValueError as exc:  # pragma: no cover — regex makes this unreachable
+        raise ValueError(
+            f"batch_dir {batch_dir} escapes out_root {out_root_resolved}"
+        ) from exc
     batch_dir.mkdir(parents=True, exist_ok=True)
     results_path = batch_dir / "results.jsonl"
     summary_path = batch_dir / "summary.txt"

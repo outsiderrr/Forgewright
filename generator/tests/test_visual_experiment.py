@@ -249,6 +249,48 @@ def test_n_must_be_positive(isolated_paths: dict[str, Path]) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad_name",
+    [
+        "../../etc/passwd",
+        "a/b",
+        ".hidden",
+        "-leading-dash",
+        "name with space",
+        "x" * 100,  # too long
+        "",
+        "weird;name",
+    ],
+)
+def test_batch_name_must_be_filename_safe(
+    isolated_paths: dict[str, Path], bad_name: str
+) -> None:
+    """review of T-1.5.8 #4.1: a batch_name with a path separator (or
+    other shell-hostile char) used to land in the directory name. Now
+    we reject early with ValueError before any provider is constructed.
+    """
+    provider = ManualImportProvider(pending_root=isolated_paths["pending_root"])
+    with pytest.raises(ValueError, match="batch_name must match"):
+        run_visual_experiment(
+            batch_name=bad_name,
+            target_ref="char_vellin",
+            target_type="character",
+            asset_role="character_sheet",
+            n=1,
+            mode="manual",
+            provider=provider,
+            expressions=["neutral"],
+            poses=["torso_up"],
+            out_root=isolated_paths["out_root"],
+            ontology_path=isolated_paths["ontology_path"],
+            reference_dir=isolated_paths["reference_dir"],
+        )
+    # And nothing was written under out_root.
+    assert not isolated_paths["out_root"].exists() or not any(
+        isolated_paths["out_root"].iterdir()
+    )
+
+
 def test_help_smoke() -> None:
     """`python -m generator.visual_experiment --help` must not crash.
 
