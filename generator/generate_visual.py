@@ -648,27 +648,33 @@ def _provider_id_for_log(gen_result: "ImageGenerationResult") -> str:
 
 def _make_asset_id_stub(
     target_ref: str,
-    asset_role: str,  # noqa: ARG001 — kept in signature for future role-prefix
+    asset_role: str,
     variant_label: str,
     idx: int,
 ) -> str:
     """Return a deterministic asset_id_stub matching `^img_[a-z0-9_]{1,64}$`.
 
-    `asset_role` is in the signature for forward-compat (T-1.5.6 spec calls
-    it out as one of the four inputs) — today the target prefix already
-    distinguishes character vs scene ("char_*" / "scene_*"), so role isn't
-    encoded into the stub and the body stays short. If a future role
-    ("item_icon" / "ui_portrait") is added we'll fold it in here.
+    Stub layout: `img_<short_target>_<role>_<variant>_<idx>`.
+
+    review of T-1.5.6 #4.3: `asset_role` is now part of the stub (was
+    forward-compat-only); naive end-truncation could drop the variant /
+    idx and collide across variants of a long target. We always preserve
+    the suffix `<role>_<variant>_<idx>` and truncate only the target
+    prefix to fit the schema's 64-char body bound. T-1.5.7 import depends
+    on this for idempotent re-imports.
     """
-    short = _TARGET_PREFIX_RE.sub("", target_ref)
-    short = _normalise_variant(short)
+    short = _normalise_variant(_TARGET_PREFIX_RE.sub("", target_ref))
+    role = _normalise_variant(asset_role)
     variant = _normalise_variant(variant_label)
-    body = f"{short}_{variant}_{idx:02d}".strip("_")
-    body = _REPEAT_UNDERSCORE_RE.sub("_", body)
-    # Hard cap the body at 64 chars (the schema's outer bound) to avoid
-    # silently failing the regex check inside ManualImportProvider.
-    if len(body) > 64:
-        body = body[:64].rstrip("_")
+    suffix = f"{role}_{variant}_{idx:02d}".strip("_")
+    suffix = _REPEAT_UNDERSCORE_RE.sub("_", suffix)
+
+    # Reserve room for the suffix + the underscore that separates it from
+    # the prefix; whatever's left is how much target prefix we keep.
+    prefix_budget = max(0, 64 - len(suffix) - 1)
+    short_prefix = short[:prefix_budget].rstrip("_")
+    body = f"{short_prefix}_{suffix}" if short_prefix else suffix
+    body = _REPEAT_UNDERSCORE_RE.sub("_", body).strip("_")
     return f"img_{body}"
 
 

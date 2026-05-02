@@ -267,9 +267,9 @@ def test_scenario_1_manual_character_sheet_writes_three_packages(
     assert all(r.success for r in results)
     assert all(r.cost_usd == 0.0 for r in results)
     assert {r.asset_id_stub for r in results} == {
-        "img_vellin_neutral_torso_up_01",
-        "img_vellin_smiling_torso_up_02",
-        "img_vellin_wary_torso_up_03",
+        "img_vellin_character_sheet_neutral_torso_up_01",
+        "img_vellin_character_sheet_smiling_torso_up_02",
+        "img_vellin_character_sheet_wary_torso_up_03",
     }
     for r in results:
         assert r.prompt_package_path is not None
@@ -320,7 +320,7 @@ def test_scenario_2_manual_scene_background_writes_one_package(
     assert len(results) == 1
     r = results[0]
     assert r.success
-    assert r.asset_id_stub == "img_waystation_of_iron_oath_dusk_01"
+    assert r.asset_id_stub == "img_waystation_of_iron_oath_scene_background_dusk_01"
     body = (r.prompt_package_path / "prompt.md").read_text(encoding="utf-8")
     # No characters in the frame is a hard rule for scene_background.
     assert "No characters visible" in body or "no characters" in body.lower()
@@ -743,3 +743,48 @@ def test_long_target_ref_stub_stays_under_64_char_body(
     # asset_id_stub = "img_" + body; body must be ≤ 64 per schema.
     body = r.asset_id_stub.removeprefix("img_")
     assert 1 <= len(body) <= 64
+
+
+# ---------------------------------------------------------------------------
+# Regression #4.3: long target + multi-variant must produce distinct stubs;
+# the role/variant/idx suffix must always be preserved (review of T-1.5.6 #4.3).
+# ---------------------------------------------------------------------------
+
+
+def test_long_target_multi_variant_stubs_do_not_collide(
+    isolated_paths: dict[str, Path],
+) -> None:
+    long_target = "scene_" + "x" * 80
+    ontology_path = isolated_paths["ontology_path"]
+    data = json.loads(ontology_path.read_text())
+    data["entities"].append(
+        {"id": long_target, "display_name": "long-anchor", "type": "scene"}
+    )
+    ontology_path.write_text(json.dumps(data), encoding="utf-8")
+
+    requirement = SceneBackgroundRequirement(
+        target_ref=long_target,
+        target_type="scene",
+        n=2,
+        times_of_day=["dusk", "dawn"],
+    )
+    results = generate_scene_background(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="manual",
+        ontology_path=ontology_path,
+        scene_path=isolated_paths["scene_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+
+    stubs = [r.asset_id_stub for r in results]
+    assert len(stubs) == 2
+    assert stubs[0] != stubs[1]
+    # The suffix must always be intact — collisions historically came from
+    # truncating the suffix off the right end of a long body.
+    assert stubs[0].endswith("scene_background_dusk_01")
+    assert stubs[1].endswith("scene_background_dawn_02")
+    # Bodies must still satisfy the schema's 64-char bound.
+    for s in stubs:
+        body = s.removeprefix("img_")
+        assert 1 <= len(body) <= 64
