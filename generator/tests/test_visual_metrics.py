@@ -383,6 +383,163 @@ def test_unbatched_import_rows_are_correlated_via_results_stubs(
     assert m["acceptance_rate"] == pytest.approx(1 / 2)
 
 
+def test_duplicate_review_rows_are_deduped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """review of T-1.5.8 #4.2: a duplicated review row must NOT inflate
+    acceptance_rate. The dedup keeps the last (append-only contract:
+    latest decision wins) and ignores asset_ids that aren't in this
+    batch's imported set, so acceptance_rate stays bounded by 1.0.
+    """
+    batch_dir = tmp_path / "20260502T120000Z_dup"
+    batch_dir.mkdir(parents=True)
+    _write_jsonl(
+        batch_dir / "results.jsonl",
+        [
+            {
+                "iter_id": 0,
+                "batch_name": "dup",
+                "target_ref": "char_vellin",
+                "target_type": "character",
+                "asset_role": "character_sheet",
+                "mode": "manual",
+                "result": {
+                    "success": True,
+                    "asset_id_stub": "img_dup",
+                    "prompt_package_path": "p",
+                    "image_bytes_size": 0,
+                    "failure_reason": None,
+                    "cost_usd": 0.0,
+                    "raw_metadata": {},
+                },
+                "generated_at": "2026-05-02T00:00:00+00:00",
+            }
+        ],
+    )
+
+    import_log_path = tmp_path / "import_log.jsonl"
+    monkeypatch.setenv("FORGEWRIGHT_IMPORT_LOG", str(import_log_path))
+    monkeypatch.setenv("FORGEWRIGHT_IMAGE_COST_LOG", str(tmp_path / "no_cost.jsonl"))
+    _write_jsonl(
+        import_log_path,
+        [
+            {
+                "asset_id_stub": "img_dup",
+                "batch_name": "dup",
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            }
+        ],
+    )
+    _write_jsonl(
+        batch_dir / "visual_review_log.jsonl",
+        [
+            # Two A's plus a stale unrelated R for an asset not in this batch.
+            {
+                "asset_id": "img_dup",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-02T01:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+            {
+                "asset_id": "img_dup",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-02T02:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+            {
+                "asset_id": "img_orphan_not_in_batch",
+                "accepted": False,
+                "reason": "stale row",
+                "reviewed_at": "2026-05-02T01:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+        ],
+    )
+
+    m = compute_visual_metrics(batch_dir)
+    assert m["total_imported"] == 1
+    assert m["reviewed_count"] == 1, "duplicate row must collapse to one decision"
+    assert m["acceptance_rate"] == pytest.approx(1.0)
+    assert m["acceptance_rate"] <= 1.0
+
+
+def test_duplicate_reject_keeps_last_decision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the author A'd then changed their mind to R (re-running the
+    review CLI on the same asset_id), the *last* row wins."""
+    batch_dir = tmp_path / "20260502T120000Z_flip"
+    batch_dir.mkdir(parents=True)
+    _write_jsonl(
+        batch_dir / "results.jsonl",
+        [
+            {
+                "iter_id": 0,
+                "batch_name": "flip",
+                "target_ref": "char_vellin",
+                "target_type": "character",
+                "asset_role": "character_sheet",
+                "mode": "manual",
+                "result": {
+                    "success": True,
+                    "asset_id_stub": "img_flip",
+                    "prompt_package_path": "p",
+                    "image_bytes_size": 0,
+                    "failure_reason": None,
+                    "cost_usd": 0.0,
+                    "raw_metadata": {},
+                },
+                "generated_at": "2026-05-02T00:00:00+00:00",
+            }
+        ],
+    )
+
+    import_log_path = tmp_path / "import_log.jsonl"
+    monkeypatch.setenv("FORGEWRIGHT_IMPORT_LOG", str(import_log_path))
+    monkeypatch.setenv("FORGEWRIGHT_IMAGE_COST_LOG", str(tmp_path / "no_cost.jsonl"))
+    _write_jsonl(
+        import_log_path,
+        [
+            {
+                "asset_id_stub": "img_flip",
+                "batch_name": "flip",
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            }
+        ],
+    )
+    _write_jsonl(
+        batch_dir / "visual_review_log.jsonl",
+        [
+            {
+                "asset_id": "img_flip",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-02T01:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+            {
+                "asset_id": "img_flip",
+                "accepted": False,
+                "reason": "changed my mind",
+                "reviewed_at": "2026-05-02T02:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+        ],
+    )
+
+    m = compute_visual_metrics(batch_dir)
+    assert m["reviewed_count"] == 1
+    assert m["acceptance_rate"] == pytest.approx(0.0)
+    reasons = dict(m["reject_reason_top_5"])
+    assert reasons == {"changed my mind": 1}
+
+
 def test_help_smoke() -> None:
     import subprocess
     import sys

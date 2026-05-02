@@ -187,7 +187,27 @@ def compute_visual_metrics(batch_dir: Path) -> dict[str, Any]:
     rejected_reason_top_5 = rejected_reasons.most_common(REJECT_TOP_N)
 
     # ---- acceptance (from visual_review_log.jsonl) ----
-    decisions = [r for r in review if "accepted" in r]
+    # review of T-1.5.8 #4.2: a duplicated review row (concurrent CLI
+    # runs / hand-edited log / leftover entries from a prior import) used
+    # to be counted twice and could push acceptance_rate above 1.0.
+    # Dedup by asset_id; on a duplicate, keep the *last* append-only
+    # decision (matches the CLI's own append-only contract: the latest
+    # row wins). Also restrict to assets in this batch's imported set so
+    # an unrelated stale row doesn't move the numerator.
+    imported_ids = {
+        r.get("final_asset_id") or r.get("asset_id_stub")
+        for r in imported_rows
+    }
+    imported_ids.discard(None)
+    decisions_by_asset: dict[str, dict] = {}
+    for rec in review:
+        asset_id = rec.get("asset_id")
+        if "accepted" not in rec or asset_id is None:
+            continue
+        if imported_ids and asset_id not in imported_ids:
+            continue
+        decisions_by_asset[asset_id] = rec
+    decisions = list(decisions_by_asset.values())
     accepted = [r for r in decisions if r.get("accepted") is True]
     rev_rejected = [r for r in decisions if r.get("accepted") is False]
     if total_imported > 0 and decisions:
