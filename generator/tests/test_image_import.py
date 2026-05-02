@@ -617,6 +617,175 @@ def test_cli_help_runs(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Reserved-dir + cross-target ontology closure (review of T-1.5.7 #4.1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "reserved_ref",
+    [
+        ("location", "_pending"),
+        ("location", "_rejected"),
+        ("location", "_reference"),
+        ("scene", "scene__pending"),
+        ("scene", "scene__rejected"),
+        ("scene", "scene__reference"),
+    ],
+)
+def test_reserved_target_ref_rejected(
+    env: dict[str, Path], reserved_ref: tuple[str, str]
+) -> None:
+    """target_ref maps to reserved workflow dir (`_pending` / `_rejected` /
+    `_reference`) → reject before any disk move."""
+    target_type, target_ref = reserved_ref
+    asset_id_stub = "img_reserved_target"
+
+    # Pre-register the entity in ontology so the rejection isn't due to
+    # missing-entity (we want to isolate the reserved-dir gate).
+    ontology = json.loads(env["ontology_path"].read_text(encoding="utf-8"))
+    ontology["entities"].append(
+        {
+            "id": target_ref,
+            "display_name": "Reserved Target",
+            "type": target_type,
+        }
+    )
+    env["ontology_path"].write_text(
+        json.dumps(ontology, ensure_ascii=False, indent=4) + "\n",
+        encoding="utf-8",
+    )
+
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub=asset_id_stub,
+        target_ref=target_ref,
+        target_type=target_type,
+        asset_role="scene_background",
+        asset_kind="scene_background",
+        png_mode="RGB",
+    )
+    outcomes = run_import(
+        asset_id=asset_id_stub,
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "rejected"
+    reason = outcomes[0].rejected_reason or ""
+    assert "reserved" in reason
+    # No reserved-named subdir created under visuals_root
+    parts = reserved_ref[1].split("_", 1) if reserved_ref[0] == "scene" else (reserved_ref[1],)
+    # First parts[0] would be "_pending" / "_rejected" / "_reference" depending
+    # on input — confirm none of the workflow dirs got created.
+    for reserved in ("_pending", "_rejected", "_reference"):
+        assert not (env["visuals_root"] / reserved).exists()
+
+
+def test_unknown_location_target_rejected(env: dict[str, Path]) -> None:
+    """target_type=location but no matching ontology entity → reject."""
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub="img_unknown_loc",
+        target_ref="loc_does_not_exist",
+        target_type="location",
+        asset_role="scene_background",
+        asset_kind="scene_background",
+        png_mode="RGB",
+    )
+    outcomes = run_import(
+        asset_id="img_unknown_loc",
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "rejected"
+    assert "loc_does_not_exist" in (outcomes[0].rejected_reason or "")
+    # Manifest unchanged
+    assert load_manifest(env["manifest_path"]).assets == {}
+
+
+def test_unknown_scene_target_rejected(env: dict[str, Path]) -> None:
+    """target_type=scene but no matching ontology entity → reject."""
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub="img_unknown_scene",
+        target_ref="scene_does_not_exist",
+        target_type="scene",
+        asset_role="scene_background",
+        asset_kind="scene_background",
+        png_mode="RGB",
+    )
+    outcomes = run_import(
+        asset_id="img_unknown_scene",
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "rejected"
+    assert "scene_does_not_exist" in (outcomes[0].rejected_reason or "")
+
+
+def test_legal_scene_target_passes_without_writing_ontology_visual_assets(
+    env: dict[str, Path],
+) -> None:
+    """Existing scene entity → import succeeds; manifest gets the asset; the
+    scene entity in the ontology gains NO `visual_assets` field
+    (path A; SCHEMA_v0.2.md §3.3)."""
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub="img_waystation_dusk",
+        target_ref="scene_waystation_of_iron_oath",
+        target_type="scene",
+        asset_role="scene_background",
+        asset_kind="scene_background",
+        png_mode="RGB",
+    )
+    outcomes = run_import(
+        asset_id="img_waystation_dusk",
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "imported"
+
+    # PNG landed under content/visuals/waystation_of_iron_oath/
+    final_png = (
+        env["visuals_root"]
+        / "waystation_of_iron_oath"
+        / "img_waystation_dusk.png"
+    )
+    assert final_png.exists()
+
+    # Manifest has the asset
+    m = load_manifest(env["manifest_path"])
+    assert "img_waystation_dusk" in m.assets
+
+    # Scene entity untouched: no visual_assets field added
+    ontology = json.loads(env["ontology_path"].read_text(encoding="utf-8"))
+    scene = next(
+        e for e in ontology["entities"] if e["id"] == "scene_waystation_of_iron_oath"
+    )
+    assert "visual_assets" not in scene
+
+    # Character entries untouched
+    for cid in ("char_vellin", "char_corvan", "char_aelwin"):
+        ent = next(e for e in ontology["entities"] if e["id"] == cid)
+        assert ent["visual_assets"] == []
+
+
+# ---------------------------------------------------------------------------
 # Path-traversal / symlink hardening (review of T-1.5.7 #3.1)
 # ---------------------------------------------------------------------------
 

@@ -133,6 +133,15 @@ def _resolves_under(child: Path, root: Path) -> bool:
         return False
 
 
+# Workflow directories under content/visuals/ that must never be a target
+# subdir, even if the relative_to(visuals_root) check passes. Without this
+# block, target_ref="_pending" / "_reference" / etc. would write inside
+# protected workflow folders.
+_RESERVED_VISUAL_DIRS: frozenset[str] = frozenset(
+    {"_pending", "_rejected", "_reference"}
+)
+
+
 def _target_dir_for(target_type: str, target_ref: str, visuals_root: Path) -> Path:
     """Resolve the on-disk subdir under content/visuals/.
 
@@ -140,7 +149,9 @@ def _target_dir_for(target_type: str, target_ref: str, visuals_root: Path) -> Pa
     scene_<X>     → content/visuals/<X>/
     <target_ref>  → content/visuals/<target_ref>/  (target_type=location)
 
-    Raises ValueError on degenerate input (empty body / wrong prefix).
+    Raises ValueError on degenerate input: empty body, wrong prefix, path
+    segments resolving to `.` / `..`, or first-segment hits on the
+    reserved workflow dirs (`_pending` / `_rejected` / `_reference`).
     """
     if target_type == "character":
         if not target_ref.startswith("char_"):
@@ -160,6 +171,16 @@ def _target_dir_for(target_type: str, target_ref: str, visuals_root: Path) -> Pa
         raise ValueError(f"unknown target_type {target_type!r}")
     if not sub:
         raise ValueError(f"empty target_ref body after prefix strip: {target_ref!r}")
+
+    # Reject `.`, `..`, or empty segments anywhere in the resolved subdir.
+    parts = Path(sub).parts
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError(f"unsafe target_ref path segment: {sub!r}")
+    # First segment must not collide with a reserved workflow directory.
+    if parts and parts[0] in _RESERVED_VISUAL_DIRS:
+        raise ValueError(
+            f"target_ref maps to reserved visuals dir: {parts[0]!r}"
+        )
     return visuals_root / sub
 
 
@@ -226,14 +247,20 @@ def _move_to_rejected(stub_dir: Path, pending_root: Path) -> Path:
     return target
 
 
-def _entity_exists(ontology_path: Path, target_ref: str) -> bool:
-    """Probe whether a `type=character` entity with id==target_ref exists."""
+def _entity_exists(ontology_path: Path, target_ref: str, target_type: str) -> bool:
+    """Probe whether an entity with id==target_ref AND type==target_type exists.
+
+    Closes the ontology against ALL target_types per ADR-006 (single source
+    of truth) + SCHEMA_v0.2.md §2.2 #6 (target_ref must resolve in the
+    roster). Whether or not we *write* `visual_assets` to a given entity
+    is a separate question (currently only character).
+    """
     if not ontology_path.exists():
         return False
     with ontology_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     for entity in data.get("entities") or []:
-        if entity.get("id") == target_ref and entity.get("type") == "character":
+        if entity.get("id") == target_ref and entity.get("type") == target_type:
             return True
     return False
 
@@ -436,16 +463,19 @@ def _process_one(
         )
     final_relpath = "content/visuals/" + rel_to_visuals.as_posix()
 
-    # --- Ontology entity existence (only for character target) ---
-    if target_type == "character":
-        if not _entity_exists(ontology_path, target_ref):
-            return (
-                manifest,
-                reject(
-                    f"ontology has no character entity with id={target_ref!r}"
-                ),
-                meta,
-            )
+    # --- Ontology entity existence (closure for ALL target_types) ---
+    # ADR-006 + SCHEMA_v0.2.md §2.2 #6: target_ref must resolve in the
+    # roster. We only *write* visual_assets back to character entities
+    # (path A; SCHEMA_v0.2.md §3.3) but the closure check applies
+    # regardless of target_type.
+    if not _entity_exists(ontology_path, target_ref, target_type):
+        return (
+            manifest,
+            reject(
+                f"ontology has no {target_type} entity with id={target_ref!r}"
+            ),
+            meta,
+        )
 
     # --- 6. Probe PNG ---
     try:
