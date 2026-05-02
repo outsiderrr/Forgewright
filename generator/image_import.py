@@ -46,6 +46,7 @@ import datetime as _dt
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -85,6 +86,12 @@ _REQUIRED_META_KEYS: tuple[str, ...] = (
     "prompt_hash",
 )
 
+# Mirrors ManualImportProvider._ASSET_ID_RE / image_asset.schema.json
+# `asset_id` pattern. We re-declare it here rather than import the
+# provider's private symbol so the CLI doesn't reach into a sibling
+# module's internals — the regex is the contract.
+_ASSET_ID_RE = re.compile(r"^img_[a-z0-9_]{1,64}$")
+
 
 # ---------------------------------------------------------------------------
 # Result type
@@ -109,6 +116,21 @@ class ImportOutcome:
 
 def _now_iso() -> str:
     return _dt.datetime.now(_dt.timezone.utc).isoformat()
+
+
+def _resolves_under(child: Path, root: Path) -> bool:
+    """Return True iff `child.resolve()` is `root.resolve()` or a descendant.
+
+    Catches `..` segments, absolute paths, and symlinks pointing outside
+    `root`. Used for both `--asset-id` input and the `--all-pending`
+    iterator to ensure the CLI only ever touches files under
+    `pending_root`.
+    """
+    try:
+        child.resolve().relative_to(root.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _target_dir_for(target_type: str, target_ref: str, visuals_root: Path) -> Path:
@@ -577,19 +599,57 @@ def run_import(
     if (asset_id is None) == (not all_pending):
         raise ValueError("specify exactly one of asset_id or all_pending=True")
 
+    outcomes: list[ImportOutcome] = []
+
+    # `--asset-id` is operator input; it must match the schema-level
+    # asset_id pattern AND resolve under pending_root. Without these gates
+    # `--asset-id ../foo` would let the CLI read (and on validation
+    # failure, move) directories outside _pending/.
     if asset_id:
-        stub_dirs = [pending_root / asset_id]
+        if not _ASSET_ID_RE.fullmatch(asset_id):
+            outcome = ImportOutcome(
+                asset_id_stub=asset_id,
+                status="dry_run" if dry_run else "rejected",
+                rejected_reason=(
+                    "asset_id must match ^img_[a-z0-9_]{1,64}$ "
+                    "(no path separators, no uppercase, must start with 'img_')"
+                ),
+            )
+            _write_log_row(outcome, meta=None, batch_name=batch_name)
+            return [outcome]
+        candidate = pending_root / asset_id
+        if not _resolves_under(candidate, pending_root):
+            outcome = ImportOutcome(
+                asset_id_stub=asset_id,
+                status="dry_run" if dry_run else "rejected",
+                rejected_reason=f"asset_id escapes pending_root: {asset_id!r}",
+            )
+            _write_log_row(outcome, meta=None, batch_name=batch_name)
+            return [outcome]
+        stub_dirs = [candidate]
     elif pending_root.exists():
-        # Skip _underscore-prefixed entries (`_rejected/`, future `_archive/`).
-        stub_dirs = sorted(
-            d for d in pending_root.iterdir()
-            if d.is_dir() and not d.name.startswith("_")
-        )
+        # Skip:
+        #  - _underscore-prefixed entries (`_rejected/`, future `_archive/`)
+        #  - symlinks (Path.is_dir() follows symlinks by default; a symlink
+        #    to outside pending_root would otherwise be processed)
+        #  - any entry whose resolved path escapes pending_root (defence in
+        #    depth — pending_root shouldn't contain such entries, but the
+        #    CLI shouldn't trust it)
+        stub_dirs = []
+        for d in sorted(pending_root.iterdir()):
+            if d.name.startswith("_"):
+                continue
+            if d.is_symlink():
+                continue
+            if not d.is_dir():
+                continue
+            if not _resolves_under(d, pending_root):
+                continue
+            stub_dirs.append(d)
     else:
         stub_dirs = []
 
     manifest = load_manifest(manifest_path)
-    outcomes: list[ImportOutcome] = []
 
     for stub_dir in stub_dirs:
         if not stub_dir.exists() or not stub_dir.is_dir():

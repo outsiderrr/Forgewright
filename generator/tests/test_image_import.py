@@ -614,3 +614,115 @@ def test_cli_help_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit) as exc:
         image_import.main(["--help"])
     assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# Path-traversal / symlink hardening (review of T-1.5.7 #3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_asset_id_path_traversal_rejected_without_touching_outside_dir(
+    env: dict[str, Path], tmp_path: Path
+) -> None:
+    """`--asset-id ../sibling` must be rejected before touching the sibling.
+
+    The sibling directory is created with a PNG inside; on a vulnerable
+    implementation the CLI would either move it under content/visuals/ or
+    relocate it to _pending/_rejected/. Both are forbidden — the sibling
+    must remain untouched.
+    """
+    sibling = tmp_path / "sibling_outside_pending"
+    sibling.mkdir()
+    sibling_png = sibling / "img_evil.png"
+    _write_png(sibling_png)
+    assert sibling_png.exists()
+
+    # Try a few flavours of escape; all must fail the regex / containment check.
+    for malicious_id in (
+        "../sibling_outside_pending",
+        "/etc/passwd",
+        "img_../escape",
+        "Img_uppercase_prefix",
+        "not_img_prefix",
+    ):
+        outcomes = run_import(
+            asset_id=malicious_id,
+            all_pending=False,
+            dry_run=False,
+            pending_root=env["pending_root"],
+            visuals_root=env["visuals_root"],
+            manifest_path=env["manifest_path"],
+            ontology_path=env["ontology_path"],
+        )
+        assert outcomes[0].status == "rejected"
+        # asset_id pattern OR escapes pending_root — both are valid rejection
+        # reasons; only "asset_id" must appear in the reason.
+        assert "asset_id" in (outcomes[0].rejected_reason or "")
+
+    # Sibling untouched
+    assert sibling_png.exists()
+    assert sibling.exists()
+    # No _rejected/ entries materialised under pending_root for these names
+    rejected_root = env["pending_root"] / "_rejected"
+    if rejected_root.exists():
+        assert list(rejected_root.iterdir()) == []
+    # Manifest + ontology unchanged
+    assert load_manifest(env["manifest_path"]).assets == {}
+
+
+def test_all_pending_skips_symlink_dirs(
+    env: dict[str, Path], tmp_path: Path
+) -> None:
+    """A symlink under _pending/ pointing outside must be skipped silently.
+
+    Without the symlink filter, `--all-pending` would follow the symlink
+    via `Path.is_dir()` (which follows by default) and attempt to process
+    contents of the linked directory — including possibly moving them to
+    _rejected/.
+    """
+    # An honest, valid stub (will succeed)
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub="img_vellin_neutral",
+        target_ref="char_vellin",
+        target_type="character",
+        asset_role="character_sheet",
+        asset_kind="character_sheet",
+    )
+
+    # A directory outside pending_root containing a PNG that the CLI must
+    # never see.
+    outside_dir = tmp_path / "outside_dir_target"
+    outside_dir.mkdir()
+    outside_png = outside_dir / "img_outside.png"
+    _write_png(outside_png)
+
+    # A symlink under _pending/ pointing at it.
+    symlink_under_pending = env["pending_root"] / "img_via_symlink"
+    try:
+        symlink_under_pending.symlink_to(outside_dir, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks unsupported on this filesystem")
+
+    outcomes = run_import(
+        asset_id=None,
+        all_pending=True,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+
+    # Only the honest stub was processed
+    ids = [o.asset_id_stub for o in outcomes]
+    assert ids == ["img_vellin_neutral"]
+    assert outcomes[0].status == "imported"
+
+    # Symlink + outside dir untouched
+    assert symlink_under_pending.is_symlink()
+    assert outside_png.exists()
+    # No _rejected/ entry created for the symlink
+    rejected_root = env["pending_root"] / "_rejected"
+    if rejected_root.exists():
+        assert "img_via_symlink" not in [p.name for p in rejected_root.iterdir()]
