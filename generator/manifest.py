@@ -54,7 +54,13 @@ def load_manifest(path: Path = DEFAULT_MANIFEST_PATH) -> Manifest:
             f"manifest schema_version {schema_version!r} does not match "
             f"expected {SCHEMA_VERSION!r}; refusing to load."
         )
-    raw_assets = raw.get("assets") or {}
+    # Existing manifest must declare `assets` as an object. Earlier we
+    # tolerated missing/null/list and silently treated them as empty,
+    # which would let a subsequent successful import overwrite a
+    # malformed manifest without flagging it (review of T-1.5.7 #4.2).
+    if "assets" not in raw:
+        raise ValueError("manifest missing required 'assets' object")
+    raw_assets = raw["assets"]
     if not isinstance(raw_assets, dict):
         raise ValueError(
             f"manifest 'assets' must be an object, got {type(raw_assets).__name__}"

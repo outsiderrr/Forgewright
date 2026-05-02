@@ -131,6 +131,32 @@ def test_load_rejects_wrong_schema_version(tmp_path: Path) -> None:
         load_manifest(path)
 
 
+@pytest.mark.parametrize(
+    "malformed_payload",
+    [
+        # Missing the `assets` key entirely.
+        {"schema_version": "0.2.0"},
+        # Explicit null.
+        {"schema_version": "0.2.0", "assets": None},
+        # Empty list (looks "empty" but isn't a dict).
+        {"schema_version": "0.2.0", "assets": []},
+        # Populated list (would silently lose data on `or {}` fallback).
+        {"schema_version": "0.2.0", "assets": ["img_oops"]},
+        # Wrong scalar type.
+        {"schema_version": "0.2.0", "assets": "not a dict"},
+    ],
+)
+def test_load_rejects_malformed_assets_shape(
+    tmp_path: Path, malformed_payload: dict
+) -> None:
+    """Existing-on-disk manifest with broken `assets` must hard-fail rather
+    than be silently treated as empty (review of T-1.5.7 #4.2)."""
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(malformed_payload) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="assets"):
+        load_manifest(path)
+
+
 def test_load_rejects_drift_between_key_and_asset_id(tmp_path: Path) -> None:
     """Dict key must agree with embedded asset_id; otherwise the index is lying."""
     path = tmp_path / "manifest.json"
