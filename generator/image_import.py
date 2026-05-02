@@ -76,7 +76,14 @@ DEFAULT_ONTOLOGY_PATH = Path("state/ontology/waystation.json")
 # Mirrored from ManualImportProvider's contract; T-1.5.7 spec lists these
 # as the keys the provider always writes. Absence = upstream contract
 # violation, so we reject rather than default.
+#
+# `asset_id_stub` and `created_at` are also part of the contract:
+# ManualImportProvider always writes both, and `created_at` is required
+# by the ImageAsset Pydantic model. Tolerating their absence would
+# silently fall back to import-time defaults and mask provenance loss
+# (review of T-1.5.7 #4.4).
 _REQUIRED_META_KEYS: tuple[str, ...] = (
+    "asset_id_stub",
     "target_ref",
     "target_type",
     "asset_role",
@@ -84,6 +91,7 @@ _REQUIRED_META_KEYS: tuple[str, ...] = (
     "source_mode",
     "variant_label",
     "prompt_hash",
+    "created_at",
 )
 
 # Mirrors ManualImportProvider._ASSET_ID_RE / image_asset.schema.json
@@ -431,6 +439,21 @@ def _process_one(
             meta,
         )
 
+    # The pending dir name is the source of truth for asset identity
+    # (mkdir'd by ManualImportProvider after asset_id_stub regex check);
+    # a drift means the prompt package was renamed or hand-built, so we
+    # refuse rather than silently picking one over the other (review of
+    # T-1.5.7 #4.4).
+    if meta["asset_id_stub"] != stub:
+        return (
+            manifest,
+            reject(
+                f"meta asset_id_stub {meta['asset_id_stub']!r} does not match "
+                f"directory name {stub!r}"
+            ),
+            meta,
+        )
+
     asset_kind = meta["asset_kind"]
     if asset_kind not in ("character_sheet", "scene_background"):
         return manifest, reject(f"unsupported asset_kind {asset_kind!r}"), meta
@@ -523,7 +546,7 @@ def _process_one(
             reference_license_note=meta.get("reference_license_note", ""),
             open_source_ok=meta.get("open_source_ok", False),
             commercial_ok=meta.get("commercial_ok", False),
-            created_at=meta.get("created_at") or _now_iso(),
+            created_at=meta["created_at"],
         )
     except Exception as exc:
         # Pydantic ValidationError or other construction failure — surface

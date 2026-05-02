@@ -482,6 +482,81 @@ def test_meta_missing_required_keys_rejects(env: dict[str, Path]) -> None:
     assert "prompt_hash" in (outcomes[0].rejected_reason or "")
 
 
+def test_meta_missing_created_at_rejects(env: dict[str, Path]) -> None:
+    """meta.json without `created_at` → reject (review of T-1.5.7 #4.4).
+
+    `created_at` is required by the ImageAsset Pydantic model and by
+    ManualImportProvider's contract. Earlier the CLI silently substituted
+    import-time `_now_iso()`, masking provenance loss.
+    """
+    stub_dir = env["pending_root"] / "img_vellin_no_created_at"
+    stub_dir.mkdir()
+    _write_png(stub_dir / "img_vellin_no_created_at.png")
+    (stub_dir / "meta.json").write_text(
+        json.dumps(
+            {
+                "asset_id_stub": "img_vellin_no_created_at",
+                "target_ref": "char_vellin",
+                "target_type": "character",
+                "asset_role": "character_sheet",
+                "asset_kind": "character_sheet",
+                "source_mode": "manual",
+                "variant_label": "neutral",
+                "prompt_hash": "a" * 64,
+                "character_ref": "char_vellin",
+                "location_ref": None,
+                # created_at intentionally absent
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    outcomes = run_import(
+        asset_id="img_vellin_no_created_at",
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "rejected"
+    assert "created_at" in (outcomes[0].rejected_reason or "")
+
+
+def test_meta_asset_id_stub_mismatch_rejects(env: dict[str, Path]) -> None:
+    """meta.asset_id_stub != directory name → reject (review of T-1.5.7 #4.4).
+
+    The pending directory name is the source of truth for identity; a
+    drift means the prompt package was renamed or hand-built, so we
+    refuse rather than silently picking one or the other.
+    """
+    _make_pending_stub(
+        env["pending_root"],
+        asset_id_stub="img_vellin_neutral",
+        target_ref="char_vellin",
+        target_type="character",
+        asset_role="character_sheet",
+        asset_kind="character_sheet",
+        # extra_meta overrides the auto-set asset_id_stub from the helper
+        extra_meta={"asset_id_stub": "img_some_other_id"},
+    )
+
+    outcomes = run_import(
+        asset_id="img_vellin_neutral",
+        all_pending=False,
+        dry_run=False,
+        pending_root=env["pending_root"],
+        visuals_root=env["visuals_root"],
+        manifest_path=env["manifest_path"],
+        ontology_path=env["ontology_path"],
+    )
+    assert outcomes[0].status == "rejected"
+    reason = outcomes[0].rejected_reason or ""
+    assert "asset_id_stub" in reason
+    assert "img_some_other_id" in reason
+
+
 def test_mirror_field_inconsistency_rejects(env: dict[str, Path]) -> None:
     """target_type=character but character_ref drifts from target_ref."""
     _make_pending_stub(
