@@ -26,3 +26,15 @@
 - **为什么不在 T-1.5.6 修复会话内修**：本修复会话边界严禁改 `/docs/`（除评审报告新建/更新和本 CLEANUP 文件）。已 push 的 docs 文件不能在不被授权的情况下从历史里抹去。
 - **建议处理路径**：作者另开一个 docs 边界任务，明确授权 `/docs/reviews/_prompts/`，决定是保留该评审 prompt（已被 Codex 实际使用并已落地评审报告，事后保留有价值）还是把它作为模板移到独立位置。同时检查 STAGE_1.5_TASKS.md 是否需要把"产出 codex review prompt"显式写进允许修改列表，避免后续 T-1.5.7+ 同款边界漂移。
 - **优先级**：低（不阻塞合入；本 commit 携带的 docs prompt 已用于触发 T-1.5.6 Codex 评审，事实上是有价值的工件）。
+
+---
+
+## 2026-05-02 — T-1.5.7 评审 §4.5（跨边界）
+
+- **来源**：`/docs/reviews/2026-05-02_T-1.5.7_review.md` §4.5
+- **类别**：[ARCH]
+- **位置**：`/generator/image_import.py` 成功路径 `_process_one()`（PNG move → save_manifest → _ontology_append_visual_asset 三步顺序写入；commit `b460c73` 起）
+- **问题**：image_import CLI 的成功路径先 `shutil.move()` PNG，再 `save_manifest()` 写 manifest，最后 `_ontology_append_visual_asset()` 写本体。这三步分别是独立的原子写（temp + replace + fsync），但整体没有事务封装：manifest 写完后本体写入崩溃 → "PNG + manifest 已有，角色 visual_assets 没有"；PNG move 后 manifest 写入崩溃 → orphan PNG。
+- **为什么不在 T-1.5.7 修复会话内修**：评审报告 §4.5 显式标 ⚠️ 跨边界——本轮不要硬修成事务系统（WAL / 两阶段提交 / SQLite 中间层），需要新模块或在 `/state/` 引入"状态写 API"统一收口，超出 T-1.5.7 修复任务边界。
+- **建议处理路径**：阶段 2 正式状态写 API 落地时统一收口多文件写入；或单独开 docs/edge 任务实现 `reconcile_visual_assets.py`（扫描 manifest / ontology / `content/visuals/`，输出 orphan PNG 与 missing-embed 报告，作者人工审阅）。亦可考虑加 import-transaction marker（半成品状态写 `.in_progress` sentinel；启动时检测并提示 reconcile）。
+- **优先级**：中低（不阻塞 1.5 验收，但若作者机器在生产 import 中崩溃，恢复需手动比对 manifest / ontology / 文件系统）。
