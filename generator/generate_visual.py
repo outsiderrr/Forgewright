@@ -253,6 +253,32 @@ def _generate_one(
 
     estimated_cost = provider.estimate_cost(n=n, size=size)
 
+    # ---- Mode/provider sanity (review of T-1.5.6 #3.1). ----
+    # `image_budget.check()` short-circuits on `mode == "manual"`, so a paid
+    # provider mistakenly invoked in manual mode would skip the per-call /
+    # daily ceiling and still hit the network. Refuse before the provider
+    # call when the provider's own estimate disagrees with the declared mode.
+    if mode == "manual" and estimated_cost > 0:
+        return VisualGenerationResult(
+            success=False,
+            asset_id_stub=asset_id_stub,
+            prompt_package_path=None,
+            image_bytes=None,
+            failure_reason=(
+                "provider_mode_mismatch: manual mode but provider estimated "
+                f"${estimated_cost:.4f}; refusing to call provider before "
+                "budget check"
+            ),
+            cost_usd=0.0,
+            raw_metadata={
+                "target_ref": target_ref,
+                "target_type": target_type,
+                "asset_role": asset_role,
+                "variant_label": variant_label,
+                "estimated_cost_usd": estimated_cost,
+            },
+        )
+
     # ---- Pre-call budget guard (ADR-012 / T-1.5.5). ----
     try:
         image_budget.check(estimated_cost_usd=estimated_cost, mode=mode)
@@ -339,11 +365,37 @@ def _generate_one(
             },
         )
 
+    # ---- Mode-echo check (review of T-1.5.6 #3.1). ----
+    # The provider's returned mode is the authoritative consumption marker
+    # — if a provider that the caller thought was paid actually came back
+    # as "manual" (or vice-versa), the cost log would mis-attribute the
+    # call. Fail loudly here rather than silently writing a wrong row.
+    if gen_result.mode != mode:
+        _logger.warning(
+            "generate_visual: provider mode mismatch for %s: requested=%s "
+            "returned=%s",
+            asset_id_stub,
+            mode,
+            gen_result.mode,
+        )
+        return VisualGenerationResult(
+            success=False,
+            asset_id_stub=asset_id_stub,
+            prompt_package_path=None,
+            image_bytes=None,
+            failure_reason=(
+                f"provider_mode_mismatch: requested mode={mode}, provider "
+                f"returned mode={gen_result.mode}"
+            ),
+            cost_usd=0.0,
+            raw_metadata=dict(gen_result.raw_metadata),
+        )
+
     # ---- Cost-log on success. ----
     try:
         image_budget.log_charge(
             timestamp=_dt.datetime.now(_dt.timezone.utc),
-            mode=mode,
+            mode=gen_result.mode,
             provider_id=provider.__class__.__name__,
             asset_kind=asset_kind,
             asset_id_stub=gen_result.asset_id_stub,

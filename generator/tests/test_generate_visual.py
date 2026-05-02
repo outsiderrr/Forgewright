@@ -483,6 +483,75 @@ def test_scenario_6_missing_features_falls_back_to_ontology_card(
 
 
 # ---------------------------------------------------------------------------
+# Regression #3.1: mode/provider sanity guards (review of T-1.5.6 #3.1).
+# ---------------------------------------------------------------------------
+
+
+def test_manual_mode_with_paid_provider_refuses_before_call(
+    isolated_paths: dict[str, Path],
+) -> None:
+    """`mode="manual"` + provider that estimates > $0 must fail-fast and
+    NOT invoke the provider — the safety guard exists precisely because
+    `image_budget.check()` short-circuits on manual mode."""
+    fake = FakeApiImageProvider(cost_per_call=0.04)
+    requirement = CharacterSheetRequirement(
+        target_ref="char_vellin",
+        n=2,
+        expressions=["neutral", "smiling"],
+        poses=["torso_up"],
+    )
+
+    results = generate_character_sheet(
+        requirement=requirement,
+        provider=fake,
+        mode="manual",  # mismatch — paid provider must not be invoked
+        ontology_path=isolated_paths["ontology_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+
+    assert len(results) == 2
+    assert all(not r.success for r in results)
+    for r in results:
+        assert r.failure_reason and r.failure_reason.startswith(
+            "provider_mode_mismatch"
+        )
+    assert fake.recorder.calls == []
+    # No log rows — consumption did not happen.
+    assert _read_log(isolated_paths["image_log"]) == []
+
+
+def test_api_mode_with_manual_provider_returns_mismatch_post_call(
+    isolated_paths: dict[str, Path],
+) -> None:
+    """`mode="api"` + a provider that returns `gen_result.mode="manual"`
+    must surface as `provider_mode_mismatch` and NOT write a log row —
+    otherwise the cost log would mis-attribute the call."""
+    requirement = CharacterSheetRequirement(
+        target_ref="char_vellin",
+        n=1,
+        expressions=["neutral"],
+        poses=["torso_up"],
+    )
+
+    results = generate_character_sheet(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="api",  # mismatch — ManualImportProvider always returns mode="manual"
+        ontology_path=isolated_paths["ontology_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+
+    assert len(results) == 1
+    r = results[0]
+    assert not r.success
+    assert r.failure_reason and r.failure_reason.startswith(
+        "provider_mode_mismatch"
+    )
+    # No log rows — consumption mis-attribution averted.
+    assert _read_log(isolated_paths["image_log"]) == []
+
+
+# ---------------------------------------------------------------------------
 # Regression: deterministic stub re-runs produce identical IDs.
 # ---------------------------------------------------------------------------
 
