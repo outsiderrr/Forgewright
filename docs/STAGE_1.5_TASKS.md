@@ -100,10 +100,18 @@ Wave H (验收):       T-1.5.10
 
 ## 通用：Codex 评审 prompt 模板
 
-每个执行会话在 push 主 commit **之前**，**捎带产出一份完整的 Codex prompt 文件**——这份文件本身就是作者一键复制粘贴到 Codex（GPT-5.5）会话的全部内容，作者**不需要再拼装任何东西**。
+每个执行会话**先做主 commit**，**再做一个跟随 commit** 产出一份完整的 Codex prompt 文件——这份文件本身就是作者一键复制粘贴到 Codex（GPT-5.5）会话的全部内容，作者**不需要再拼装任何东西**。
 
 **路径**：`/docs/reviews/_prompts/T-1.5.X_codex_review.md`
-**捎带在主 commit 内**（不另开 commit）。
+
+**两 commit 拆分**（**必须**；T-1.5.5 / T-1.5.7 retrospective + 新 4 条自检 Check 2 落地后于 T-1.5.4 / T-1.5.8 双双验证）：
+
+1. **主 commit**：feat / fix / docs(...) — 产出实际任务交付物（不含 codex review prompt）
+2. **跟随 commit**：`docs(reviews): add T-1.5.X codex review prompt` — 产出 codex review prompt 文件
+
+**为何两 commit 而非一 commit**：新 4 条自检 Check 2 要求 prompt 内 `**Commit**：` 后必须是真实 7+ 位 hex hash。主 commit 不存在前 hash 不存在；只能先做主 commit、再写真 hash 进 prompt 文件、再做第二个 commit。这是机器约束（不是风格选择），不允许走 amend（违反 CLAUDE.md no-amend 规则）。
+
+**两 commit 必须连续 push**（先主 commit 后跟随 commit；同一次 `git push origin <branch>`），不允许中间夹杂别的 commit。
 
 **Codex 收到这份 prompt 后会**：
 1. 读必读列表 + git diff
