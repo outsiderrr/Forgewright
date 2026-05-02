@@ -307,6 +307,21 @@ def _ontology_append_visual_asset(
             pass
         raise
 
+    # fsync the parent directory so the rename itself is durable across a
+    # crash. Mirrors generator.manifest.save_manifest — without this, the
+    # ontology and manifest writes would have inconsistent crash semantics
+    # (review of T-1.5.7 #4.3).
+    try:
+        dir_fd = os.open(str(ontology_path.parent), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(dir_fd)
+    except OSError:
+        pass
+    finally:
+        os.close(dir_fd)
+
 
 def _probe_png(png_path: Path) -> tuple[int, int, bool, int]:
     """Return (width, height, has_alpha, file_size_bytes).
