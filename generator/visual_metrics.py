@@ -143,7 +143,29 @@ def compute_visual_metrics(batch_dir: Path) -> dict[str, Any]:
     )
 
     # ---- mechanical check (from import_log.jsonl) ----
-    import_rows = import_log.read_all(batch_name=batch_name) if batch_name else []
+    # review of T-1.5.8 #3.2: the documented author flow runs
+    # `image_import --all-pending` without `--batch-name`, so T-1.5.7
+    # writes `batch_name: null` for those rows. Filtering only by
+    # `batch_name == this_batch` would then count them as 0 imports
+    # → an arbitrarily 0 mechanical_check_pass_rate / acceptance_rate.
+    # Fall back to correlating via the asset_id_stub set in this batch's
+    # results.jsonl: an unbatched import row whose stub appears in this
+    # batch's results is this batch's row. Rows tagged with a *different*
+    # batch_name still don't bleed in.
+    result_stubs = {
+        r.get("result", {}).get("asset_id_stub")
+        for r in results
+        if r.get("result", {}).get("asset_id_stub")
+    }
+    all_import_rows = import_log.read_all() if (batch_name or result_stubs) else []
+    import_rows: list[dict] = []
+    for row in all_import_rows:
+        row_batch = row.get("batch_name")
+        if batch_name is not None and row_batch == batch_name:
+            import_rows.append(row)
+            continue
+        if row_batch in (None, "") and row.get("asset_id_stub") in result_stubs:
+            import_rows.append(row)
     imported_rows = [r for r in import_rows if r.get("status") == "imported"]
     rejected_rows = [r for r in import_rows if r.get("status") == "rejected"]
     total_imported = len(imported_rows)

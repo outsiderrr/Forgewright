@@ -273,6 +273,116 @@ def test_no_logs_yields_none_rates(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     assert m["total_cost_usd"] == 0.0
 
 
+def test_unbatched_import_rows_are_correlated_via_results_stubs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """review of T-1.5.8 #3.2: when the author runs
+    `image_import --all-pending` (no --batch-name), the import_log rows
+    carry `batch_name: null`. metrics must still associate them to this
+    batch via asset_id_stub overlap from results.jsonl. Rows belonging
+    to a different *named* batch must NOT bleed in.
+    """
+    batch_dir = tmp_path / "20260502T120000Z_unbatched"
+    batch_dir.mkdir(parents=True)
+    _write_jsonl(
+        batch_dir / "results.jsonl",
+        [
+            {
+                "iter_id": i,
+                "batch_name": "unbatched",
+                "target_ref": "char_vellin",
+                "target_type": "character",
+                "asset_role": "character_sheet",
+                "mode": "manual",
+                "result": {
+                    "success": True,
+                    "asset_id_stub": stub,
+                    "prompt_package_path": f"p/{stub}",
+                    "image_bytes_size": 0,
+                    "failure_reason": None,
+                    "cost_usd": 0.0,
+                    "raw_metadata": {},
+                },
+                "generated_at": "2026-05-02T00:00:00+00:00",
+            }
+            for i, stub in enumerate(["img_a", "img_b", "img_c"])
+        ],
+    )
+
+    import_log_path = tmp_path / "import_log.jsonl"
+    monkeypatch.setenv("FORGEWRIGHT_IMPORT_LOG", str(import_log_path))
+    monkeypatch.setenv("FORGEWRIGHT_IMAGE_COST_LOG", str(tmp_path / "no_cost.jsonl"))
+    _write_jsonl(
+        import_log_path,
+        [
+            # Rows produced by `image_import --all-pending` — no batch_name.
+            {
+                "asset_id_stub": "img_a",
+                "batch_name": None,
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            },
+            {
+                "asset_id_stub": "img_b",
+                "batch_name": None,
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            },
+            {
+                "asset_id_stub": "img_c",
+                "batch_name": None,
+                "status": "rejected",
+                "rejected_reason": "PNG missing",
+                "validation_errors": [],
+            },
+            # Row from a *different* named batch — must not be associated
+            # even though its stub doesn't appear in our results either.
+            {
+                "asset_id_stub": "img_other",
+                "batch_name": "another_batch",
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            },
+            # Bare row with a stub we don't own — must not be associated.
+            {
+                "asset_id_stub": "img_orphan",
+                "batch_name": None,
+                "status": "imported",
+                "rejected_reason": None,
+                "validation_errors": [],
+            },
+        ],
+    )
+    _write_jsonl(
+        batch_dir / "visual_review_log.jsonl",
+        [
+            {
+                "asset_id": "img_a",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-02T01:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+            {
+                "asset_id": "img_b",
+                "accepted": False,
+                "reason": "noise",
+                "reviewed_at": "2026-05-02T01:00:00+00:00",
+                "mechanical_check_passed": True,
+            },
+        ],
+    )
+
+    m = compute_visual_metrics(batch_dir)
+    assert m["total_imported"] == 2  # img_a + img_b; orphan / another_batch excluded
+    assert m["total_rejected"] == 1  # img_c
+    assert m["mechanical_check_pass_rate"] == pytest.approx(2 / 3)
+    assert m["acceptance_rate"] == pytest.approx(1 / 2)
+
+
 def test_help_smoke() -> None:
     import subprocess
     import sys
