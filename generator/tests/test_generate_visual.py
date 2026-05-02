@@ -491,6 +491,40 @@ def test_scenario_6_missing_features_falls_back_to_ontology_card(
 
 
 # ---------------------------------------------------------------------------
+# Regression #5.1: cost_log OSError must surface in raw_metadata so
+# T-1.5.8 metrics can spot un-logged successes (review of T-1.5.6 #5.1).
+# ---------------------------------------------------------------------------
+
+
+def test_cost_log_failure_surfaces_in_raw_metadata(
+    isolated_paths: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(**kwargs):  # noqa: ANN001 — match generate_visual's signature loosely
+        raise OSError("simulated read-only filesystem")
+
+    monkeypatch.setattr(generate_visual.image_budget, "log_charge", _raise)
+
+    requirement = CharacterSheetRequirement(
+        target_ref="char_vellin",
+        n=1,
+        expressions=["neutral"],
+        poses=["torso_up"],
+    )
+    results = generate_character_sheet(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="manual",
+        ontology_path=isolated_paths["ontology_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+
+    assert len(results) == 1 and results[0].success
+    assert "cost_log_error" in results[0].raw_metadata
+    assert "simulated read-only filesystem" in results[0].raw_metadata["cost_log_error"]
+
+
+# ---------------------------------------------------------------------------
 # Regression #4.4: under-supplied requirement must surface as a failure
 # row, not silently produce fewer assets (review of T-1.5.6 #4.4).
 # ---------------------------------------------------------------------------

@@ -446,6 +446,7 @@ def _generate_one(
         )
 
     # ---- Cost-log on success. ----
+    metadata = dict(gen_result.raw_metadata)
     try:
         image_budget.log_charge(
             timestamp=_dt.datetime.now(_dt.timezone.utc),
@@ -461,13 +462,14 @@ def _generate_one(
     except OSError as exc:
         # The cost log lives on disk; if the disk is unhappy we still
         # return success for the asset (the prompt package / bytes are
-        # already produced) but flag the log failure in raw_metadata so
-        # T-1.5.8 metrics can spot it.
+        # already produced) but surface the log failure on the result so
+        # T-1.5.8 metrics can spot it (review of T-1.5.6 #5.1).
         _logger.error(
             "generate_visual: image_cost_log write failed for %s: %s",
             asset_id_stub,
             exc,
         )
+        metadata["cost_log_error"] = str(exc)
 
     return VisualGenerationResult(
         success=True,
@@ -476,7 +478,7 @@ def _generate_one(
         image_bytes=gen_result.image_bytes,
         failure_reason=None,
         cost_usd=gen_result.cost_usd,
-        raw_metadata=dict(gen_result.raw_metadata),
+        raw_metadata=metadata,
     )
 
 
