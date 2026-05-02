@@ -47,8 +47,10 @@ import textwrap
 import threading
 import webbrowser
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import IO, Callable
+from urllib.parse import quote, unquote, urlsplit
 
 from generator.manifest import DEFAULT_MANIFEST_PATH, load_manifest
 from generator.models._generated.image_asset import ImageAsset
@@ -158,17 +160,28 @@ def _default_viewer(file_path: str) -> None:
 
 
 def _build_index_html(pending: list[tuple[dict, ImageAsset]]) -> str:
+    """Render the thumbnail index. All asset fields are HTML-escaped, and
+    image src URLs are URL-quoted, so a hostile manifest row (e.g. an
+    asset_id containing `<script>` or a file_path with spaces) cannot
+    break out of the rendered document. We don't trust any field here;
+    treating the manifest as untrusted is cheap defence in depth.
+    """
     items: list[str] = []
     for env, asset in pending:
         # `file_path` is repo-relative ("content/visuals/<sub>/<id>.png").
         # When the http.server is rooted at the repo, this URL resolves.
+        safe_asset_id = escape(str(asset.asset_id))
+        safe_target_ref = escape(str(asset.target_ref))
+        safe_role = escape(str(asset.asset_role))
+        safe_size = escape(f"{asset.width}x{asset.height}")
+        safe_src = "/" + quote(str(asset.file_path), safe="/")
         items.append(
             f'<section style="margin:24px 0">'
-            f'<h3 style="font-family:monospace">{asset.asset_id}</h3>'
+            f'<h3 style="font-family:monospace">{safe_asset_id}</h3>'
             f'<p style="font-family:monospace">'
-            f'target={asset.target_ref} | role={asset.asset_role} | '
-            f'size={asset.width}x{asset.height}</p>'
-            f'<img src="/{asset.file_path}" '
+            f'target={safe_target_ref} | role={safe_role} | '
+            f'size={safe_size}</p>'
+            f'<img src="{escape(safe_src, quote=True)}" '
             f'style="max-width:512px;border:1px solid #ccc"/>'
             f"</section>"
         )
@@ -198,15 +211,37 @@ def _start_web_viewer(
 
     handler_cls = http.server.SimpleHTTPRequestHandler
     cwd = Path.cwd().resolve()
+    # Resolve once outside the handler — handlers run on every request and
+    # we want the containment check to compare against a single canonical
+    # root, not whatever the cwd happens to be when a request lands.
+    serve_root_resolved = serve_root.resolve()
 
     class _RootedHandler(handler_cls):  # type: ignore[misc, valid-type]
+        # review of T-1.5.8 #3.1: previous version returned the raw
+        # `(serve_root / rel).resolve()` so a request like `/../../etc/passwd`
+        # (or url-encoded `%2e%2e`) escaped serve_root and turned the
+        # preview server into an arbitrary-file reader. We now strip the
+        # query/fragment via `urlsplit`, resolve the candidate, and refuse
+        # anything that doesn't sit under serve_root_resolved. Directory
+        # listings are also disabled — the index.html we wrote is the only
+        # expected entry point.
         def translate_path(self, path: str) -> str:  # noqa: D401
-            # Force the server root onto serve_root regardless of process
-            # CWD, so the author can launch the CLI from anywhere.
-            from urllib.parse import unquote
+            rel = unquote(urlsplit(path).path).lstrip("/")
+            candidate = (serve_root_resolved / rel).resolve()
+            try:
+                candidate.relative_to(serve_root_resolved)
+            except ValueError:
+                # Returning a non-existent path makes
+                # SimpleHTTPRequestHandler answer 404 without leaking
+                # which segment escaped — that's fine here.
+                return str(serve_root_resolved / "__forbidden__")
+            return str(candidate)
 
-            rel = unquote(path).lstrip("/").split("?", 1)[0].split("#", 1)[0]
-            return str((serve_root / rel).resolve())
+        def list_directory(self, path: str):  # type: ignore[override]
+            # Don't expose directory listings — they'd let an attacker
+            # enumerate the repo tree even if read-only.
+            self.send_error(403, "Directory listing disabled")
+            return None
 
     httpd = socketserver.TCPServer(("127.0.0.1", 0), _RootedHandler)
     port = httpd.server_address[1]
