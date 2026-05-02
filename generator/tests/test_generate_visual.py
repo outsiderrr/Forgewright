@@ -491,6 +491,68 @@ def test_scenario_6_missing_features_falls_back_to_ontology_card(
 
 
 # ---------------------------------------------------------------------------
+# Regression #4.4: under-supplied requirement must surface as a failure
+# row, not silently produce fewer assets (review of T-1.5.6 #4.4).
+# ---------------------------------------------------------------------------
+
+
+def test_character_n_exceeds_available_variants_returns_invalid_requirement(
+    isolated_paths: dict[str, Path],
+) -> None:
+    """Asking for n=3 when only 1 expression × 1 pose is supplied used to
+    silently return a 1-row success batch. It must instead return one
+    failure row tagged invalid_requirement so 1.5 acceptance counting is
+    honest."""
+    requirement = CharacterSheetRequirement(
+        target_ref="char_vellin",
+        n=3,
+        expressions=["neutral"],
+        poses=["torso_up"],
+    )
+    results = generate_character_sheet(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="manual",
+        ontology_path=isolated_paths["ontology_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+    assert len(results) == 1
+    r = results[0]
+    assert not r.success
+    assert r.failure_reason and r.failure_reason.startswith("invalid_requirement")
+    assert r.raw_metadata["requested_n"] == 3
+    assert r.raw_metadata["available_variants"] == 1
+
+
+def test_scene_n_zero_returns_invalid_requirement(
+    isolated_paths: dict[str, Path],
+) -> None:
+    """`n <= 0` is also invalid — even though it would happen to produce
+    an empty list, callers can't tell the difference between 'asked for 0'
+    and 'asked for 1 but ran out of budget on the first call', so we make
+    it explicit."""
+    requirement = SceneBackgroundRequirement(
+        target_ref="scene_waystation_of_iron_oath",
+        target_type="scene",
+        n=0,
+        times_of_day=["dusk"],
+    )
+    results = generate_scene_background(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="manual",
+        ontology_path=isolated_paths["ontology_path"],
+        scene_path=isolated_paths["scene_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+    assert len(results) == 1
+    assert not results[0].success
+    assert results[0].failure_reason and results[0].failure_reason.startswith(
+        "invalid_requirement"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Regression #4.2: api row missing model_id falls back to "api_unknown" and
 # does NOT crash the run (review of T-1.5.6 #4.2).
 # ---------------------------------------------------------------------------

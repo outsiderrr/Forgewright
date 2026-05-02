@@ -116,6 +116,34 @@ def generate_character_sheet(
 
     template = load_template(CHARACTER_TEMPLATE)
     variants = _character_variants(requirement)
+
+    # review of T-1.5.6 #4.4: under-supplied requirements (n<1 or fewer
+    # available variants than n) used to silently produce a short batch
+    # — that breaks 1.5 acceptance counting because callers can't tell
+    # "succeeded with fewer" from "asked for fewer".
+    invalid = _check_requirement(requirement.n, len(variants))
+    if invalid is not None:
+        return [
+            VisualGenerationResult(
+                success=False,
+                asset_id_stub=_make_asset_id_stub(
+                    requirement.target_ref,
+                    "character_sheet",
+                    "invalid_requirement",
+                    0,
+                ),
+                failure_reason=invalid,
+                cost_usd=0.0,
+                raw_metadata={
+                    "target_ref": requirement.target_ref,
+                    "target_type": "character",
+                    "asset_role": "character_sheet",
+                    "requested_n": requirement.n,
+                    "available_variants": len(variants),
+                },
+            )
+        ]
+
     results: list[VisualGenerationResult] = []
 
     for idx, (expression, pose) in enumerate(variants, start=1):
@@ -183,6 +211,32 @@ def generate_scene_background(
 
     template = load_template(BACKGROUND_TEMPLATE)
     variants = _scene_variants(requirement)
+
+    # review of T-1.5.6 #4.4: same guard as character_sheet — refuse silent
+    # under-generation.
+    invalid = _check_requirement(requirement.n, len(variants))
+    if invalid is not None:
+        return [
+            VisualGenerationResult(
+                success=False,
+                asset_id_stub=_make_asset_id_stub(
+                    requirement.target_ref,
+                    "scene_background",
+                    "invalid_requirement",
+                    0,
+                ),
+                failure_reason=invalid,
+                cost_usd=0.0,
+                raw_metadata={
+                    "target_ref": requirement.target_ref,
+                    "target_type": requirement.target_type,
+                    "asset_role": "scene_background",
+                    "requested_n": requirement.n,
+                    "available_variants": len(variants),
+                },
+            )
+        ]
+
     results: list[VisualGenerationResult] = []
 
     for idx, (time_of_day, weather) in enumerate(variants, start=1):
@@ -424,6 +478,24 @@ def _generate_one(
         cost_usd=gen_result.cost_usd,
         raw_metadata=dict(gen_result.raw_metadata),
     )
+
+
+# ---------------------------------------------------------------------------
+# Internal: requirement sanity (review of T-1.5.6 #4.4)
+# ---------------------------------------------------------------------------
+
+
+def _check_requirement(requested_n: int, available: int) -> str | None:
+    """Return a `failure_reason` string when the request can't be fully met,
+    else None."""
+    if requested_n < 1:
+        return f"invalid_requirement: requested n={requested_n}, must be >= 1"
+    if available < requested_n:
+        return (
+            f"invalid_requirement: requested n={requested_n}, but only "
+            f"{available} variant(s) are available"
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
