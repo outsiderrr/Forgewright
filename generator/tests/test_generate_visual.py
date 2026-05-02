@@ -92,6 +92,7 @@ class FakeApiImageProvider:
     a network connection."""
 
     cost_per_call: float = 0.04
+    model_id: str = "fake-image-model"
     recorder: _Recorder = field(default_factory=_Recorder)
 
     def generate(
@@ -128,6 +129,9 @@ class FakeApiImageProvider:
                 "target_type": target_type,
                 "asset_role": asset_role,
                 "variant_label": variant_label,
+                # review of T-1.5.6 #4.2: model_id is the stable input to
+                # the cost log's `provider_id` (`openai_image_<model_id>`).
+                "model_id": self.model_id,
             },
         )
 
@@ -283,6 +287,8 @@ def test_scenario_1_manual_character_sheet_writes_three_packages(
     rows = _read_log(isolated_paths["image_log"])
     assert len(rows) == 3
     assert all(r["mode"] == "manual" and r["cost_usd"] == 0.0 for r in rows)
+    # review of T-1.5.6 #4.2: manual rows carry the canonical provider_id.
+    assert all(r["provider_id"] == "manual_import" for r in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +363,8 @@ def test_scenario_3_api_mode_mock_returns_bytes_and_logs_cost(
     assert all(r["mode"] == "api" for r in rows)
     assert all(r["batch_name"] == "t156_scenario_3" for r in rows)
     assert sum(r["cost_usd"] for r in rows) == pytest.approx(0.08)
+    # review of T-1.5.6 #4.2: api rows derive provider_id from raw_metadata.model_id.
+    assert all(r["provider_id"] == "openai_image_fake-image-model" for r in rows)
 
 
 # ---------------------------------------------------------------------------
@@ -480,6 +488,35 @@ def test_scenario_6_missing_features_falls_back_to_ontology_card(
     assert any(
         "no character_features" in r.message.lower() for r in caplog.records
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression #4.2: api row missing model_id falls back to "api_unknown" and
+# does NOT crash the run (review of T-1.5.6 #4.2).
+# ---------------------------------------------------------------------------
+
+
+def test_api_provider_without_model_id_logs_api_unknown(
+    isolated_paths: dict[str, Path],
+) -> None:
+    fake = FakeApiImageProvider(cost_per_call=0.04, model_id="")
+    requirement = CharacterSheetRequirement(
+        target_ref="char_vellin",
+        n=1,
+        expressions=["neutral"],
+        poses=["torso_up"],
+    )
+    results = generate_character_sheet(
+        requirement=requirement,
+        provider=fake,
+        mode="api",
+        ontology_path=isolated_paths["ontology_path"],
+        reference_dir=isolated_paths["reference_dir"],
+    )
+    assert len(results) == 1 and results[0].success
+    rows = _read_log(isolated_paths["image_log"])
+    assert len(rows) == 1
+    assert rows[0]["provider_id"] == "api_unknown"
 
 
 # ---------------------------------------------------------------------------

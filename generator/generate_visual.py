@@ -396,7 +396,7 @@ def _generate_one(
         image_budget.log_charge(
             timestamp=_dt.datetime.now(_dt.timezone.utc),
             mode=gen_result.mode,
-            provider_id=provider.__class__.__name__,
+            provider_id=_provider_id_for_log(gen_result),
             asset_kind=asset_kind,
             asset_id_stub=gen_result.asset_id_stub,
             n=n,
@@ -616,6 +616,29 @@ def _format_style_reference_blocks(paths: list[Path]) -> tuple[str, str]:
     zh_lines = [f"  - `{p}`" for p in paths]
     en_lines = [f"- `{p}`" for p in paths]
     return "\n".join(zh_lines), "\n".join(en_lines)
+
+
+# ---------------------------------------------------------------------------
+# Internal: stable provider_id for image_cost_log (review of T-1.5.6 #4.2)
+# ---------------------------------------------------------------------------
+
+
+def _provider_id_for_log(gen_result: "ImageGenerationResult") -> str:
+    """Map an `ImageGenerationResult` to the stable `provider_id` string the
+    cost log carries.
+
+    Class names like `ManualImportProvider` / `FakeApiImageProvider` would
+    couple the on-disk log to Python implementation details; T-1.5.8 metrics
+    expect canonical ids (`manual_import`, `openai_image_<model_id>`). The
+    `model_id` for API rows lives in `raw_metadata` so each provider can
+    populate it without changing the Protocol.
+    """
+    if gen_result.mode == "manual":
+        return "manual_import"
+    model_id = gen_result.raw_metadata.get("model_id") if gen_result.raw_metadata else None
+    if isinstance(model_id, str) and model_id:
+        return f"openai_image_{model_id}"
+    return "api_unknown"
 
 
 # ---------------------------------------------------------------------------
