@@ -551,10 +551,13 @@ def _format_ontology_blocks(
         return zh, en
 
     name = card.get("display_name") or card.get("id") or "(unnamed)"
+    scene_narration = card.get("scene_narration") if isinstance(card, dict) else None
+    # review of T-1.5.6 #4.1: scene_narration goes to its own block so it
+    # gets rendered as readable prose, not collapsed into a key=repr line.
     fields = ", ".join(
         f"{k}={v!r}"
         for k, v in card.items()
-        if k not in {"id", "display_name", "type", "visual_assets"}
+        if k not in {"id", "display_name", "type", "visual_assets", "scene_narration"}
         and not k.startswith("_")
     )
     if kind == "character":
@@ -564,11 +567,30 @@ def _format_ontology_blocks(
             f"{fields or 'none'}."
         )
     else:
-        zh = f"- 名称：`{name}`\n- 类型：location/scene\n- 其余字段：{fields or '（无）'}"
-        en = (
+        zh_lines = [
+            f"- 名称：`{name}`",
+            f"- 类型：location/scene",
+            f"- 其余字段：{fields or '（无）'}",
+        ]
+        if scene_narration:
+            zh_lines.append("- 场景 narration 摘录（仅用于氛围 / 不画角色）：")
+            zh_lines.append("```")
+            zh_lines.append(scene_narration)
+            zh_lines.append("```")
+        zh = "\n".join(zh_lines)
+
+        en_parts = [
             f"Location/scene {name}. Additional registered ontology fields: "
-            f"{fields or 'none'}."
-        )
+            f"{fields or 'none'}.",
+        ]
+        if scene_narration:
+            en_parts.append(
+                "Scene narration excerpts (read for atmosphere — architecture, "
+                "lighting, banners, props; do NOT depict any character "
+                "mentioned, the global no-characters rule still holds):"
+            )
+            en_parts.append(scene_narration)
+        en = "\n\n".join(en_parts)
     return zh, en
 
 

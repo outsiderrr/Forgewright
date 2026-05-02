@@ -483,6 +483,73 @@ def test_scenario_6_missing_features_falls_back_to_ontology_card(
 
 
 # ---------------------------------------------------------------------------
+# Regression #4.1: scene_background prompt must merge scene.json narration
+# even when an ontology card already exists (review of T-1.5.6 #4.1).
+# ---------------------------------------------------------------------------
+
+
+def test_background_prompt_includes_scene_narration_anchors(
+    isolated_paths: dict[str, Path],
+) -> None:
+    """The Stage-0 ontology stub for `scene_waystation_of_iron_oath` only
+    carries id/display_name/type, so without merging the scene narration
+    GPT-Image would render a generic waystation. Assert the merger pulls
+    at least one stable visual anchor from the narration into the prompt."""
+    scene_path = isolated_paths["scene_path"]
+    scene_path.write_text(
+        json.dumps(
+            {
+                "scene_anchor": "scene_waystation_of_iron_oath",
+                "nodes": {
+                    "arrival_waystation": {
+                        "node_id": "arrival_waystation",
+                        "type": "dialogue",
+                        "narration": (
+                            "黄昏时分你策马抵达铁誓驿站。山风把塔楼顶的旗帜吹得猎猎作响——"
+                            "那面绣着断剑与铁环的旗已经褪成铜绿色。\n\n"
+                            "推开吱呀作响的橡木门，柜台上一盏油灯映出 Vellin 的轮廓。"
+                        ),
+                        "location_ref": "scene_waystation_of_iron_oath",
+                    },
+                    "other_node": {
+                        "node_id": "other_node",
+                        "type": "end",
+                        "narration": "无关地点的结尾文本，应该被过滤。",
+                        "location_ref": "scene_other_place",
+                    },
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    requirement = SceneBackgroundRequirement(
+        target_ref="scene_waystation_of_iron_oath",
+        target_type="scene",
+        n=1,
+        times_of_day=["dusk"],
+    )
+    results = generate_scene_background(
+        requirement=requirement,
+        provider=_manual_provider(isolated_paths["pending_root"]),
+        mode="manual",
+        ontology_path=isolated_paths["ontology_path"],
+        scene_path=scene_path,
+        reference_dir=isolated_paths["reference_dir"],
+    )
+
+    assert len(results) == 1 and results[0].success
+    body = (results[0].prompt_package_path / "prompt.md").read_text(encoding="utf-8")
+    # At least one stable visual anchor from the matched narration must
+    # surface in the rendered background prompt.
+    assert "断剑与铁环" in body
+    assert "橡木门" in body or "油灯" in body
+    # And the unrelated location's narration must NOT leak in.
+    assert "无关地点的结尾文本" not in body
+
+
+# ---------------------------------------------------------------------------
 # Regression #3.1: mode/provider sanity guards (review of T-1.5.6 #3.1).
 # ---------------------------------------------------------------------------
 

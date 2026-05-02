@@ -209,8 +209,16 @@ def assemble_visual_context_for_location_or_scene(
     ontology = _load_json(ontology_path)
     card = _find_entity(ontology, target_ref, ("location", "scene"))
 
+    # review of T-1.5.6 #4.1: Stage-0 ontology stubs only carry id/display_name/
+    # type, so the location/scene card alone gives GPT-Image nothing to anchor
+    # on (no banners, doors, lamps, oath sigil). The narrative scene.json is
+    # the de-facto visual anchor source until the ontology gains real fields,
+    # so we always merge its narration in — both when the ontology card exists
+    # AND when we're falling back.
+    scene = _load_json(scene_path)
+    scene_narration = _collect_scene_narration(scene, target_ref)
+
     if card is None:
-        scene = _load_json(scene_path)
         # Fixture cross-reference: if the test scene happens to anchor on
         # this target, surface a minimal pseudo-card so the prompt has at
         # least an id + display hint to work with. Real graphs will populate
@@ -231,9 +239,43 @@ def assemble_visual_context_for_location_or_scene(
                 ontology_path,
             )
 
+    if card is not None and scene_narration:
+        card = {**card, "scene_narration": scene_narration}
+
     return VisualGenerationContext(
         character_card=None,
         location_card=card,
         style_reference_paths=_list_reference_paths(reference_dir),
         character_features=None,
     )
+
+
+def _collect_scene_narration(
+    scene: dict | None, target_ref: str, *, max_chars: int = 2500
+) -> str:
+    """Concatenate every node narration whose `location_ref == target_ref`.
+
+    Returned string is truncated at `max_chars` so an unbounded scene file
+    can't blow the prompt. The narration is informational — it goes to the
+    prompt under a "Scene narration excerpts" header that explicitly tells
+    the model to read it for atmosphere, not to depict any character it
+    mentions (the background prompt already forbids characters globally).
+    """
+    if not scene:
+        return ""
+    nodes = scene.get("nodes")
+    if not isinstance(nodes, dict):
+        return ""
+    chunks: list[str] = []
+    for node in nodes.values():
+        if not isinstance(node, dict):
+            continue
+        if node.get("location_ref") != target_ref:
+            continue
+        narration = node.get("narration")
+        if isinstance(narration, str) and narration.strip():
+            chunks.append(narration.strip())
+    joined = "\n\n".join(chunks)
+    if len(joined) > max_chars:
+        joined = joined[:max_chars].rstrip() + "…"
+    return joined
