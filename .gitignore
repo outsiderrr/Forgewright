@@ -64,3 +64,4 @@ coverage.xml
 !/content/visuals/_reference/.gitkeep
 /content/visuals/_pending/
 /generator/image_cost_log.jsonl
+/generator/import_log.jsonl
