@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/chapter.schema.json",
+  "title": "Chapter",
+  "description": "SCHEMA_v0.3.md §5 的 Chapter/Act 容器。验证对象 = /state/ontology/<world>.json 顶层 `chapters[]` 数组的元素。ADR-016 + U-CL-4：阶段 1/2 已生成内容到阶段 3 需回填层级——所以前移到阶段 2 起手期落地。`acts[]` 内嵌 act_id + included_scenes（scene_anchor 数组）；scene_anchor 闭合性留给 graph_validator（必须解析回 location entity 且 location_type=scene）。__留给 validator 的语义约束__：(1) `chapter_id` 全本体唯一；(2) `acts[].act_id` 在单 chapter 内唯一；(3) `acts[].included_scenes[]` 内每个 scene_anchor 在本体可解析。",
+  "type": "object",
+  "required": ["chapter_id", "display_name", "acts"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "本 Chapter 对象的 schema 版本（SCHEMA_v0.3.md §1）。可省略，若填则必为 '0.3.0'。",
+      "const": "0.3.0"
+    },
+    "chapter_id": {
+      "description": "Chapter 全本体唯一 id。pattern：'chap_' 前缀 + 小写字母/数字/下划线。",
+      "type": "string",
+      "pattern": "^chap_[a-z0-9_]{1,64}$"
+    },
+    "display_name": {
+      "description": "Chapter 人类可读名称；作者审阅 UI 显示 + prompt context 注入。",
+      "type": "string",
+      "minLength": 1
+    },
+    "acts": {
+      "description": "Act 数组。可空数组（chapter 起步空 acts，作者后续 L3 任务填充）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["act_id", "display_name", "included_scenes"],
+        "additionalProperties": false,
+        "properties": {
+          "act_id": {
+            "description": "Act id；pattern：'act_' 前缀 + 小写字母/数字/下划线。单 chapter 内唯一性留给 validator。",
+            "type": "string",
+            "pattern": "^act_[a-z0-9_]{1,64}$"
+          },
+          "display_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "included_scenes": {
+            "description": "本 act 包含的 scene_anchor 数组。可空（act 起步空场景）。每项必须解析回本体 location entity（location_type=scene）；闭合性留给 graph_validator。",
+            "type": "array",
+            "items": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

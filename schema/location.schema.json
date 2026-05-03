@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/location.schema.json",
+  "title": "Location",
+  "description": "SCHEMA_v0.3.md §3 的 Location 本体实体。验证对象 = /state/ontology/<world>.json `entities[]` 内 `type==\"location\"` 的完整 entity 对象（含 envelope 字段 `id`/`type`——v1.0 §2.5 / Q3）。`schema_version` 起步 0.3.0。`location_type` 区分场景级（scene，对应 dialogue_graph 的 scene_anchor）vs 子位置（sublocation，对应 node.location_ref 细化）。`id` pattern 兼容 `scene_*`（场景）与 `loc_*`（子位置）双前缀。__留给 graph_validator 的语义约束__：(1) `parent_location_ref` 闭合性（非 null 时必须可解析回另一 location entity）；(2) location_type=sublocation ⇒ parent_location_ref 通常非 null（通过 graph_validator warning 而非 schema 强约）；(3) scene_anchor 引用必须解析到 location_type=scene 的 entity（graph_validator 校验）。",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "display_name",
+    "description",
+    "location_type"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "本 Location 对象的 schema 版本（SCHEMA_v0.3.md §1）。可省略，若填则必为 '0.3.0'。",
+      "const": "0.3.0"
+    },
+    "id": {
+      "description": "envelope 字段（v1.0 §2.5 / Q3）：location entity id。pattern 兼容 `scene_*`（场景级，对应 dialogue_graph.scene_anchor）+ `loc_*`（子位置）双前缀。全本体唯一性由 ontology loader 兜底。",
+      "type": "string",
+      "pattern": "^(scene_|loc_)[a-z0-9_]{1,64}$"
+    },
+    "type": {
+      "description": "envelope 字段（v1.0 §2.5 / Q3）：常量 'location'，与 character entity 'character' 互斥；ontology loader 据此分流。",
+      "const": "location"
+    },
+    "display_name": {
+      "description": "玩家可见名称；prompt context 注入用。",
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "description": "地点背景描述；prompt context 注入用。阶段 2 起为本体最小契约必填字段（ADR-016）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "location_type": {
+      "description": "ADR-016：scene = 场景级（与 dialogue_graph.scene_anchor 一一对应）；sublocation = 子位置（场景内细化，与 node.location_ref 对应）。",
+      "enum": ["scene", "sublocation"]
+    },
+    "parent_location_ref": {
+      "description": "🟡 父地点引用。location_type=sublocation 时通常非 null，指向场景级 location entity；location_type=scene 时通常 null。闭合性留给 graph_validator。",
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^(scene_|loc_)[a-z0-9_]{1,64}$"}
+      ]
+    },
+    "visual_assets": {
+      "description": "🟡 阶段 1.5 SCHEMA_v0.2.md §3 决策延续：scene_background 资产可嵌入到 location entity，与 character entity 嵌入 character_sheet 的形态对称（v0.2.0 仅在 character 试点；阶段 2 反向给 location 也加）。每项 = 完整 ImageAsset 对象（结构由 image_validator 兜底校验；本 schema 仅约束类型为 object——同 character.schema.json 哲学）。可空数组。",
+      "type": "array",
+      "items": {"type": "object"}
+    }
+  }
+}

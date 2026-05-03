@@ -1,9 +1,51 @@
 {
+    "system_time": {
+        "scene_count": 0,
+        "long_rest_count": 0
+    },
+    "clocks": [],
+    "chapters": [],
     "entities": [
         {
             "id": "char_vellin",
-            "display_name": "Vellin",
             "type": "character",
+            "display_name": "Vellin",
+            "description": "铁誓驿站现任老板娘。曾在边境军旅短暂服役，如今以中立驿站身份藏匿密信、收容逃兵；外表冷淡且话少，左眉骨上有一道新伤，对玩家保有旧日交情但绝口不提。",
+            "state_path_slug": "vellin",
+            "character_features": [
+                "stoic mercenary",
+                "驿站老板娘",
+                "前边境兵；身上多旧伤",
+                "守口如瓶但内心动摇",
+                "对玩家心存旧日恩情"
+            ],
+            "dramatic_triggers": [
+                {
+                    "trait": "stoic mercenary",
+                    "when": "被质问过去",
+                    "how": "沉默几秒后岔开话题",
+                    "priority": 1
+                },
+                {
+                    "trait": "守口如瓶但内心动摇",
+                    "when": "看到旧友受到铁誓威胁",
+                    "how": "压低声音、加快收手中物件的动作",
+                    "priority": 2,
+                    "cooldown_scenes": 2
+                }
+            ],
+            "relations": [
+                {
+                    "target_character_ref": "char_corvan",
+                    "relation_type": "former_brother_in_arms_now_adversary",
+                    "narrative_weight": "core"
+                },
+                {
+                    "target_character_ref": "char_aelwin",
+                    "relation_type": "complicit_protector",
+                    "narrative_weight": "core"
+                }
+            ],
             "visual_assets": [
                 {
                     "schema_version": "0.2.0",
@@ -134,20 +176,80 @@
         },
         {
             "id": "char_corvan",
-            "display_name": "Corvan",
             "type": "character",
+            "display_name": "Corvan",
+            "description": "铁誓卫队巡逻官。与玩家有过五年前兰岭追私盐队的并肩经历，秩序至上但旧战友情谊未尽；右手习惯按在腰间剑柄，是迟疑而非杀意——但旁人很难分辨。",
+            "state_path_slug": "corvan",
+            "character_features": [
+                "铁誓巡逻官",
+                "前兰岭战友；玩家旧相识",
+                "秩序至上但旧情有重量",
+                "习惯性按剑柄；语带威压"
+            ],
+            "dramatic_triggers": [
+                {
+                    "trait": "秩序至上但旧情有重量",
+                    "when": "被旧战友诉诸过往恩情",
+                    "how": "停顿一拍后给出冷硬但留余地的回应",
+                    "priority": 1
+                }
+            ],
+            "relations": [
+                {
+                    "target_character_ref": "char_vellin",
+                    "relation_type": "former_brother_in_arms_now_adversary",
+                    "narrative_weight": "core"
+                },
+                {
+                    "target_character_ref": "char_aelwin",
+                    "relation_type": "iron_oath_target",
+                    "narrative_weight": "minor"
+                }
+            ],
             "visual_assets": []
         },
         {
             "id": "char_aelwin",
-            "display_name": "Aelwin",
             "type": "character",
+            "display_name": "Aelwin",
+            "description": "铁誓卫队的逃兵。三年前与玩家在陶窑山口共守过补给线的少年兵，现因杀掉虐待部下的百夫长 Hael 而被通缉；目前藏匿于驿站东边的牧人废屋，等 Vellin 的回信决定生死。",
+            "state_path_slug": "aelwin",
+            "character_features": [
+                "逃兵",
+                "前陶窑山口少年兵；玩家旧战友",
+                "杀长官者；不后悔",
+                "藏匿于东边牧人废屋"
+            ],
+            "dramatic_triggers": [
+                {
+                    "trait": "杀长官者；不后悔",
+                    "when": "被追问杀 Hael 的动机",
+                    "how": "短促说出'他把我们当柴火用'后陷入沉默",
+                    "priority": 1
+                }
+            ],
+            "relations": [
+                {
+                    "target_character_ref": "char_vellin",
+                    "relation_type": "trusted_smuggler",
+                    "narrative_weight": "core"
+                },
+                {
+                    "target_character_ref": "char_corvan",
+                    "relation_type": "iron_oath_pursuer",
+                    "narrative_weight": "minor"
+                }
+            ],
             "visual_assets": []
         },
         {
             "id": "scene_waystation_of_iron_oath",
+            "type": "location",
             "display_name": "Waystation of the Iron Oath",
-            "type": "scene"
+            "description": "铁誓路上的驿站，三层石塔加木结构，塔顶悬挂已褪成铜绿色的断剑与铁环旗帜。曾是铁誓卫队的官方补给点，如今由 Vellin 经营，名义上中立、实际上是过路逃兵与边境密信的转手处。",
+            "location_type": "scene",
+            "parent_location_ref": null,
+            "visual_assets": []
         }
     ]
 }

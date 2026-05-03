@@ -28,9 +28,14 @@ def test_char_aelwin() -> None:
 
 
 def test_scene_waystation_of_iron_oath() -> None:
+    """T-2.2 envelope 迁移：scene_waystation_of_iron_oath 由 stage-0 桩态 `type=="scene"`
+    迁到 stage-2 location envelope `type=="location"` + `location_type=="scene"`
+    （ADR-016 / SCHEMA_v0.3.md §3）。loader 仍按 `entity["id"]` 索引，不破。
+    """
     entity = get_entity("scene_waystation_of_iron_oath")
     assert entity is not None
-    assert entity["type"] == "scene"
+    assert entity["type"] == "location"
+    assert entity["location_type"] == "scene"
     assert entity["display_name"] == "Waystation of the Iron Oath"
 
 
