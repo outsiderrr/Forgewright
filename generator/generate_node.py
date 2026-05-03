@@ -19,6 +19,7 @@ single isolated node are limited to the dialogue/end ⇄ options invariant
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,8 @@ from generator.prompts import (
     render_few_shot_block,
 )
 from validator import schema_check
+
+_LOG = logging.getLogger(__name__)
 
 # Rough token-count heuristic. Real tokenisers belong to providers; we only
 # need a pre-call estimate for the budget guard. ~4 chars/token is the
@@ -126,13 +129,14 @@ def generate_node(
         output_tokens_est = _OUTPUT_TOKEN_ESTIMATE
         estimated_cost = provider.estimate_cost(input_tokens_est, output_tokens_est)
         try:
-            budget.check_and_charge(
+            record_id = budget.check_and_charge(
                 estimated_cost,
                 model_id=getattr(provider, "model_id", "unknown"),
                 input_tokens=input_tokens_est,
                 output_tokens=output_tokens_est,
             )
         except BudgetExceeded as exc:
+            # pre_call_budget_fail: no record was written, nothing to refund.
             attempts.append(
                 AttemptRecord(
                     attempt_index=attempt_idx,
@@ -154,6 +158,11 @@ def generate_node(
                 SYSTEM_PROMPT, user_prompt, json_schema
             )
         except ProviderError as exc:
+            # T-2.11 tri-state refund: default ProviderError to
+            # request_sent_failure (don't refund — assume the call hit the
+            # server and may have billed). Differential classification of
+            # connect-failure vs API-error is R2.1 follow-up.
+            _log_refund_deferred(record_id, str(exc))
             attempts.append(
                 AttemptRecord(
                     attempt_index=attempt_idx,
@@ -170,7 +179,15 @@ def generate_node(
                 total_cost_usd=total_cost,
             )
 
-        total_cost += estimated_cost
+        # ---- Reconcile pre-call estimate with provider-reported actuals. ----
+        actual_cost = provider.estimate_cost(response.input_tokens, response.output_tokens)
+        budget.reconcile_after_call(
+            record_id,
+            actual_input_tokens=response.input_tokens,
+            actual_output_tokens=response.output_tokens,
+            actual_cost_usd=actual_cost,
+        )
+        total_cost += actual_cost
 
         # ---- Validate. ----
         validator_errors = _validate_node(response.content, graph_context)
@@ -179,7 +196,7 @@ def generate_node(
                 attempt_index=attempt_idx,
                 raw_text=response.raw_text,
                 validator_errors=validator_errors,
-                cost_usd=estimated_cost,
+                cost_usd=actual_cost,
                 finish_reason=response.finish_reason,
             )
         )
@@ -219,6 +236,15 @@ def _retry_feedback(errors: list[str]) -> str:
         "上次生成失败，错误如下：\n"
         f"{bullet_list}\n\n"
         "请基于以下要求修正后重新输出**完整**节点 JSON。"
+    )
+
+
+def _log_refund_deferred(record_id: str, error_msg: str) -> None:
+    """Note that a ProviderError row stays charged pending R2.1 classification."""
+    _LOG.info(
+        "request_sent_failure refund deferred to R2.1 (record_id=%s, error=%s)",
+        record_id,
+        error_msg,
     )
 
 
