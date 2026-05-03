@@ -455,6 +455,35 @@ def _collect_paths_from_node(node: dict) -> set[str]:
     return prefixes
 
 
+def _collect_full_paths_from_node(node: dict) -> set[tuple[str, ...]]:
+    """递归收集节点内 effects + condition 的全 path 段元组（区分点分字符串
+    与段数组形态后统一为 tuple[str, ...]）。"""
+    full_paths: set[tuple[str, ...]] = set()
+
+    def visit(obj: dict) -> None:
+        path = obj.get("path")
+        if isinstance(path, str):
+            full_paths.add(tuple(path.split(".")))
+        elif isinstance(path, list) and path:
+            full_paths.add(tuple(path))
+        for compound_key in ("all_of", "any_of"):
+            if compound_key in obj:
+                for child in obj[compound_key]:
+                    visit(child)
+        if "not" in obj:
+            visit(obj["not"])
+
+    for eff in node.get("on_enter_effects", []) or []:
+        visit(eff)
+    for opt in node.get("options", []) or []:
+        for eff in opt.get("effects", []) or []:
+            visit(eff)
+        cond = opt.get("condition")
+        if isinstance(cond, dict):
+            visit(cond)
+    return full_paths
+
+
 def test_gold_scene_paths_all_within_state_namespace_whitelist() -> None:
     """ADR-016 五个 state path 命名空间作为白名单：gold scene 中所有 effect /
     condition 的 path 首段必须落入 (world / faction / relationship / flag /
@@ -467,4 +496,104 @@ def test_gold_scene_paths_all_within_state_namespace_whitelist() -> None:
     illegal = all_prefixes - set(STATE_PATH_NAMESPACES)
     assert illegal == set(), (
         f"gold scene 用到了 ADR-016 命名空间表外的 path 首段: {illegal!r}"
+    )
+
+
+def test_gold_scene_relationship_paths_resolve_to_state_path_slug() -> None:
+    """T-2.2 review 4.1：state_path_slug 反查链端到端回归。
+
+    gold scene 用到的 `relationship.<slug>.*` 路径中的第二段（slug）必须能
+    反查到 /state/ontology/waystation.json 内某 character entity 的
+    `state_path_slug` 字段。这是 STAGE_2_TASKS §2.6 / Q1 兼容决策的核心——
+    保 gold scene `relationship.vellin.trust` 不破，需要 `vellin` 反查到
+    `char_vellin`。T-2.4 BOND_ID_UNKNOWN 机械预检会复用同一反查表；本测试
+    在 schema 层先把链锁住，避免 slug 在 prompt / validator 层悄悄漂移。
+
+    关键正断言：
+    - `vellin` → `char_vellin`（gold scene 实际用到，命名一致性回归）
+    """
+    gold = json.loads(GOLD_SCENE_PATH.read_text(encoding="utf-8"))
+    ontology = _load_ontology()
+    slug_to_character: dict[str, str] = {
+        e["state_path_slug"]: e["id"]
+        for e in ontology["entities"]
+        if e.get("type") == "character"
+    }
+
+    relationship_full_paths: set[tuple[str, ...]] = set()
+    for node in gold["nodes"].values():
+        for path_tuple in _collect_full_paths_from_node(node):
+            if path_tuple and path_tuple[0] == "relationship":
+                relationship_full_paths.add(path_tuple)
+
+    # gold scene 至少有一条 `relationship.*` path（vellin/corvan trust 推进）
+    assert relationship_full_paths, (
+        "gold scene 内未发现 relationship.* 路径——回归覆盖前提丢失"
+    )
+
+    unresolved: list[str] = []
+    for path_tuple in sorted(relationship_full_paths):
+        if len(path_tuple) < 2:
+            unresolved.append(".".join(path_tuple) + " (缺 slug 段)")
+            continue
+        slug = path_tuple[1]
+        if slug not in slug_to_character:
+            unresolved.append(
+                ".".join(path_tuple)
+                + f" (slug {slug!r} 未反查到任何 character.state_path_slug)"
+            )
+    assert unresolved == [], (
+        "gold scene relationship.* 路径无法反查到 character entity:\n  "
+        + "\n  ".join(unresolved)
+    )
+
+    # 命名一致性正断言：v1.0 §2.6 默认值 = id 去 char_ 前缀
+    assert slug_to_character.get("vellin") == "char_vellin"
+    assert slug_to_character.get("corvan") == "char_corvan"
+    assert slug_to_character.get("aelwin") == "char_aelwin"
+
+
+# ---------------------------------------------------------------------------
+# 8. T-2.2 review 4.2：embedded visual_assets 已入本体数据的 ImageAsset shape
+#    回归（character/location.schema.json 用 generic object 权衡的兜底）
+# ---------------------------------------------------------------------------
+
+def test_embedded_visual_assets_still_match_image_asset_schema() -> None:
+    """T-2.2 review 4.2：character/location schema 的 visual_assets items
+    用 generic `{"type": "object"}` 是 codegen 权衡（详 SCHEMA_v0.3.md
+    §2.3）；ImageAsset 完整 shape 校验留给 image_validator + image_import
+    入口。但已入本体的 visual_assets 数据**绕过** image_import 入口
+    （loader 直接 json.loads），生产代码无兜底——本测试在 schema 层补上：
+    waystation.json 内所有已嵌入的 visual_assets item 必须 pass
+    image_asset.schema.json。
+
+    若未来作者手改 ontology 写一个空 `{}` 或字段错位的资产对象，本测试
+    先报警；不依赖 image_import 入口的二次校验。
+    """
+    image_asset_validator = _validator("image_asset.schema.json")
+    ontology = _load_ontology()
+
+    failures: list[str] = []
+    total_assets = 0
+    for entity in ontology["entities"]:
+        for idx, asset in enumerate(entity.get("visual_assets", []) or []):
+            total_assets += 1
+            errors = sorted(
+                image_asset_validator.iter_errors(asset),
+                key=lambda e: list(e.path),
+            )
+            if errors:
+                failures.append(
+                    f"{entity['id']}.visual_assets[{idx}]: "
+                    + "; ".join(f"{list(e.path)}: {e.message}" for e in errors)
+                )
+
+    assert failures == [], (
+        f"embedded visual_assets 共 {total_assets} 个，"
+        f"{len(failures)} 个不符合 image_asset.schema.json:\n  "
+        + "\n  ".join(failures)
+    )
+    # 防御性：阶段 1.5 给 vellin 加了 5 张立绘；若有人误清空回归覆盖丢失
+    assert total_assets >= 1, (
+        "ontology 内未发现任何 embedded visual_assets——回归覆盖前提丢失"
     )
