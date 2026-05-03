@@ -10,6 +10,11 @@
 视觉资产（T-1.5.4）独立成第四入口：validate_image_asset(path, asset_kind=...) →
 list[ImageValidationError]。它针对**单个图像文件**而非 graph dict，因此与上面三
 层并行而非纳入 ValidationReport（定位单位不同）。
+
+ADR-021 第二层方法论拆 2A 拓扑 + 2B 抽样 + 有界符号执行（T-2.7 落地）：
+  - 2A：``validate_graph_topology`` （包装 ``graph_check`` ；纯拓扑 + condition 引用形态）
+  - 2B：``validate_graph_sampling`` + ``validate_graph_bounded_symbolic``
+        （condition satisfiability 全部走 2B）
 """
 from __future__ import annotations
 
@@ -20,12 +25,27 @@ from .dialogue_validator import (
     validate_graph_mechanical,
     validate_node_mechanical,
 )
+from .graph_validation import (
+    ACTIVE_CLOCKS_SOFT_LIMIT,
+    STATE_PATH_NAMESPACES,
+    TopologyIssue,
+    TopologyResult,
+    normalize_effect_op,
+    validate_graph_topology,
+)
 from .image_validator import (
     ImageValidationConfig,
     ImageValidationError,
     validate_image_asset,
 )
 from .report import Issue, ValidationReport
+from .sampling import (
+    FailedSample,
+    SamplingResult,
+    SymbolicResult,
+    validate_graph_bounded_symbolic,
+    validate_graph_sampling,
+)
 
 __all__ = [
     "validate",
@@ -34,10 +54,24 @@ __all__ = [
     "validate_image_asset",
     "ImageValidationError",
     "ImageValidationConfig",
+    # T-2.4 dialogue node mechanical pre-check (R8 + ADR-020)
     "ValidationIssue",
     "ValidationResult",
     "validate_node_mechanical",
     "validate_graph_mechanical",
+    # ADR-021 §2A
+    "TopologyIssue",
+    "TopologyResult",
+    "validate_graph_topology",
+    "normalize_effect_op",
+    "STATE_PATH_NAMESPACES",
+    "ACTIVE_CLOCKS_SOFT_LIMIT",
+    # ADR-021 §2B
+    "FailedSample",
+    "SamplingResult",
+    "SymbolicResult",
+    "validate_graph_sampling",
+    "validate_graph_bounded_symbolic",
 ]
 
 
