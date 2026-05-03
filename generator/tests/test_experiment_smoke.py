@@ -103,10 +103,13 @@ class _BudgetExceededFakeProvider:
 def _tiny_fixtures() -> list[Fixture]:
     base_ctx = GraphContext(
         scene_anchor="scene_waystation_of_iron_oath",
-        location_card={
-            "location_id": "scene_waystation_of_iron_oath",
-            "name": "铁誓驿站",
-        },
+        location_candidates=[
+            {
+                "location_id": "scene_waystation_of_iron_oath",
+                "name": "铁誓驿站",
+            }
+        ],
+        primary_location_ref="scene_waystation_of_iron_oath",
         parent_chain=[],
         involved_characters=[
             {"character_id": "char_vellin", "summary": "驿站管事"},
@@ -239,7 +242,13 @@ def _envelope(iter_id: int, *, success: bool, fixture_id: str = "dialogue_t",
         "fixture": {
             "graph_context": {
                 "scene_anchor": "scene_waystation_of_iron_oath",
-                "location_card": {"name": "铁誓驿站"},
+                "location_candidates": [
+                    {
+                        "location_id": "scene_waystation_of_iron_oath",
+                        "name": "铁誓驿站",
+                    }
+                ],
+                "primary_location_ref": "scene_waystation_of_iron_oath",
                 "parent_chain": [],
                 "involved_characters": [{"character_id": "char_vellin"}],
                 "faction_clocks": {},

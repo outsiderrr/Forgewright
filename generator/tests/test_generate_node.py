@@ -119,7 +119,10 @@ class _ScriptedProvider:
 def _ctx(parent_chain: list[dict] | None = None) -> GraphContext:
     return GraphContext(
         scene_anchor="scene_waystation_of_iron_oath",
-        location_card={"location_id": "scene_waystation_of_iron_oath", "name": "铁誓驿站"},
+        location_candidates=[
+            {"location_id": "scene_waystation_of_iron_oath", "name": "铁誓驿站"}
+        ],
+        primary_location_ref="scene_waystation_of_iron_oath",
         parent_chain=parent_chain if parent_chain is not None else [],
         involved_characters=[
             {"character_id": "char_vellin", "summary": "驿站管事，旧识"},

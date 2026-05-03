@@ -26,10 +26,18 @@ class GraphContext:
     caller convention — assemble_context_block treats the list as already
     ordered chronologically: index 0 = oldest of the three ancestors,
     index -1 = the immediate parent).
+
+    `location_candidates` lists 1–3 ontology-defined locations the model is
+    allowed to pick its `location_ref` from. `primary_location_ref` is the
+    suggested default when the scene has a single dominant location; leave it
+    `None` if the caller does not want to bias the choice. Stage 2 §2.8 unified
+    this field name with SceneGraphContext so scene-level and node-level
+    contexts share one shape.
     """
 
     scene_anchor: str
-    location_card: dict = field(default_factory=dict)
+    location_candidates: list[dict] = field(default_factory=list)
+    primary_location_ref: str | None = None
     parent_chain: list[dict] = field(default_factory=list)
     involved_characters: list[dict] = field(default_factory=list)
     faction_clocks: dict[str, int] = field(default_factory=dict)
@@ -59,13 +67,20 @@ def assemble_context_block(
     parts.append(f"- scene_anchor: `{graph_context.scene_anchor}`")
 
     parts.append("")
-    parts.append("## 地点卡")
-    if graph_context.location_card:
-        parts.append("```json")
-        parts.append(json.dumps(graph_context.location_card, ensure_ascii=False, indent=2))
-        parts.append("```")
+    parts.append("## 候选地点")
+    if graph_context.location_candidates:
+        parts.append(
+            "下列是本体已定义的候选地点；`location_ref` **必须**取自其中的"
+            " `location_id` 字段，不要发明候选外的地点。"
+        )
+        if graph_context.primary_location_ref is not None:
+            parts.append(f"- 主地点（推荐默认 `location_ref`）：`{graph_context.primary_location_ref}`")
+        for cand in graph_context.location_candidates:
+            parts.append("```json")
+            parts.append(json.dumps(cand, ensure_ascii=False, indent=2))
+            parts.append("```")
     else:
-        parts.append("（本体桩未提供地点卡——按 scene_anchor 自行推断基本氛围）")
+        parts.append("（本体桩未提供候选地点——按 scene_anchor 自行推断基本氛围）")
 
     parts.append("")
     parts.append("## 父链（按时间顺序，最近的父节点在最后）")
