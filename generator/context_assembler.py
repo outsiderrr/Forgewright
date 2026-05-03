@@ -33,6 +33,14 @@ class GraphContext:
     `None` if the caller does not want to bias the choice. Stage 2 §2.8 unified
     this field name with SceneGraphContext so scene-level and node-level
     contexts share one shape.
+
+    `active_clocks` and `system_time` (T-2.5 C-phase, review 4.2) carry
+    ADR-017 clock state and the `world.scene_count` / `world.long_rest_count`
+    system-time pair into node-level prompts. Both default empty so existing
+    T-1.6 callers (`generate_node` solo, no scene scheduler) keep working
+    unchanged — the renderer omits the section when both are empty.
+    `faction_clocks` (legacy `dict[str, int]`) is preserved so already-passing
+    tests don't shift; it renders the legacy "阵营时钟当前值" section.
     """
 
     scene_anchor: str
@@ -41,15 +49,26 @@ class GraphContext:
     parent_chain: list[dict] = field(default_factory=list)
     involved_characters: list[dict] = field(default_factory=list)
     faction_clocks: dict[str, int] = field(default_factory=dict)
+    active_clocks: list[dict] = field(default_factory=list)
+    system_time: dict | None = None
 
 
 @dataclass
 class NodeRequirement:
-    """What the caller wants out of this single generation."""
+    """What the caller wants out of this single generation.
+
+    `allowed_targets` (T-2.5) constrains the legal `option.target_node_id`
+    set for this node. `None` (default) = unconstrained (single-node
+    generation; T-1.6 backwards compat). Non-None = the caller (typically
+    `scene_strategies.fill_skeleton`) has already drawn the graph
+    skeleton's edges and any `target_node_id` outside this list will be
+    rejected as schema_invalid and re-fed to the LLM.
+    """
 
     node_type: Literal["dialogue", "end"]
     expected_speaker_ref: str | None
     narrative_intent: str
+    allowed_targets: list[str] | None = None
 
 
 def assemble_context_block(
@@ -111,6 +130,33 @@ def assemble_context_block(
     else:
         parts.append("（阶段 0 本体桩未注册任何阵营时钟）")
 
+    # T-2.5 C-phase (review 4.2): scene-level fill prompts must surface
+    # active_clocks (ADR-017) and system_time (world.scene_count /
+    # world.long_rest_count) so node text reflects current world state.
+    # Render only when non-empty — node-level T-1.6 callers leave both
+    # blank and don't see this section, keeping their prompt hashes stable.
+    if graph_context.active_clocks:
+        parts.append("")
+        parts.append("## 活跃时钟 (`active_clocks`)")
+        parts.append(
+            "对白可以暗示压力但不要直接写出 `ticks_filled` 数字；填充节点的"
+            " `effects` / `condition` 中的 path 仍需落入 ADR-016 命名空间。"
+        )
+        for clock in graph_context.active_clocks:
+            parts.append("```json")
+            parts.append(json.dumps(clock, ensure_ascii=False, indent=2))
+            parts.append("```")
+
+    if graph_context.system_time:
+        parts.append("")
+        parts.append("## 系统时间 (`system_time`)")
+        parts.append(
+            f"- `world.scene_count`: {graph_context.system_time.get('scene_count', 0)}"
+        )
+        parts.append(
+            f"- `world.long_rest_count`: {graph_context.system_time.get('long_rest_count', 0)}"
+        )
+
     parts.append("")
     parts.append("## 本次生成要求")
     parts.append(f"- 节点类型 (`type`): `{node_requirement.node_type}`")
@@ -123,5 +169,21 @@ def assemble_context_block(
         parts.append("- `options` 必须非空（3–6 个，覆盖不同性格倾向）")
     else:
         parts.append("- `options` 必须为空数组（end 节点不可继续）")
+
+    if node_requirement.allowed_targets is not None:
+        parts.append("")
+        parts.append("## target_node_id 硬约束（skeleton-first fill 阶段）")
+        if node_requirement.allowed_targets:
+            allowed = ", ".join(f"`{t}`" for t in node_requirement.allowed_targets)
+            parts.append(
+                f"- 本节点每个 `option.target_node_id` **必须**取自下列集合：{allowed}"
+            )
+            parts.append(
+                "- 集合外的 target_node_id = schema_invalid（图骨架已锁定边连接，禁止凭空指向新节点）"
+            )
+        else:
+            parts.append(
+                "- 本节点为 end 节点，`options` 必须为空数组（无 target_node_id 可写）"
+            )
 
     return "\n".join(parts)

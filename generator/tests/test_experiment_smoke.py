@@ -71,8 +71,12 @@ class _SuccessfulFakeProvider:
     def generate_structured(self, system_prompt, user_prompt, json_schema):
         self.call_count += 1
         # Return end node for end-type calls so options-empty invariant holds.
-        # We detect via the user_prompt having "type=`end`" in the requirement.
-        if "`end`" in user_prompt:
+        # We detect by looking at the LAST `## 本次生成要求` section (the
+        # caller's actual requirement), not the whole prompt — the
+        # few-shot block pre-pended by generate_node also contains
+        # `` `end` `` strings inside its demo input_contexts.
+        last_req_section = user_prompt.rsplit("## 本次生成要求", 1)[-1]
+        if "(`type`): `end`" in last_req_section:
             return _make_response(_valid_end_node())
         return _make_response(_valid_dialogue_node())
 
