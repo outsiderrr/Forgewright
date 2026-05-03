@@ -158,7 +158,7 @@ Schema 定稿后可并行三路：
 ### 重点工作
 
 - 新增 ADR：角色槽位（role slot casting）与动态选角 —— 支持 BG3 式"同一剧情功能由不同角色填充"模式
-- validator 扩展：结局可达性保证（graceful degradation validation）—— 证明任意合法状态组合下至少有 1 个结局可达
+- validator 扩展：结局可达性保证（graceful degradation validation）—— 抽样验证 N=100 路径 + 有界符号执行下未发现反例（按 ADR-021 拆 2A 拓扑 + 2B 抽样 + 有界符号执行）
 
 ### 启动闸门（Round 5 综合后）
 
@@ -248,6 +248,7 @@ Schema 定稿后可并行三路：
 - **2026-04-30**：阶段 1 验收签字；阶段 1.5 任务规划落地（`/docs/STAGE_1.5_TASKS.md` v0.1）；ADR-014（视觉资产双模生成策略）立项
 - **2026-04-30**：Round 5 总规划综合评审完成（Claude × GPT-5.5）；ADR-015（阶段 1.5 与阶段 2 sequencing）立项；ROADMAP 阶段 2 启动闸门 + 阶段 3 完成标志强化项占位增订；详见 `/docs/DEBATE_NOTES.md` Round 5 段落与 `/docs/reviews/master_plan/`
 - **2026-05-02**：阶段 1.5 验收**部分通过 / 有条件通过**（见 `/docs/STAGE_1.5_ACCEPTANCE.md`）。10 任务 ABC 全闭环 + 工具链端到端实证（mini probe vellin 5 张入库 PASS）；R1.5-1~6 遗留（剩余 14 立绘 + 1 background 全 batch 生图作者主动跳过 / 接受率未测 / AI 判官 vs 作者 kappa 未算 / C4 parity smoke 未跑 / alpha 形式合规但实际不透明 / mini probe 工作流 ergonomic）。ADR-015 串行卡口解锁——阶段 2 schema commit 现可启动
+- **2026-05-03**：§阶段 2 完成标志措辞从"证明任意合法状态组合下至少有 1 个结局可达"修订为"抽样验证 N=100 路径 + 有界符号执行下未发现反例"，与 ADR-021（待立项）实际口径对齐。来源：STAGE_2_TASKS_v1.0_draft §13 X1（GPT-5.5 critique 5.4 整合）。
 
 ## 版本
 
