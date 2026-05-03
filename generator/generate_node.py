@@ -217,6 +217,14 @@ def generate_node(
 
         # ---- Validate. ----
         validator_errors = _validate_node(response.content, graph_context)
+        # T-2.5 critique 4.9: when the caller (scene_strategies.fill_skeleton)
+        # has frozen the legal target set, reject any option pointing
+        # outside it. Surfaced as a schema_invalid line so the existing
+        # retry loop re-feeds it to the LLM unchanged — no new failure
+        # reason at this layer.
+        validator_errors.extend(
+            _check_allowed_targets(response.content, node_requirement.allowed_targets)
+        )
         attempts.append(
             AttemptRecord(
                 attempt_index=attempt_idx,
@@ -325,6 +333,45 @@ def _is_request_not_sent(exc: BaseException) -> bool:
             return True
         cur = cur.__cause__ or cur.__context__
     return False
+
+
+def _check_allowed_targets(
+    node_dict: Any, allowed_targets: list[str] | None
+) -> list[str]:
+    """Reject `option.target_node_id` values outside the skeleton's frozen set.
+
+    `allowed_targets is None` → backwards-compat mode (T-1.6 single-node
+    generation): no constraint.
+
+    Empty list (`[]`) is *also* a constraint, expressing "this node is an
+    `end` node — no targets allowed". The schema layer already enforces
+    that `end` nodes have `options == []`, so an empty list here is mostly
+    redundant, but we still flag any option that slipped through with a
+    populated target — that defends against the case where the LLM
+    misidentifies the node type.
+    """
+    if allowed_targets is None:
+        return []
+    if not isinstance(node_dict, dict):
+        return []  # _validate_node will already have flagged the wrong shape
+    options = node_dict.get("options")
+    if not isinstance(options, list):
+        return []
+    allowed_set = set(allowed_targets)
+    errors: list[str] = []
+    for idx, opt in enumerate(options):
+        if not isinstance(opt, dict):
+            continue
+        target = opt.get("target_node_id")
+        if not isinstance(target, str):
+            continue  # schema layer will catch missing/non-string targets
+        if target not in allowed_set:
+            allowed_repr = ", ".join(sorted(allowed_set)) if allowed_set else "(空)"
+            errors.append(
+                f"/options/{idx}/target_node_id: target {target!r} "
+                f"not in skeleton allowed_targets ({allowed_repr})"
+            )
+    return errors
 
 
 def _validate_node(node_dict: Any, graph_context: GraphContext) -> list[str]:

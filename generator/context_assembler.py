@@ -45,11 +45,20 @@ class GraphContext:
 
 @dataclass
 class NodeRequirement:
-    """What the caller wants out of this single generation."""
+    """What the caller wants out of this single generation.
+
+    `allowed_targets` (T-2.5) constrains the legal `option.target_node_id`
+    set for this node. `None` (default) = unconstrained (single-node
+    generation; T-1.6 backwards compat). Non-None = the caller (typically
+    `scene_strategies.fill_skeleton`) has already drawn the graph
+    skeleton's edges and any `target_node_id` outside this list will be
+    rejected as schema_invalid and re-fed to the LLM.
+    """
 
     node_type: Literal["dialogue", "end"]
     expected_speaker_ref: str | None
     narrative_intent: str
+    allowed_targets: list[str] | None = None
 
 
 def assemble_context_block(
@@ -123,5 +132,21 @@ def assemble_context_block(
         parts.append("- `options` 必须非空（3–6 个，覆盖不同性格倾向）")
     else:
         parts.append("- `options` 必须为空数组（end 节点不可继续）")
+
+    if node_requirement.allowed_targets is not None:
+        parts.append("")
+        parts.append("## target_node_id 硬约束（skeleton-first fill 阶段）")
+        if node_requirement.allowed_targets:
+            allowed = ", ".join(f"`{t}`" for t in node_requirement.allowed_targets)
+            parts.append(
+                f"- 本节点每个 `option.target_node_id` **必须**取自下列集合：{allowed}"
+            )
+            parts.append(
+                "- 集合外的 target_node_id = schema_invalid（图骨架已锁定边连接，禁止凭空指向新节点）"
+            )
+        else:
+            parts.append(
+                "- 本节点为 end 节点，`options` 必须为空数组（无 target_node_id 可写）"
+            )
 
     return "\n".join(parts)
