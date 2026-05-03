@@ -8,8 +8,12 @@ considered an implementation detail and may change when the codegen step is
 re-tuned.
 """
 
+from generator.models._generated.chapter import Chapter
+from generator.models._generated.character import Character
+from generator.models._generated.clock import Clock
 from generator.models._generated.dialogue_graph import DialogueGraph
 from generator.models._generated.image_asset import ImageAsset
+from generator.models._generated.location import Location
 from generator.models._generated.node import Node
 from generator.models._generated.option import Option
 from generator.models._generated.state_condition import (
@@ -22,8 +26,12 @@ from generator.models._generated.state_condition import (
 from generator.models._generated.state_effect import StateEffect
 
 __all__ = [
+    "Chapter",
+    "Character",
+    "Clock",
     "DialogueGraph",
     "ImageAsset",
+    "Location",
     "Node",
     "Option",
     "StateCondition",

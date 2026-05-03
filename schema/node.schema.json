@@ -52,7 +52,7 @@
       "type": "object"
     },
     "generation_trace": {
-      "description": "🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。",
+      "description": "🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。__v0.3 增量__（ADR-019 / SCHEMA_v0.3.md §6）：追加 optional `slot_assignments` 子字段，结构 `dict[<slot_id>, {character_ref, assigned_at, source_prompt_hash}]`，用于持久化 generator 中间产物的抽象槽 → concrete character 映射。**走 optional + additionalProperties: false 兼容路径——不 bump dialogue_graph / node schema_version**（v1.0 §2.4）；现有 v0.1.x trace（无 slot_assignments）继续合法。",
       "type": "object",
       "required": ["source"],
       "additionalProperties": false,
@@ -62,7 +62,32 @@
         "model_id": {"type": ["string", "null"]},
         "prompt_hash": {"type": ["string", "null"]},
         "reviewed_by": {"type": ["string", "null"]},
-        "reviewed_at": {"type": ["string", "null"]}
+        "reviewed_at": {"type": ["string", "null"]},
+        "slot_assignments": {
+          "description": "🟡 v0.3 增量（ADR-019 / SCHEMA_v0.3.md §6）：节点级抽象槽 → concrete character 持久化映射。键 = slot_id（自由短文本，如 'the_betrayer' / 'the_witness'），值 = `{character_ref, assigned_at, source_prompt_hash}`。本字段 optional，整体可省；若填则每个 entry 必须三键齐全。槽位语义跨场景一致性留给 generator 中间产物层（阶段 2 不实现动态换角）。",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["character_ref", "assigned_at", "source_prompt_hash"],
+            "additionalProperties": false,
+            "properties": {
+              "character_ref": {
+                "description": "concrete character entity id；闭合性留给 graph_validator。",
+                "type": "string",
+                "pattern": "^char_[a-z0-9_]{1,64}$"
+              },
+              "assigned_at": {
+                "description": "ISO 8601 / RFC 3339 时间戳；T-2.6 写入。",
+                "type": "string",
+                "minLength": 1
+              },
+              "source_prompt_hash": {
+                "description": "生成此 slot 分配的 prompt 文本 sha256 hex（可 null，作者手填场景无 hash）。",
+                "type": ["string", "null"]
+              }
+            }
+          }
+        }
       }
     }
   },

@@ -26,9 +26,25 @@ class Source(Enum):
     llm = "llm"
 
 
+class SlotAssignments(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    character_ref: constr(pattern=r"^char_[a-z0-9_]{1,64}$") = Field(
+        ..., description="concrete character entity id；闭合性留给 graph_validator。"
+    )
+    assigned_at: constr(min_length=1) = Field(
+        ..., description="ISO 8601 / RFC 3339 时间戳；T-2.6 写入。"
+    )
+    source_prompt_hash: str | None = Field(
+        ...,
+        description="生成此 slot 分配的 prompt 文本 sha256 hex（可 null，作者手填场景无 hash）。",
+    )
+
+
 class GenerationTrace(BaseModel):
     """
-    🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。
+    🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。__v0.3 增量__（ADR-019 / SCHEMA_v0.3.md §6）：追加 optional `slot_assignments` 子字段，结构 `dict[<slot_id>, {character_ref, assigned_at, source_prompt_hash}]`，用于持久化 generator 中间产物的抽象槽 → concrete character 映射。**走 optional + additionalProperties: false 兼容路径——不 bump dialogue_graph / node schema_version**（v1.0 §2.4）；现有 v0.1.x trace（无 slot_assignments）继续合法。
     """
 
     model_config = ConfigDict(
@@ -40,6 +56,10 @@ class GenerationTrace(BaseModel):
     prompt_hash: str | None = None
     reviewed_by: str | None = None
     reviewed_at: str | None = None
+    slot_assignments: dict[str, SlotAssignments] | None = Field(
+        None,
+        description="🟡 v0.3 增量（ADR-019 / SCHEMA_v0.3.md §6）：节点级抽象槽 → concrete character 持久化映射。键 = slot_id（自由短文本，如 'the_betrayer' / 'the_witness'），值 = `{character_ref, assigned_at, source_prompt_hash}`。本字段 optional，整体可省；若填则每个 entry 必须三键齐全。槽位语义跨场景一致性留给 generator 中间产物层（阶段 2 不实现动态换角）。",
+    )
 
 
 class Node(BaseModel):
@@ -82,7 +102,7 @@ class Node(BaseModel):
     )
     generation_trace: GenerationTrace | None = Field(
         None,
-        description="🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。",
+        description="🟡 D8：整体可省；若填则 source 必填，六键结构冻结（同 Option.generation_trace）。__v0.3 增量__（ADR-019 / SCHEMA_v0.3.md §6）：追加 optional `slot_assignments` 子字段，结构 `dict[<slot_id>, {character_ref, assigned_at, source_prompt_hash}]`，用于持久化 generator 中间产物的抽象槽 → concrete character 映射。**走 optional + additionalProperties: false 兼容路径——不 bump dialogue_graph / node schema_version**（v1.0 §2.4）；现有 v0.1.x trace（无 slot_assignments）继续合法。",
     )
 
 

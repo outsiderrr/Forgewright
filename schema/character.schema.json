@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/character.schema.json",
+  "title": "Character",
+  "description": "SCHEMA_v0.3.md §2 的 Character 本体实体。验证对象 = /state/ontology/<world>.json `entities[]` 内 `type==\"character\"` 的完整 entity 对象（含 envelope 字段 `id`/`type`，不引入 `character_id` 冗余名——v1.0 §2.5 / Q3）。`schema_version` 起步 0.3.0，独立于 dialogue_graph const 0.1.1（详 SCHEMA_v0.3.md §1 复合版本号语义）。__留给 image_validator / graph_validator / 机械预检器的语义约束__：(1) `state_path_slug` 在世界本体内唯一（同一 world 内同 slug 必指同一 character；image_validator 兜底）；(2) `relations[].target_character_ref` 在本体花名册中可解析（character_validator 兜底）；(3) `visual_assets` 内每张 ImageAsset 的镜像字段一致性（详 image_asset.schema.json description 第 1-7 项 image_validator 约束）。一致性约束**不在 schema 层用 if/then/else 表达**——SCHEMA_v0.2.md P0.1 教训：datamodel-code-generator 与 Gemini schema 子集对复合形态有已知坑。",
+  "type": "object",
+  "required": [
+    "id",
+    "type",
+    "display_name",
+    "description",
+    "state_path_slug",
+    "character_features",
+    "relations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "本 Character 对象的 schema 版本（SCHEMA_v0.3.md §1）。新建 schema 文件首版 0.3.0；可省略，若填则必为 '0.3.0'。本体既有桩态条目无此字段，迁移期默认接受省略——SCHEMA_v0.2 ImageAsset 先例。",
+      "const": "0.3.0"
+    },
+    "id": {
+      "description": "envelope 字段（v1.0 §2.5 / Q3）：character entity id。pattern：'char_' 前缀 + 小写字母/数字/下划线（后缀 1–64 字符）。全本体唯一性留给 ontology loader（loader 内重复 id 抛 ValueError）。",
+      "type": "string",
+      "pattern": "^char_[a-z0-9_]{1,64}$"
+    },
+    "type": {
+      "description": "envelope 字段（v1.0 §2.5 / Q3）：常量 'character'，与 location entity 的 'location' 等枚举值互斥；ontology loader 据此分流。",
+      "const": "character"
+    },
+    "display_name": {
+      "description": "玩家可见名称；prompt context 注入用。",
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "description": "角色背景描述；prompt context 注入用。阶段 2 起为本体最小契约必填字段（ADR-016）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "state_path_slug": {
+      "description": "v1.0 §2.6 / Q1：state path 命名空间 `relationship.<state_path_slug>.*` 的 slug。默认 = `id` 去 `char_` 前缀（如 `char_vellin` → `vellin`），作者可校准（冲突 / 短称偏好）。pattern 仅小写字母/数字/下划线。机械预检器（T-2.4）BOND_ID_UNKNOWN 检查用本字段反查 entity.id。",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 1
+    },
+    "character_features": {
+      "description": "ADR-016：描述性特征数组（如 'stoic mercenary' / 'reluctant collaborator'）。prompt context 注入用——T-2.5 prompt 模板按 narrative_weight 决定是否进 prompt。可空数组。",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "dramatic_triggers": {
+      "description": "🟡 ADR-019 / PZ §4：戏剧义务字段。每项结构 `{trait, when, how}`（必填）+ `priority` / `cooldown_scenes`（optional）。LLM 在场景生成时按 priority 选择是否触发，cooldown_scenes 控场景间隔避免重复。空数组合法（角色无戏剧触发器）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trait", "when", "how"],
+        "additionalProperties": false,
+        "properties": {
+          "trait": {"type": "string", "minLength": 1},
+          "when": {"type": "string", "minLength": 1},
+          "how": {"type": "string", "minLength": 1},
+          "priority": {"type": "integer", "minimum": 1},
+          "cooldown_scenes": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "relations": {
+      "description": "ADR-018：嵌入式关系数组（不引入全局关系表，避免 ADR-006 双向冗余）。每项 `{target_character_ref, relation_type, narrative_weight}`，narrative_weight 三档语义（core 必显 / minor 可选 / context_only 仅作 prompt anchor）决定 T-2.5 prompt 注入策略。可空数组（角色独立无关系）。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["target_character_ref", "relation_type", "narrative_weight"],
+        "additionalProperties": false,
+        "properties": {
+          "target_character_ref": {
+            "description": "目标 character entity id；闭合性留给 character_validator。",
+            "type": "string",
+            "pattern": "^char_[a-z0-9_]{1,64}$"
+          },
+          "relation_type": {
+            "description": "自由短文本（如 'former_brother_in_arms' / 'guarded_secret_keeper'）；schema 不约束词汇表，作者按场景需要写。",
+            "type": "string",
+            "minLength": 1
+          },
+          "narrative_weight": {
+            "description": "ADR-018 三档：core=必显 / minor=可选 / context_only=仅 anchor。",
+            "enum": ["core", "minor", "context_only"]
+          }
+        }
+      }
+    },
+    "visual_assets": {
+      "description": "🟡 阶段 1.5 SCHEMA_v0.2.md §3 引入的字段，保留。每项 = 完整 ImageAsset 对象（结构由 image_asset.schema.json 在 image_validator 兜底校验；本 schema 仅约束类型为 object，避免 datamodel-code-generator 多文件 cluster 的循环 $ref 复杂性——SCHEMA_v0.2 已确立的 \"schema 层不重复表达可由专门 validator 校验的语义\" 哲学）。可空数组。",
+      "type": "array",
+      "items": {"type": "object"}
+    }
+  }
+}
