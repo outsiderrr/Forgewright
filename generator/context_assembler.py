@@ -10,6 +10,14 @@ context), which would explode token cost and make generation unreproducible.
 fragment. Stage-0 ontology stubs may leave card fields empty; the renderer
 degrades gracefully — every section announces what it's missing rather than
 failing the call.
+
+T-2.6 adds `SceneGraphContext` (scene-level sibling of `GraphContext`) +
+`assemble_scene_context_block`. It is the structured intermediate
+`generate_scene` builds before unpacking it into
+`scene_strategies.generate_scene_skeleton_first`. Field names align with
+STAGE_2_TASKS §2.8 (active_clocks / location_candidates /
+primary_location_ref) so scene-level and node-level contexts share one
+shape.
 """
 from __future__ import annotations
 
@@ -185,5 +193,136 @@ def assemble_context_block(
             parts.append(
                 "- 本节点为 end 节点，`options` 必须为空数组（无 target_node_id 可写）"
             )
+
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# T-2.6 — scene-level context
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SceneGraphContext:
+    """Scene-level context (T-2.6 / STAGE_2_TASKS §2.8).
+
+    Built by `generate_scene` from the ontology + caller-supplied scene
+    setting; unpacked into `scene_strategies.generate_scene_skeleton_first`.
+    Field names match the unified vocabulary established in §2.8:
+
+      * `active_clocks` (not `faction_clocks`) — covers world / faction /
+        environmental scopes (ADR-017).
+      * `location_candidates: list[dict]` (not `location_card: dict`) —
+        the LLM picks one `location_id` per node; `primary_location_ref`
+        names the dominant location when one exists.
+      * `relations_matrix` is the participating-characters' relations
+        already filtered down to `narrative_weight in {core, minor}`
+        (ADR-018) — `context_only` weights are dropped before reaching
+        the prompt because they are anchors, not dramaturgy.
+
+    Both `chapter_ref` and `primary_location_ref` are nullable for early-
+    stage scenes that don't have a chosen chapter / dominant location yet.
+    `system_time` defaults to a `{scene_count: 0, long_rest_count: 0}`
+    fallback when the ontology omits it (Stage 0 stub).
+    """
+
+    scene_anchor: str
+    chapter_ref: str | None
+    location_candidates: list[dict]
+    primary_location_ref: str | None
+    participating_characters: list[dict]
+    relations_matrix: list[dict]
+    active_clocks: list[dict]
+    system_time: dict
+    target_beats: list[str]
+
+
+def assemble_scene_context_block(
+    scene_ctx: SceneGraphContext,
+    scene_setting,  # SceneSetting (forward ref — defined in scene_strategies)
+) -> str:
+    """Render the scene-level context as a markdown preview.
+
+    This is *not* the prompt sent to the LLM — `scene_strategies` owns the
+    skeleton/fill prompt rendering. `assemble_scene_context_block` is the
+    inspectable counterpart used by `generate_scene` for logging / debug
+    surfaces and by the §2.8 sanity test that asserts every contracted
+    field actually lands in the assembled context.
+
+    Order is fixed (scene → chapter → location → characters → relations →
+    clocks → system_time → beats) so block hashes are stable across runs
+    with identical inputs.
+    """
+    parts: list[str] = []
+
+    parts.append("## 场景设定")
+    parts.append(f"- `scene_anchor`: `{scene_ctx.scene_anchor}`")
+    if scene_ctx.chapter_ref:
+        parts.append(f"- `chapter_ref`: `{scene_ctx.chapter_ref}`")
+    else:
+        parts.append("- `chapter_ref`: （未指定 chapter）")
+    parts.append(
+        f"- 节点数预估：{scene_setting.expected_node_count_min}–"
+        f"{scene_setting.expected_node_count_max}"
+    )
+
+    parts.append("")
+    parts.append("## 候选地点 (`location_candidates`)")
+    if scene_ctx.primary_location_ref:
+        parts.append(f"- 主地点 (`primary_location_ref`): `{scene_ctx.primary_location_ref}`")
+    if scene_ctx.location_candidates:
+        for cand in scene_ctx.location_candidates:
+            parts.append("```json")
+            parts.append(json.dumps(cand, ensure_ascii=False, indent=2))
+            parts.append("```")
+    else:
+        parts.append("（本体未给候选地点）")
+
+    parts.append("")
+    parts.append("## 出场角色卡 (`participating_characters`)")
+    if scene_ctx.participating_characters:
+        for card in scene_ctx.participating_characters:
+            parts.append("```json")
+            parts.append(json.dumps(card, ensure_ascii=False, indent=2))
+            parts.append("```")
+    else:
+        parts.append("（无角色卡——只能用旁白生成）")
+
+    parts.append("")
+    parts.append("## 关系矩阵 (`relations_matrix`，已按 narrative_weight 过滤至 core+minor)")
+    if scene_ctx.relations_matrix:
+        for rel in scene_ctx.relations_matrix:
+            parts.append("```json")
+            parts.append(json.dumps(rel, ensure_ascii=False, indent=2))
+            parts.append("```")
+    else:
+        parts.append("（无 core/minor 关系——出场角色之间无强制戏剧义务）")
+
+    parts.append("")
+    parts.append("## 活跃时钟 (`active_clocks`)")
+    if scene_ctx.active_clocks:
+        for clock in scene_ctx.active_clocks:
+            parts.append("```json")
+            parts.append(json.dumps(clock, ensure_ascii=False, indent=2))
+            parts.append("```")
+    else:
+        parts.append("（无活跃时钟）")
+
+    parts.append("")
+    parts.append("## 系统时间 (`system_time`)")
+    parts.append(
+        f"- `world.scene_count`: {scene_ctx.system_time.get('scene_count', 0)}"
+    )
+    parts.append(
+        f"- `world.long_rest_count`: {scene_ctx.system_time.get('long_rest_count', 0)}"
+    )
+
+    parts.append("")
+    parts.append("## 节拍序列 (`target_beats`)")
+    if scene_ctx.target_beats:
+        for idx, beat in enumerate(scene_ctx.target_beats, start=1):
+            parts.append(f"{idx}. {beat}")
+    else:
+        parts.append("（调用方未给节拍序列；strategy 会按 scene_anchor 自行推断）")
 
     return "\n".join(parts)
