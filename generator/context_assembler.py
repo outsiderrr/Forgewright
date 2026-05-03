@@ -33,6 +33,14 @@ class GraphContext:
     `None` if the caller does not want to bias the choice. Stage 2 §2.8 unified
     this field name with SceneGraphContext so scene-level and node-level
     contexts share one shape.
+
+    `active_clocks` and `system_time` (T-2.5 C-phase, review 4.2) carry
+    ADR-017 clock state and the `world.scene_count` / `world.long_rest_count`
+    system-time pair into node-level prompts. Both default empty so existing
+    T-1.6 callers (`generate_node` solo, no scene scheduler) keep working
+    unchanged — the renderer omits the section when both are empty.
+    `faction_clocks` (legacy `dict[str, int]`) is preserved so already-passing
+    tests don't shift; it renders the legacy "阵营时钟当前值" section.
     """
 
     scene_anchor: str
@@ -41,6 +49,8 @@ class GraphContext:
     parent_chain: list[dict] = field(default_factory=list)
     involved_characters: list[dict] = field(default_factory=list)
     faction_clocks: dict[str, int] = field(default_factory=dict)
+    active_clocks: list[dict] = field(default_factory=list)
+    system_time: dict | None = None
 
 
 @dataclass
@@ -119,6 +129,33 @@ def assemble_context_block(
             parts.append(f"- `{clock_id}`: {ticks}")
     else:
         parts.append("（阶段 0 本体桩未注册任何阵营时钟）")
+
+    # T-2.5 C-phase (review 4.2): scene-level fill prompts must surface
+    # active_clocks (ADR-017) and system_time (world.scene_count /
+    # world.long_rest_count) so node text reflects current world state.
+    # Render only when non-empty — node-level T-1.6 callers leave both
+    # blank and don't see this section, keeping their prompt hashes stable.
+    if graph_context.active_clocks:
+        parts.append("")
+        parts.append("## 活跃时钟 (`active_clocks`)")
+        parts.append(
+            "对白可以暗示压力但不要直接写出 `ticks_filled` 数字；填充节点的"
+            " `effects` / `condition` 中的 path 仍需落入 ADR-016 命名空间。"
+        )
+        for clock in graph_context.active_clocks:
+            parts.append("```json")
+            parts.append(json.dumps(clock, ensure_ascii=False, indent=2))
+            parts.append("```")
+
+    if graph_context.system_time:
+        parts.append("")
+        parts.append("## 系统时间 (`system_time`)")
+        parts.append(
+            f"- `world.scene_count`: {graph_context.system_time.get('scene_count', 0)}"
+        )
+        parts.append(
+            f"- `world.long_rest_count`: {graph_context.system_time.get('long_rest_count', 0)}"
+        )
 
     parts.append("")
     parts.append("## 本次生成要求")

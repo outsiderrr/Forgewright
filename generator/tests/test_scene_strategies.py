@@ -612,6 +612,147 @@ def test_get_allowed_targets_dedupes_repeated_edges():
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# C-phase (review 4.1): fill-phase rejects skeleton-mismatched type
+# ---------------------------------------------------------------------------
+
+
+def test_fill_phase_rejects_end_node_when_skeleton_wants_dialogue():
+    """If LLM returns an end-shaped node where skeleton planned a dialogue
+    node, fill_skeleton must surface fill_node_invalid (NOT silently
+    accept it via the `options=[]` allowed_targets bypass)."""
+    fill_responses_full = _build_fill_responses_for_valid_skeleton(
+        _VALID_SKELETON_JSON
+    )
+    # Mutate n_arrival's response into an end-shape: type="end",
+    # options=[], speaker_ref=None. Schema-valid for an end node, but
+    # n_arrival is a dialogue node in the skeleton.
+    bad_arrival_as_end = copy.deepcopy(fill_responses_full[0].content)
+    bad_arrival_as_end["type"] = "end"
+    bad_arrival_as_end["options"] = []
+    bad_arrival_as_end["speaker_ref"] = None
+    bad_response = _make_response(bad_arrival_as_end)
+
+    provider = _ScriptedProvider(
+        [
+            _make_response(copy.deepcopy(_VALID_SKELETON_JSON)),
+            bad_response,
+            _make_response(copy.deepcopy(bad_arrival_as_end)),
+            _make_response(copy.deepcopy(bad_arrival_as_end)),
+        ]
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is False
+    # Three failures with the type mismatch but no allowed_targets
+    # violation → routes to fill_node_invalid (not
+    # fill_target_out_of_skeleton).
+    assert result.failure_reason == "fill_node_invalid"
+    assert result.failure_node_id == "n_arrival"
+    n_arrival_attempts = result.fill_attempts["n_arrival"]
+    assert len(n_arrival_attempts) == 3
+    for att in n_arrival_attempts:
+        assert any(
+            "/type:" in e and "expected 'dialogue'" in e
+            for e in att.validator_errors
+        )
+
+
+def test_fill_phase_rejects_speaker_mismatch_when_skeleton_pins_speaker():
+    """Skeleton names char_vellin as speaker; LLM returns char_corvan."""
+    fill_responses_full = _build_fill_responses_for_valid_skeleton(
+        _VALID_SKELETON_JSON
+    )
+    # n_arrival's skeleton speaker is char_vellin. Replace it.
+    bad = copy.deepcopy(fill_responses_full[0].content)
+    bad["speaker_ref"] = "char_corvan"
+    good = copy.deepcopy(fill_responses_full[0].content)  # original has char_vellin
+
+    script: list = [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))]
+    script.append(_make_response(bad))
+    script.append(_make_response(good))
+    script.extend(fill_responses_full[1:])
+
+    provider = _ScriptedProvider(script)
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+    provider=provider,
+    )
+    assert result.success is True
+    assert len(result.fill_attempts["n_arrival"]) == 2
+    assert any(
+        "/speaker_ref:" in e and "char_vellin" in e
+        for e in result.fill_attempts["n_arrival"][0].validator_errors
+    )
+
+
+# ---------------------------------------------------------------------------
+# C-phase (review 4.2): fill-phase prompts must surface active_clocks +
+# system_time (not just the skeleton phase)
+# ---------------------------------------------------------------------------
+
+
+def test_fill_phase_prompts_include_active_clocks_and_system_time():
+    """Each fill prompt must list active_clocks + system_time so per-node
+    text reflects current world state. A-phase regression: helper wrote
+    `faction_clocks={}` and dropped system_time on the way to fill."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        active_clocks=_active_clocks(),
+        system_time=_system_time(),
+        location_candidates=_location_candidates(),
+    )
+    assert result.success is True
+    fill_prompts = provider.user_prompts[1:]  # skip skeleton prompt
+    assert len(fill_prompts) == 5
+    for idx, fp in enumerate(fill_prompts):
+        assert "active_clocks" in fp, f"fill prompt {idx} missing active_clocks header"
+        assert "clock_iron_oath_pursuit" in fp, (
+            f"fill prompt {idx} missing concrete clock id"
+        )
+        assert "world.scene_count" in fp, (
+            f"fill prompt {idx} missing system_time scene_count"
+        )
+        assert "world.long_rest_count" in fp, (
+            f"fill prompt {idx} missing system_time long_rest_count"
+        )
+
+
+def test_fill_phase_omits_clock_section_when_no_clocks_provided():
+    """Don't pollute T-1.6 single-node callers with empty 活跃时钟 sections.
+    When neither active_clocks nor system_time was provided, the rendered
+    block must skip both sections silently."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        # active_clocks / system_time / location_candidates left as defaults
+    )
+    assert result.success is True
+    fill_prompts = provider.user_prompts[1:]
+    for fp in fill_prompts:
+        assert "活跃时钟" not in fp
+        assert "系统时间" not in fp
+
+
 def test_fill_skeleton_directly_with_minimal_skeleton():
     """Fill phase should work in isolation — useful for T-2.6 wiring."""
     skel = GraphSkeleton(

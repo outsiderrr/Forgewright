@@ -566,6 +566,12 @@ def generate_scene_skeleton_first(
         "primary_location_ref": scene_setting.primary_location_ref,
         "involved_characters": list(participating_npcs),
         "active_clocks": active_clocks or [],
+        # C-phase (review 4.2): forward system_time verbatim so fill
+        # prompts see what the skeleton phase saw. Pass None through (don't
+        # fall back to a stub `{scene_count: 0, ...}`) so callers who
+        # explicitly omit system_time get a *missing* section rather than
+        # an inert "0 / 0" header that would still claim authority.
+        "system_time": system_time,
         "character_refs": [
             npc["id"] for npc in participating_npcs if isinstance(npc, dict) and "id" in npc
         ],
@@ -886,6 +892,13 @@ def _graph_context_from_scene_context(
     Reading sibling fills' outputs as 'parent chain' would create
     order-dependence and break determinism, which is why skeleton-first
     deliberately doesn't do it.
+
+    C-phase (review 4.2): `active_clocks` and `system_time` are forwarded
+    so each fill prompt sees the same clock state and world-time pair the
+    skeleton phase saw. `faction_clocks` is left empty — the legacy
+    `dict[str, int]` shape isn't a faithful reduction of an ADR-017 clock
+    (which carries scope / ticks_total / advance_rule), so we render the
+    full dicts via the new `active_clocks` section instead.
     """
     return GraphContext(
         scene_anchor=scene_context.get("scene_anchor", ""),
@@ -894,6 +907,8 @@ def _graph_context_from_scene_context(
         parent_chain=[],
         involved_characters=list(scene_context.get("involved_characters") or []),
         faction_clocks={},
+        active_clocks=list(scene_context.get("active_clocks") or []),
+        system_time=scene_context.get("system_time") or None,
     )
 
 

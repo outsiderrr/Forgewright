@@ -259,3 +259,105 @@ def test_end_node_with_empty_allowed_targets_is_signalled_in_prompt():
     rendered = assemble_context_block(_ctx(), req)
     assert "target_node_id 硬约束" in rendered
     assert "end 节点" in rendered
+
+
+# ---------------------------------------------------------------------------
+# C-phase (review 4.1): type / speaker_ref invariants
+# ---------------------------------------------------------------------------
+
+
+def _valid_end_node() -> dict:
+    return copy.deepcopy(_SCENE["nodes"]["end_silent_ally"])
+
+
+def test_type_mismatch_rejected_when_skeleton_required_dialogue():
+    """LLM returns a schema-valid `end` node when skeleton wanted
+    `dialogue` → must be flagged as schema_invalid + retried.
+
+    Without this guard, `options=[]` would silently bypass
+    `_check_allowed_targets` (no options = no targets to check) and
+    `success=True` would bubble up to `fill_skeleton` with the
+    skeleton's planned out-edges erased.
+    """
+    end_node_when_dialogue_expected = _valid_end_node()
+    good_dialogue = _valid_dialogue_node()
+    legal_targets = sorted({opt["target_node_id"] for opt in good_dialogue["options"]})
+    provider = _ScriptedProvider(
+        [
+            _make_response(end_node_when_dialogue_expected),
+            _make_response(good_dialogue),
+        ]
+    )
+    req = NodeRequirement(
+        node_type="dialogue",
+        expected_speaker_ref="char_vellin",
+        narrative_intent="建立场景张力",
+        allowed_targets=legal_targets,
+    )
+    result = generate_node(graph_context=_ctx(), node_requirement=req, provider=provider)
+    assert result.success is True
+    assert len(result.attempts) == 2
+    first_errors = result.attempts[0].validator_errors
+    assert any(
+        "/type:" in e and "expected 'dialogue'" in e for e in first_errors
+    )
+
+
+def test_type_mismatch_three_times_yields_schema_invalid():
+    end_node_when_dialogue_expected = _valid_end_node()
+    provider = _ScriptedProvider(
+        [
+            _make_response(copy.deepcopy(end_node_when_dialogue_expected)),
+            _make_response(copy.deepcopy(end_node_when_dialogue_expected)),
+            _make_response(copy.deepcopy(end_node_when_dialogue_expected)),
+        ]
+    )
+    req = NodeRequirement(
+        node_type="dialogue",
+        expected_speaker_ref=None,  # leave speaker free; isolating type check
+        narrative_intent="建立场景张力",
+        allowed_targets=["vellin_confession", "patrol_arrives"],
+    )
+    result = generate_node(graph_context=_ctx(), node_requirement=req, provider=provider)
+    assert result.success is False
+    assert result.failure_reason == "schema_invalid"
+
+
+def test_speaker_mismatch_rejected_when_named_speaker_required():
+    """When `expected_speaker_ref` is non-None the LLM must respect it."""
+    bad = _valid_dialogue_node()
+    bad["speaker_ref"] = "char_corvan"  # skeleton wanted char_vellin
+    good = _valid_dialogue_node()  # speaker_ref already char_vellin
+    legal_targets = sorted({opt["target_node_id"] for opt in good["options"]})
+    provider = _ScriptedProvider(
+        [_make_response(bad), _make_response(good)]
+    )
+    req = NodeRequirement(
+        node_type="dialogue",
+        expected_speaker_ref="char_vellin",
+        narrative_intent="建立场景张力",
+        allowed_targets=legal_targets,
+    )
+    result = generate_node(graph_context=_ctx(), node_requirement=req, provider=provider)
+    assert result.success is True
+    assert len(result.attempts) == 2
+    first_errors = result.attempts[0].validator_errors
+    assert any(
+        "/speaker_ref:" in e and "char_vellin" in e for e in first_errors
+    )
+
+
+def test_speaker_unconstrained_when_expected_speaker_is_none():
+    """`expected_speaker_ref=None` (旁白 OK) should not flag any speaker."""
+    node = _valid_dialogue_node()  # speaker_ref = char_vellin
+    legal_targets = sorted({opt["target_node_id"] for opt in node["options"]})
+    provider = _ScriptedProvider([_make_response(node)])
+    req = NodeRequirement(
+        node_type="dialogue",
+        expected_speaker_ref=None,  # caller doesn't pin the speaker
+        narrative_intent="建立场景张力",
+        allowed_targets=legal_targets,
+    )
+    result = generate_node(graph_context=_ctx(), node_requirement=req, provider=provider)
+    assert result.success is True
+    assert result.attempts[0].validator_errors == []

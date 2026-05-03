@@ -225,6 +225,16 @@ def generate_node(
         validator_errors.extend(
             _check_allowed_targets(response.content, node_requirement.allowed_targets)
         )
+        # T-2.5 C-phase (review 4.1): the LLM can return a schema-valid
+        # node that silently violates the skeleton's plan — e.g. an
+        # `end` node where the skeleton wanted a `dialogue` node.
+        # `options=[]` would then bypass `_check_allowed_targets` (no
+        # options = no targets to check) and `success=True` bubbles up
+        # to fill_skeleton with the topology already corrupted. Pin
+        # type / speaker_ref to the requirement before declaring success.
+        validator_errors.extend(
+            _check_node_requirement(response.content, node_requirement)
+        )
         attempts.append(
             AttemptRecord(
                 attempt_index=attempt_idx,
@@ -333,6 +343,47 @@ def _is_request_not_sent(exc: BaseException) -> bool:
             return True
         cur = cur.__cause__ or cur.__context__
     return False
+
+
+def _check_node_requirement(
+    node_dict: Any, node_requirement: NodeRequirement
+) -> list[str]:
+    """Check the LLM's response matches the structural requirement.
+
+    Two invariants beyond what the JSON Schema layer catches:
+
+      * `node["type"]` matches `node_requirement.node_type`. The schema
+        accepts either `dialogue` or `end`; without this check, the LLM
+        can produce an `end` node when the skeleton wanted a `dialogue`
+        and `options=[]` will bypass `_check_allowed_targets` silently.
+      * When `expected_speaker_ref` is non-None, `node["speaker_ref"]`
+        must match it exactly. `None` (旁白) is intentionally
+        unconstrained — the prompt already says "如确无可用 ID，宁可让
+        说话者为旁白". Mismatch on a *named* speaker, by contrast, means
+        the skeleton's casting decision was overridden, which T-2.5
+        skeleton-first wants to forbid.
+
+    Returned errors share the schema_invalid bucket so the existing
+    retry loop re-feeds them. No new failure_reason category needed.
+    """
+    if not isinstance(node_dict, dict):
+        return []  # _validate_node already flagged the wrong shape
+    errors: list[str] = []
+    actual_type = node_dict.get("type")
+    if actual_type != node_requirement.node_type:
+        errors.append(
+            f"/type: expected {node_requirement.node_type!r} "
+            f"(skeleton requirement), got {actual_type!r}"
+        )
+    expected_speaker = node_requirement.expected_speaker_ref
+    if expected_speaker is not None:
+        actual_speaker = node_dict.get("speaker_ref")
+        if actual_speaker != expected_speaker:
+            errors.append(
+                f"/speaker_ref: expected {expected_speaker!r} "
+                f"(skeleton requirement), got {actual_speaker!r}"
+            )
+    return errors
 
 
 def _check_allowed_targets(
