@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from generator import budget
@@ -146,34 +147,50 @@ def generate_scene(
       4. On success, run `validator.schema_check.check` + the T-2.4
          `validate_graph_mechanical` pre-check on the assembled graph.
          If either layer reports issues, retry from step 3 (up to
-         max_retries+1 outer attempts in total). The strategy returns a
-         freshly-sampled graph each call, so non-deterministic resampling
-         is the recovery mechanism — there's no per-prompt "feedback"
-         channel back into the strategy itself (intentional: the
-         skeleton/fill prompts are stable per ADR-013).
+         max_retries+1 outer attempts in total).
       5. Exhausting outer attempts with mechanical/schema failures
          returns `failure_reason="mechanical_invalid"` (or
          `"schema_invalid"` if the dialogue_graph schema layer was the
          actual blocker — schema gets priority because it's a stronger
          signal that the strategy is malfunctioning).
+      6. On final success, write `generation_trace.slot_assignments` to
+         every node before returning (ADR-019; T-2.6 must persist abstract
+         slot ↔ concrete character mappings — empty dict here because
+         阶段 2 doesn't implement dynamic role swapping yet, but the
+         field is present so downstream review tooling can rely on it).
+
+    Outer-retry feedback (review 4.1): the strategy's prompts are stable
+    per ADR-013, and the `generate_scene_skeleton_first` API has no
+    feedback hook today. So this layer only *resamples* — issues from the
+    previous attempt are logged via `_LOG.info` so batch-run operators
+    have an audit trail, but they don't reach the LLM until
+    `scene_strategies` exposes a feedback parameter (out of T-2.6 module
+    boundary; tracked as a follow-up). Tests assert the feedback string
+    is rendered + logged, not that the LLM acts on it.
 
     `generate_scene` never raises — every failure mode lands in
-    `SceneResult.failure_reason`. The total cost is the sum of all inner
-    `SceneGenerationResult.total_cost_usd` accumulated across attempts.
+    `SceneResult.failure_reason` (review 3.1). The total cost is the sum
+    of all inner `SceneGenerationResult.total_cost_usd` accumulated
+    across attempts.
     """
-    expected_node_count = (
-        scene_setting.expected_node_count_min
-        + scene_setting.expected_node_count_max
-    ) // 2
-    estimated_cost = estimate_scene_cost(
-        npc_count=len(participating_npcs),
-        beat_count=len(target_beats),
-        expected_node_count=expected_node_count,
-        provider=provider,
-    )
+    inner_results: list[SceneGenerationResult] = []
+    total_cost = 0.0
 
-    # Step 1: scene-level budget pre-flight (ADR-012).
+    # Step 1: cost estimate + scene-level budget pre-flight (ADR-012).
+    # Both wrapped — `provider.estimate_cost` and the env-var parse in
+    # `_scene_budget_usd` can each raise on a misbehaving provider /
+    # malformed env var.
     try:
+        expected_node_count = (
+            scene_setting.expected_node_count_min
+            + scene_setting.expected_node_count_max
+        ) // 2
+        estimated_cost = estimate_scene_cost(
+            npc_count=len(participating_npcs),
+            beat_count=len(target_beats),
+            expected_node_count=expected_node_count,
+            provider=provider,
+        )
         _scene_budget_pre_flight(estimated_cost)
     except BudgetExceeded as exc:
         return SceneResult(
@@ -181,33 +198,73 @@ def generate_scene(
             failure_reason="budget_exceeded",
             schema_issues=[f"budget_exceeded: {exc}"],
         )
+    except Exception as exc:  # noqa: BLE001 - main contract is "never raise"
+        _LOG.exception("scene budget pre-flight raised unexpectedly")
+        return SceneResult(
+            success=False,
+            failure_reason="provider_error",
+            schema_issues=[f"pre_flight_failed: {type(exc).__name__}: {exc}"],
+        )
 
-    # Step 2: assemble SceneGraphContext from ontology.
-    scene_ctx = build_scene_graph_context(
-        scene_setting=scene_setting,
-        target_beats=target_beats,
-        participating_npcs=participating_npcs,
-        ontology=ontology,
-    )
-
-    # Steps 3–5: outer retry loop.
-    inner_results: list[SceneGenerationResult] = []
-    total_cost = 0.0
-    last_schema_issues: list[str] = []
-    last_mechanical_issues: dict[str, list[ValidationIssue]] = {}
-    last_layer = "mechanical"  # tracks which layer failed on the latest attempt
-
-    for attempt_idx in range(1, max_retries + 2):
-        inner = generate_scene_skeleton_first(
+    # Step 2: assemble SceneGraphContext from ontology. Wrapped because a
+    # malformed ontology dict could raise (KeyError / TypeError) and the
+    # outer "never raise" contract must hold.
+    try:
+        scene_ctx = build_scene_graph_context(
             scene_setting=scene_setting,
             target_beats=target_beats,
-            participating_npcs=scene_ctx.participating_characters,
-            provider=provider,
-            max_retries=max_retries,
-            active_clocks=scene_ctx.active_clocks,
-            system_time=scene_ctx.system_time,
-            location_candidates=scene_ctx.location_candidates,
+            participating_npcs=participating_npcs,
+            ontology=ontology,
         )
+    except Exception as exc:  # noqa: BLE001
+        _LOG.exception("scene context assembly raised unexpectedly")
+        return SceneResult(
+            success=False,
+            failure_reason="provider_error",
+            schema_issues=[f"context_assembly_failed: {type(exc).__name__}: {exc}"],
+        )
+
+    # Steps 3–6: outer retry loop.
+    last_schema_issues: list[str] = []
+    last_mechanical_issues: dict[str, list[ValidationIssue]] = {}
+    last_layer = "mechanical"
+
+    for attempt_idx in range(1, max_retries + 2):
+        # Outer-retry feedback (review 4.1): currently log-only — see
+        # docstring + module-level note on the scene_strategies API gap.
+        if attempt_idx > 1:
+            feedback = _render_outer_retry_feedback(
+                last_layer, last_schema_issues, last_mechanical_issues
+            )
+            _LOG.info(
+                "scene outer retry %d: re-sampling after %s failure\n%s",
+                attempt_idx,
+                last_layer,
+                feedback,
+            )
+
+        # Step 3: strategy call. Provider/strategy bugs that bypass the
+        # internal try/except chain land here.
+        try:
+            inner = generate_scene_skeleton_first(
+                scene_setting=scene_setting,
+                target_beats=target_beats,
+                participating_npcs=scene_ctx.participating_characters,
+                provider=provider,
+                max_retries=max_retries,
+                active_clocks=scene_ctx.active_clocks,
+                system_time=scene_ctx.system_time,
+                location_candidates=scene_ctx.location_candidates,
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOG.exception("scene strategy raised unexpectedly on attempt %d", attempt_idx)
+            return SceneResult(
+                success=False,
+                failure_reason="provider_error",
+                schema_issues=[f"strategy_exception: {type(exc).__name__}: {exc}"],
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+            )
         inner_results.append(inner)
         total_cost += inner.total_cost_usd
 
@@ -223,10 +280,34 @@ def generate_scene(
             )
 
         graph = inner.graph
-        assert graph is not None  # success path guarantees this
+        if graph is None:
+            # Defensive: strategy reports success=True but graph=None
+            # shouldn't happen; if it does, surface as provider_error
+            # rather than letting an AssertionError escape.
+            _LOG.warning(
+                "scene strategy returned success=True but graph=None on attempt %d",
+                attempt_idx,
+            )
+            return SceneResult(
+                success=False,
+                failure_reason="provider_error",
+                schema_issues=["strategy_returned_success_with_no_graph"],
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+            )
 
-        # Step 4: schema layer check on the assembled graph.
-        schema_issues = schema_check.check(graph)
+        # Step 4a: schema layer check on the assembled graph.
+        try:
+            schema_issues = schema_check.check(graph)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.exception("schema_check.check raised unexpectedly on attempt %d", attempt_idx)
+            return SceneResult(
+                success=False,
+                failure_reason="schema_invalid",
+                schema_issues=[f"schema_check_exception: {type(exc).__name__}: {exc}"],
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+            )
         if schema_issues:
             last_schema_issues = [
                 f"{i.location}: {i.message}" for i in schema_issues
@@ -240,10 +321,23 @@ def generate_scene(
             )
             continue
 
-        # Step 4 (cont.): T-2.4 mechanical pre-check on the assembled graph.
-        mech_results = dialogue_validator.validate_graph_mechanical(
-            graph, ontology=ontology
-        )
+        # Step 4b: T-2.4 mechanical pre-check on the assembled graph.
+        try:
+            mech_results = dialogue_validator.validate_graph_mechanical(
+                graph, ontology=ontology
+            )
+        except Exception as exc:  # noqa: BLE001
+            _LOG.exception(
+                "validate_graph_mechanical raised unexpectedly on attempt %d",
+                attempt_idx,
+            )
+            return SceneResult(
+                success=False,
+                failure_reason="mechanical_invalid",
+                schema_issues=[f"mechanical_check_exception: {type(exc).__name__}: {exc}"],
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+            )
         node_issues = {
             nid: [i for i in res.issues if i.severity == "error"]
             for nid, res in mech_results.items()
@@ -260,7 +354,22 @@ def generate_scene(
             )
             continue
 
-        # Both gates passed.
+        # Step 6: both gates passed — attach generation_trace before
+        # returning (ADR-019 / review 4.2).
+        try:
+            graph = _attach_generation_trace(graph, provider=provider)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.exception(
+                "generation_trace attachment failed on attempt %d", attempt_idx
+            )
+            return SceneResult(
+                success=False,
+                failure_reason="provider_error",
+                schema_issues=[f"trace_attach_failed: {type(exc).__name__}: {exc}"],
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+            )
+
         return SceneResult(
             success=True,
             graph=graph,
@@ -470,6 +579,129 @@ def _entities(ontology: Any) -> list[Any]:
     if not isinstance(raw, list):
         return []
     return raw
+
+
+# ---------------------------------------------------------------------------
+# Outer-retry feedback (review 4.1)
+# ---------------------------------------------------------------------------
+#
+# `generate_scene_skeleton_first` (T-2.5) does not currently expose a
+# `outer_feedback` parameter, and that module is outside T-2.6's allowed
+# write set. So this layer renders the previous attempt's failure summary
+# and writes it to `_LOG.info` — operators reading batch-run logs see the
+# audit trail, but the LLM does not see the feedback string until
+# scene_strategies grows a feedback hook (follow-up).
+
+
+def _render_outer_retry_feedback(
+    last_layer: str,
+    last_schema_issues: list[str],
+    last_mechanical_issues: dict[str, list[ValidationIssue]],
+) -> str:
+    """Format the previous attempt's failures for log + future prompt use.
+
+    Stable, structured text suitable for either
+    (a) a human reviewer scanning batch logs, or
+    (b) appending to a strategy prompt once scene_strategies exposes a
+        feedback hook. Returned string is short (truncated at ~30 issue
+        lines) so log lines stay readable.
+    """
+    lines: list[str] = []
+    if last_layer == "schema" and last_schema_issues:
+        lines.append("[OUTER_RETRY_FEEDBACK · schema layer rejected last attempt]")
+        for issue in last_schema_issues[:30]:
+            lines.append(f"  - {issue}")
+        if len(last_schema_issues) > 30:
+            lines.append(f"  …and {len(last_schema_issues) - 30} more")
+    elif last_layer == "mechanical" and last_mechanical_issues:
+        total = sum(len(v) for v in last_mechanical_issues.values())
+        lines.append(
+            f"[OUTER_RETRY_FEEDBACK · mechanical pre-check rejected last attempt: "
+            f"{len(last_mechanical_issues)} nodes / {total} issues]"
+        )
+        printed = 0
+        for nid, issues in last_mechanical_issues.items():
+            for i in issues:
+                if printed >= 30:
+                    break
+                lines.append(f"  - {nid} {i.field_path}: {i.code} — {i.message}")
+                printed += 1
+            if printed >= 30:
+                break
+        if total > printed:
+            lines.append(f"  …and {total - printed} more")
+    else:
+        lines.append("[OUTER_RETRY_FEEDBACK · (no prior issue captured)]")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# generation_trace attachment (review 4.2 / ADR-019)
+# ---------------------------------------------------------------------------
+
+
+def _attach_generation_trace(graph: dict, *, provider: LLMProvider) -> dict:
+    """Write `generation_trace.slot_assignments = {}` to every node.
+
+    ADR-019 + SCHEMA_v0.3.md §6: T-2.6 must persist abstract slot →
+    concrete character mappings on each generated node. 阶段 2 does
+    *not* implement dynamic role swapping, so the map is empty here —
+    but the field's *presence* is the contract that matters: downstream
+    review tooling and cross-scene re-assembly need to rely on the trace
+    being there.
+
+    The six v0.1.x trace keys (source / generated_at / model_id /
+    prompt_hash / reviewed_by / reviewed_at) are also normalised:
+
+      * `source` is forced to `"llm"` because every node here came out
+        of `scene_strategies` → `generate_node` → LLM. Existing
+        `human` traces would only appear on author-imported scenes,
+        which don't go through this code path.
+      * `generated_at` is UTC ISO 8601 (timezone-aware) at attach time.
+      * `model_id` is taken from `provider.model_id` (matching the
+        `getattr(..., "unknown")` fallback used in generate_node).
+      * `prompt_hash` is set to `None` — T-2.6 doesn't compute per-
+        node prompt hashes (the strategy renders prompts internally).
+      * `reviewed_by` / `reviewed_at` are `None` (review CLI fills
+        these later).
+
+    A shallow copy of the graph + nodes dict is returned so the strategy's
+    object is not mutated in place.
+    """
+    if not isinstance(graph, dict):
+        return graph
+    nodes = graph.get("nodes")
+    if not isinstance(nodes, dict):
+        return graph
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    model_id = getattr(provider, "model_id", "unknown")
+
+    new_nodes: dict[str, Any] = {}
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            new_nodes[node_id] = node
+            continue
+        node_copy = dict(node)
+        existing_trace = node_copy.get("generation_trace")
+        if isinstance(existing_trace, dict):
+            trace = dict(existing_trace)
+        else:
+            trace = {}
+        trace["source"] = "llm"
+        trace.setdefault("generated_at", now_iso)
+        trace.setdefault("model_id", model_id)
+        trace.setdefault("prompt_hash", None)
+        trace.setdefault("reviewed_by", None)
+        trace.setdefault("reviewed_at", None)
+        if not isinstance(trace.get("slot_assignments"), dict):
+            trace["slot_assignments"] = {}
+        node_copy["generation_trace"] = trace
+        new_nodes[node_id] = node_copy
+
+    new_graph = dict(graph)
+    new_graph["nodes"] = new_nodes
+    return new_graph
 
 
 __all__ = [

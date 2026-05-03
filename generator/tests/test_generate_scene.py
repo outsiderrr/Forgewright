@@ -723,3 +723,209 @@ def test_estimate_scene_cost_scales_with_node_count():
     # At least 1.5× growth (skeleton is fixed; N fills double but
     # provider's linear cost means total ~doubles with a small offset).
     assert cost_10 > cost_5 * 1.5
+
+
+# ---------------------------------------------------------------------------
+# C-phase (review 3.1): never raise — wrap unexpected exceptions
+# ---------------------------------------------------------------------------
+
+
+class _ExplodingEstimateProvider(_ScriptedProvider):
+    """estimate_cost raises — used to verify generate_scene catches
+    unexpected exceptions in the cost-estimate phase."""
+
+    def estimate_cost(self, input_tokens, output_tokens):
+        raise RuntimeError("boom: provider failed to compute cost")
+
+
+def test_review_3_1_estimate_cost_exception_returns_scene_result():
+    provider = _ExplodingEstimateProvider([])
+    result = generate_scene(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        provider=provider,
+    )
+    assert isinstance(result, SceneResult)
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+    assert any("RuntimeError" in m for m in result.schema_issues)
+    # No LLM calls before the exception.
+    assert provider.call_count == 0
+
+
+def test_review_3_1_strategy_exception_returns_scene_result():
+    """If the strategy itself raises (e.g. a programmer error in a
+    downstream module), generate_scene must wrap it into a SceneResult
+    rather than propagating to the caller."""
+
+    class _ExplodingStrategyProvider(_ScriptedProvider):
+        def generate_structured(self, system_prompt, user_prompt, json_schema):
+            self.call_count += 1
+            self.user_prompts.append(user_prompt)
+            raise RuntimeError("synthetic upstream programmer error")
+
+    provider = _ExplodingStrategyProvider([])
+    result = generate_scene(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        provider=provider,
+    )
+    # The strategy DOES catch the inner exception itself and surfaces it
+    # as failure_reason="provider_error" via its own ProviderError
+    # routing — so the graceful-degradation path here is the strategy's,
+    # not generate_scene's outer try/except. Either way the contract
+    # holds: no exception escapes to the caller.
+    assert result.success is False
+    assert result.failure_reason in ("provider_error", "skeleton_invalid")
+
+
+def test_review_3_1_malformed_ontology_returns_scene_result():
+    """Pass a non-dict ontology — build_scene_graph_context handles it
+    gracefully, but if it didn't, the generate_scene wrapper must catch."""
+    provider = _ScriptedProvider(_full_happy_script())
+    # Non-dict ontology: build_scene_graph_context returns an empty-ish
+    # context. The strategy then runs as-if no characters exist, which
+    # the FakeProvider script accommodates.
+    result = generate_scene(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology="not a dict",  # type: ignore[arg-type]
+        provider=provider,
+    )
+    # Either it succeeds (graceful degradation) or it fails with a
+    # SceneResult — never raises.
+    assert isinstance(result, SceneResult)
+
+
+# ---------------------------------------------------------------------------
+# C-phase (review 4.2): generation_trace.slot_assignments on every node
+# ---------------------------------------------------------------------------
+
+
+def test_review_4_2_success_attaches_generation_trace_with_slot_assignments():
+    """ADR-019 + STAGE_2_TASKS: T-2.6 must write
+    generation_trace.slot_assignments on every node of the success graph.
+    """
+    provider = _ScriptedProvider(_full_happy_script())
+    result = generate_scene(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        provider=provider,
+    )
+    assert result.success is True
+    assert result.graph is not None
+    for node_id, node in result.graph["nodes"].items():
+        assert "generation_trace" in node, f"missing trace on {node_id}"
+        trace = node["generation_trace"]
+        # Required by schema: source.
+        assert trace["source"] == "llm"
+        # Six legacy keys present (nullable) — needed for downstream
+        # tooling that reads them unconditionally.
+        for key in (
+            "generated_at",
+            "model_id",
+            "prompt_hash",
+            "reviewed_by",
+            "reviewed_at",
+        ):
+            assert key in trace, f"{node_id} trace missing {key}"
+        # ADR-019 / review 4.2: slot_assignments dict present (empty in
+        # 阶段 2 — no abstract slots yet, but the field's *presence* is
+        # the contract).
+        assert "slot_assignments" in trace, f"{node_id} trace missing slot_assignments"
+        assert isinstance(trace["slot_assignments"], dict)
+
+
+def test_review_4_2_attached_trace_passes_dialogue_graph_schema():
+    """Sanity: the post-attach graph still passes the dialogue_graph
+    JSON Schema (generation_trace's seven allowed keys + nullable five
+    must satisfy `additionalProperties: false`)."""
+    from validator import schema_check as _sc
+
+    provider = _ScriptedProvider(_full_happy_script())
+    result = generate_scene(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        provider=provider,
+    )
+    assert result.success is True
+    assert result.graph is not None
+    issues = _sc.check(result.graph)
+    assert issues == [], f"post-attach graph has schema issues: {issues}"
+
+
+# ---------------------------------------------------------------------------
+# C-phase (review 4.1): outer retry feedback rendered + logged
+# ---------------------------------------------------------------------------
+
+
+def test_review_4_1_outer_retry_logs_feedback_with_issue_codes(caplog):
+    """When mechanical pre-check rejects attempt 1, the outer loop must
+    log a feedback summary that includes the offending node id + issue
+    code (so batch operators see the audit trail).
+
+    Documents the current limit — the LLM doesn't see this string until
+    scene_strategies exposes a feedback hook (follow-up). Tests assert
+    the *render + log*, not the LLM behaviour.
+    """
+    import logging as _logging
+
+    skel = GraphSkeleton(
+        nodes=[
+            SkeletonNode(n["node_id"], n["type"], n["beat"], n.get("speaker_ref"),
+                         n["expected_branch_count"])
+            for n in _VALID_SKELETON_JSON["nodes"]
+        ],
+        edges=[tuple(e) for e in _VALID_SKELETON_JSON["edges"]],
+        entry_node_id=_VALID_SKELETON_JSON["entry_node_id"],
+        end_node_ids=_VALID_SKELETON_JSON["end_node_ids"],
+    )
+    long_chinese = "字" * 30
+    bad_arrival = _valid_filled_node(
+        skel.nodes[0], skel.get_allowed_targets("n_arrival")
+    )
+    bad_arrival["options"][0]["text"] = long_chinese
+    attempt1 = [_make_response(bad_arrival)] + [
+        _make_response(_valid_filled_node(n, skel.get_allowed_targets(n.node_id)))
+        for n in skel.nodes[1:]
+    ]
+    attempt2 = _build_fill_responses(_VALID_SKELETON_JSON)
+
+    script = (
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))]
+        + attempt1
+        + [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))]
+        + attempt2
+    )
+    provider = _ScriptedProvider(script)
+
+    with caplog.at_level(_logging.INFO, logger="generator.generate_scene"):
+        result = generate_scene(
+            scene_setting=_scene_setting(),
+            target_beats=_target_beats(),
+            participating_npcs=_participating_npcs(),
+            ontology=_ontology(),
+            provider=provider,
+            max_retries=2,
+        )
+    assert result.success is True
+
+    feedback_records = [
+        r.getMessage() for r in caplog.records
+        if "OUTER_RETRY_FEEDBACK" in r.getMessage()
+    ]
+    assert feedback_records, "no outer-retry feedback log line emitted"
+    # The log line must mention the failing node + the OPT_LEN_OVER code
+    # — that's what makes the audit trail useful.
+    joined = "\n".join(feedback_records)
+    assert "n_arrival" in joined
+    assert "OPT_LEN_OVER" in joined
