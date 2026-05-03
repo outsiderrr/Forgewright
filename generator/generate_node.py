@@ -19,6 +19,7 @@ single isolated node are limited to the dialogue/end ⇄ options invariant
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,8 @@ from generator.prompts import (
     render_few_shot_block,
 )
 from validator import schema_check
+
+_LOG = logging.getLogger(__name__)
 
 # Rough token-count heuristic. Real tokenisers belong to providers; we only
 # need a pre-call estimate for the budget guard. ~4 chars/token is the
@@ -126,13 +129,14 @@ def generate_node(
         output_tokens_est = _OUTPUT_TOKEN_ESTIMATE
         estimated_cost = provider.estimate_cost(input_tokens_est, output_tokens_est)
         try:
-            budget.check_and_charge(
+            record_id = budget.check_and_charge(
                 estimated_cost,
                 model_id=getattr(provider, "model_id", "unknown"),
                 input_tokens=input_tokens_est,
                 output_tokens=output_tokens_est,
             )
         except BudgetExceeded as exc:
+            # pre_call_budget_fail: no record was written, nothing to refund.
             attempts.append(
                 AttemptRecord(
                     attempt_index=attempt_idx,
@@ -154,6 +158,30 @@ def generate_node(
                 SYSTEM_PROMPT, user_prompt, json_schema
             )
         except ProviderError as exc:
+            # T-2.11 tri-state refund. Provider-neutral classification:
+            # if the exception chain looks like a pre-flight / connect
+            # failure (request never reached the server), refund the
+            # estimated charge (request_not_sent). Otherwise default to
+            # request_sent_failure — the call may have billed.
+            # Provider-specific exception types (ConnectFailureError vs
+            # APIError vs MidFlightResetError) remain R2.1 work.
+            if _is_request_not_sent(exc):
+                budget.refund_estimated(record_id, reason="request_not_sent")
+                attempts.append(
+                    AttemptRecord(
+                        attempt_index=attempt_idx,
+                        raw_text=None,
+                        validator_errors=[f"provider_error: {exc}"],
+                        cost_usd=0.0,
+                    )
+                )
+                return GenerationResult(
+                    success=False,
+                    failure_reason="provider_error",
+                    attempts=attempts,
+                    total_cost_usd=total_cost,
+                )
+            _log_refund_deferred(record_id, str(exc))
             attempts.append(
                 AttemptRecord(
                     attempt_index=attempt_idx,
@@ -170,7 +198,22 @@ def generate_node(
                 total_cost_usd=total_cost,
             )
 
-        total_cost += estimated_cost
+        # ---- Reconcile pre-call estimate with provider-reported actuals. ----
+        # T-2.11 scope: `actual_cost_usd` is recomputed here via
+        # `provider.estimate_cost(...)` rather than carried on
+        # `StructuredResponse`. Adding the field to that dataclass
+        # (and the cached/billable/reasoning sub-fields the reviewer
+        # also asked for) requires editing /generator/llm_provider.py,
+        # which is outside this task's allowed module set — deferred to
+        # R2.1 alongside the differential exception classification.
+        actual_cost = provider.estimate_cost(response.input_tokens, response.output_tokens)
+        budget.reconcile_after_call(
+            record_id,
+            actual_input_tokens=response.input_tokens,
+            actual_output_tokens=response.output_tokens,
+            actual_cost_usd=actual_cost,
+        )
+        total_cost += actual_cost
 
         # ---- Validate. ----
         validator_errors = _validate_node(response.content, graph_context)
@@ -179,7 +222,7 @@ def generate_node(
                 attempt_index=attempt_idx,
                 raw_text=response.raw_text,
                 validator_errors=validator_errors,
-                cost_usd=estimated_cost,
+                cost_usd=actual_cost,
                 finish_reason=response.finish_reason,
             )
         )
@@ -220,6 +263,68 @@ def _retry_feedback(errors: list[str]) -> str:
         f"{bullet_list}\n\n"
         "请基于以下要求修正后重新输出**完整**节点 JSON。"
     )
+
+
+def _log_refund_deferred(record_id: str, error_msg: str) -> None:
+    """Note that a ProviderError row stays charged pending R2.1 classification."""
+    _LOG.info(
+        "request_sent_failure refund deferred to R2.1 (record_id=%s, error=%s)",
+        record_id,
+        error_msg,
+    )
+
+
+# Provider-neutral connect-failure markers. Walks the exception chain
+# (`exc.__cause__` ...) for either a stdlib connection-error class or a
+# message keyword that strongly implies the request never left the host
+# — TLS handshake failures, refused/reset connections, read timeouts.
+# Producer-side responses with a status code (HTTP 4xx/5xx, etc.) do
+# *not* match here; they belong to request_sent_failure.
+_REQUEST_NOT_SENT_TYPES: tuple[type[BaseException], ...] = (
+    ConnectionError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    TimeoutError,
+)
+_REQUEST_NOT_SENT_KEYWORDS = (
+    "Server disconnected",
+    "Connection reset",
+    "Connection refused",
+    "Connection aborted",
+    "Read timeout",
+    "ReadTimeout",
+    "ConnectError",
+    "ConnectTimeout",
+    "RemoteProtocolError",
+    "handshake",
+    "timed out",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "call failed",  # GeminiProvider's connect-level wrapper prefix
+)
+
+
+def _is_request_not_sent(exc: BaseException) -> bool:
+    """Heuristic: did the request fail before reaching the provider?
+
+    Walks `exc` and its `__cause__` chain looking for a stdlib connection
+    error subclass or one of the well-known transient-network markers in
+    the message. Provider-specific exception subclasses are R2.1 work; this
+    check is intentionally conservative — when in doubt, return False so
+    the row stays charged (under-refund is safer than over-refund).
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, _REQUEST_NOT_SENT_TYPES):
+            return True
+        msg = f"{type(cur).__name__}: {cur}"
+        if any(p in msg for p in _REQUEST_NOT_SENT_KEYWORDS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
 
 
 def _validate_node(node_dict: Any, graph_context: GraphContext) -> list[str]:

@@ -1,6 +1,6 @@
-"""T-1.6: end-to-end tests for `generate_node` using a FakeProvider.
+"""T-1.6 + T-2.11: end-to-end tests for `generate_node` using a FakeProvider.
 
-Six scenarios cover the contract laid out in ADR-013:
+Six original scenarios cover the contract laid out in ADR-013:
 
   scenario_1: first attempt valid              → success, attempts=1
   scenario_2: first invalid, second valid      → success, attempts=2
@@ -10,6 +10,8 @@ Six scenarios cover the contract laid out in ADR-013:
                  BudgetExceeded comes from /generator/budget.py)
   scenario_5: provider raises ProviderError    → failure_reason="provider_error"
   scenario_6: empty parent_chain (entry node)  → prompt assembly stays clean
+
+T-2.11 adds reconcile + tri-state refund hook integration tests at the bottom.
 
 No real Gemini calls — that's T-1.7's territory.
 """
@@ -21,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from generator import budget
+from generator import budget, cost_log
 from generator.context_assembler import GraphContext, NodeRequirement
 from generator.generate_node import GenerationResult, generate_node
 from generator.llm_provider import LLMProvider, ProviderError, StructuredResponse
@@ -292,3 +294,181 @@ def test_scenario_6_empty_parent_chain_assembles_and_succeeds():
     # parents rather than crashing or rendering an empty section.
     assert "无父节点" in captured["user"]
     assert provider.call_count == 1
+
+
+# ===========================================================================
+# T-2.11 R7: reconcile + tri-state refund hook integration
+# ===========================================================================
+
+
+def _read_log(tmp_path) -> list[dict]:
+    p = tmp_path / "cost_log.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(line) for line in p.read_text("utf-8").splitlines()]
+
+
+def test_t211_success_path_reconciles_each_attempt(tmp_path):
+    """Mock SDK usage_metadata flows through to cost_log via reconcile_after_call."""
+    # ScriptedProvider.estimate_cost returns a flat 0.001 for any token count,
+    # so the reconciled actual_cost equals 0.001 regardless of input/output.
+    response = _make_response(_valid_dialogue_node())  # input=1234, output=567
+    provider = _ScriptedProvider([response])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is True
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    row = rows[0]
+    # Estimate token counts came from generate_node's own char-based heuristic;
+    # post-reconcile they should match the StructuredResponse fields.
+    assert row["input_tokens"] == 1234
+    assert row["output_tokens"] == 567
+    assert row["reconciled"] is True
+    assert "reconciled_at" in row
+    assert "status" not in row  # success, not refunded
+
+
+def test_t211_pre_call_budget_fail_writes_no_record(tmp_path, monkeypatch):
+    """tri-state #1 (pre_call_budget_fail): no record_id, cost_log untouched."""
+    # Push the per-call cap below the FakeProvider's flat $0.001 estimate.
+    monkeypatch.setenv("PER_CALL_BUDGET_USD", "0.0000001")
+
+    provider = _ScriptedProvider([_make_response(_valid_dialogue_node())])
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+
+    assert result.success is False
+    assert result.failure_reason == "budget_exceeded"
+    assert provider.call_count == 0
+    assert _read_log(tmp_path) == []  # nothing ever recorded
+
+
+def test_t211_request_sent_failure_keeps_estimated_charge(tmp_path):
+    """tri-state #3 (request_sent_failure): row remains charged, no refund flag."""
+    provider = _ScriptedProvider([ProviderError("simulated 500 from server")])
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    # The estimate stays on the books — generate_node did NOT call
+    # refund_estimated for ProviderError (R2.1 follow-up will classify
+    # connect-fail vs API-error and decide).
+    assert "status" not in rows[0]
+    assert "reconciled" not in rows[0]
+    assert rows[0]["cost_usd"] > 0  # estimated charge retained
+
+
+def test_t211_request_not_sent_refund_via_direct_api(tmp_path):
+    """tri-state #2 (request_not_sent): direct budget API round-trip.
+
+    Covers the case where production code (e.g. a future provider with
+    its own exception type) calls `budget.refund_estimated` directly
+    without going through the generate_node ProviderError path.
+    """
+    record_id = budget.check_and_charge(
+        0.45, model_id="m", input_tokens=1, output_tokens=1
+    )
+    assert budget.today_total_usd() == pytest.approx(0.45)
+
+    budget.refund_estimated(record_id, reason="request_not_sent")
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["cost_usd"] == 0.0
+    assert rows[0]["status"] == "refunded"
+    assert rows[0]["refund_reason"] == "request_not_sent"
+    assert budget.today_total_usd() == pytest.approx(0.0)
+
+
+def _provider_error_with_cause(cause: BaseException) -> ProviderError:
+    """Build a ProviderError whose __cause__ chain mirrors `raise X from Y`."""
+    err = ProviderError(f"Gemini call failed: {cause}")
+    err.__cause__ = cause
+    return err
+
+
+def test_t211_request_not_sent_via_generate_node_connection_error(tmp_path):
+    """generate_node routes a connect-level ProviderError to refund."""
+    cause = ConnectionResetError("Connection reset by peer")
+    provider = _ScriptedProvider([_provider_error_with_cause(cause)])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    # Estimated charge was refunded — no R2.1 deferral for this case.
+    assert rows[0]["cost_usd"] == 0.0
+    assert rows[0]["status"] == "refunded"
+    assert rows[0]["refund_reason"] == "request_not_sent"
+    # And the AttemptRecord reflects zero cost.
+    assert result.attempts[0].cost_usd == 0.0
+
+
+def test_t211_request_not_sent_via_generate_node_handshake_keyword(tmp_path):
+    """Bare ProviderError with handshake message in chain → also refunded."""
+    cause = OSError("TLS handshake timed out")
+    provider = _ScriptedProvider([_provider_error_with_cause(cause)])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+
+    rows = _read_log(tmp_path)
+    assert rows[0]["cost_usd"] == 0.0
+    assert rows[0]["status"] == "refunded"
+
+
+def test_t211_api_error_keeps_estimated_charge(tmp_path):
+    """ProviderError with no connect markers → request_sent_failure path."""
+    err = ProviderError("Gemini API error: 500 INTERNAL")
+    provider = _ScriptedProvider([err])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    # No connection-error signal → estimated charge retained for R2.1 classification.
+    assert "status" not in rows[0]
+    assert rows[0]["cost_usd"] > 0
+    assert result.attempts[0].cost_usd > 0
+
+
+def test_t211_retry_attempts_reconcile_independently(tmp_path):
+    """Each LLM call gets its own row; each row is reconciled on success."""
+    provider = _ScriptedProvider(
+        [
+            _make_response(_invalid_node_missing_required()),  # attempt 1: schema fail
+            _make_response(_valid_dialogue_node()),             # attempt 2: success
+        ]
+    )
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is True
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 2
+    # Both API calls actually returned, so both rows should be reconciled.
+    # schema_invalid does not refund — the LLM was billed.
+    assert all(r.get("reconciled") is True for r in rows)
+    assert all("status" not in r for r in rows)
+    # And the record_ids are unique.
+    assert len({r["record_id"] for r in rows}) == 2
