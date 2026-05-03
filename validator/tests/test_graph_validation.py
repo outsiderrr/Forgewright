@@ -394,3 +394,258 @@ def test_topology_issue_is_frozen_dataclass():
                       node_id="x", option_id=None, message="m")
     assert a == b
     assert hash(a) == hash(b)
+
+
+# ---------------------------------------------------------------------------
+# 9. Legacy graph_check 包装回归 (review 4.1)
+# ---------------------------------------------------------------------------
+
+def test_dangling_target_reported_as_topology_issue():
+    """旧 graph_check 的悬空 target 错误必须出现在 TopologyResult.issues。"""
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["target_node_id"] = "ghost_node"
+    r = validate_graph_topology(g)
+    assert r.has_error
+    dangling = [i for i in r.issues if i.code == "DANGLING_TARGET"]
+    assert len(dangling) == 1
+    assert dangling[0].node_id == "n1"
+    assert dangling[0].option_id == "o1"
+
+
+def test_no_end_node_reported_as_topology_issue():
+    g = {
+        "entry_node_id": "n1",
+        "nodes": {
+            "n1": {
+                "node_id": "n1",
+                "type": "dialogue",
+                "options": [
+                    {
+                        "option_id": "o_loop",
+                        "text": "self",
+                        "target_node_id": "n1",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    },
+                ],
+            },
+        },
+    }
+    r = validate_graph_topology(g)
+    assert r.has_error
+    assert any(i.code == "NO_END_NODE" for i in r.issues)
+
+
+def test_end_unreachable_reported_as_topology_issue():
+    """有 end 节点但从 entry 不可达。"""
+    g = {
+        "entry_node_id": "n1",
+        "nodes": {
+            "n1": {
+                "node_id": "n1",
+                "type": "dialogue",
+                "options": [
+                    {
+                        "option_id": "o_loop",
+                        "text": "self",
+                        "target_node_id": "n1",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    },
+                ],
+            },
+            "isolated_end": {
+                "node_id": "isolated_end",
+                "type": "end",
+                "options": [],
+            },
+        },
+    }
+    r = validate_graph_topology(g)
+    assert r.has_error
+    assert any(i.code == "END_UNREACHABLE" for i in r.issues)
+
+
+def test_entry_not_in_nodes_reported_as_topology_issue():
+    g = {"entry_node_id": "ghost", "nodes": {
+        "n1": {"node_id": "n1", "type": "end", "options": []},
+    }}
+    r = validate_graph_topology(g)
+    assert r.has_error
+    assert any(i.code == "ENTRY_NOT_IN_NODES" for i in r.issues)
+
+
+def test_dialogue_loop_reported_as_warning():
+    """SCC 不含 end → DIALOGUE_LOOP warning（legacy 范畴；阶段 0 仍是 warning）。"""
+    g = {
+        "entry_node_id": "a",
+        "nodes": {
+            "a": {
+                "node_id": "a",
+                "type": "dialogue",
+                "options": [
+                    {
+                        "option_id": "to_b",
+                        "text": "b",
+                        "target_node_id": "b",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    },
+                    {
+                        "option_id": "to_end",
+                        "text": "end",
+                        "target_node_id": "z",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    },
+                ],
+            },
+            "b": {
+                "node_id": "b",
+                "type": "dialogue",
+                "options": [
+                    {
+                        "option_id": "to_a",
+                        "text": "a",
+                        "target_node_id": "a",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    },
+                ],
+            },
+            "z": {"node_id": "z", "type": "end", "options": []},
+        },
+    }
+    r = validate_graph_topology(g)
+    loops = [i for i in r.issues if i.code == "DIALOGUE_LOOP"]
+    assert len(loops) >= 1
+    assert all(i.severity == "warning" for i in loops)
+
+
+# ---------------------------------------------------------------------------
+# 10. condition form: not:null + leaf 缺 value (review 4.2)
+# ---------------------------------------------------------------------------
+
+def test_condition_not_null_child_reported():
+    """``{"not": null}`` 不应被 2A 视作合法 (review 4.2)。"""
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["condition"] = {"not": None}
+    r = validate_graph_topology(g)
+    assert ("n1", "o1") in r.condition_form_issues
+    assert any(
+        i.code == "CONDITION_FORM_INVALID"
+        and "not" in i.message
+        for i in r.issues
+    )
+
+
+def test_condition_all_of_null_child_reported():
+    """all_of 中含 null 子条件应报错 (review 4.2 的同源修复)。"""
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["condition"] = {"all_of": [None]}
+    r = validate_graph_topology(g)
+    assert ("n1", "o1") in r.condition_form_issues
+
+
+def test_condition_leaf_missing_value_reported():
+    """leaf 缺 ``value`` 应报错 (review 4.2)。"""
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["condition"] = {
+        "op": "eq",
+        "path": "flag.x",
+        # value 缺失
+    }
+    r = validate_graph_topology(g)
+    assert ("n1", "o1") in r.condition_form_issues
+    assert any(
+        i.code == "CONDITION_FORM_INVALID"
+        and "missing required key" in i.message
+        and "value" in i.message
+        for i in r.issues
+    )
+
+
+def test_condition_leaf_missing_op_reported():
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["condition"] = {
+        "path": "flag.x",
+        "value": True,
+    }
+    r = validate_graph_topology(g)
+    assert ("n1", "o1") in r.condition_form_issues
+
+
+def test_condition_value_can_be_null_when_key_present():
+    """``value: null`` 是合法的（与 None 比较）—— 仅 key 缺失才报。"""
+    g = _minimal_graph()
+    g["nodes"]["n1"]["options"][0]["condition"] = {
+        "op": "eq",
+        "path": "flag.x",
+        "value": None,
+    }
+    r = validate_graph_topology(g)
+    assert r.condition_form_issues == []
+
+
+# ---------------------------------------------------------------------------
+# 11. active clocks 增 advance_rule 分支 (review 4.3)
+# ---------------------------------------------------------------------------
+
+def test_active_clocks_count_advance_rule_branch():
+    """clocks 全部 ticks_filled=0 但都有 advance_rule.type → 仍计入活跃。"""
+    g = _minimal_graph()
+    ontology = {
+        "clocks": [
+            {
+                "id": f"clk_{i}",
+                "ticks_filled": 0,
+                "ticks_total": 10,
+                "advance_rule": {"type": "every_n_scenes", "params": {"n": 3}},
+            }
+            for i in range(ACTIVE_CLOCKS_SOFT_LIMIT + 1)
+        ],
+    }
+    r = validate_graph_topology(g, ontology=ontology)
+    assert any(
+        i.code == "ACTIVE_CLOCKS_OVER_SOFT_LIMIT" for i in r.issues
+    )
+
+
+def test_clocks_without_advance_rule_and_zero_ticks_inactive():
+    """无 advance_rule + ticks_filled=0 仍判为 inactive（与原行为一致）。"""
+    g = _minimal_graph()
+    ontology = {
+        "clocks": [
+            {"id": f"clk_{i}", "ticks_filled": 0, "ticks_total": 10}
+            for i in range(ACTIVE_CLOCKS_SOFT_LIMIT + 5)
+        ],
+    }
+    r = validate_graph_topology(g, ontology=ontology)
+    assert not any(
+        i.code == "ACTIVE_CLOCKS_OVER_SOFT_LIMIT" for i in r.issues
+    )
+
+
+def test_advance_rule_without_type_does_not_count():
+    """空 advance_rule（无 type）不计入活跃。"""
+    g = _minimal_graph()
+    ontology = {
+        "clocks": [
+            {
+                "id": f"clk_{i}",
+                "ticks_filled": 0,
+                "ticks_total": 10,
+                "advance_rule": {},  # 没有 type
+            }
+            for i in range(ACTIVE_CLOCKS_SOFT_LIMIT + 1)
+        ],
+    }
+    r = validate_graph_topology(g, ontology=ontology)
+    assert not any(
+        i.code == "ACTIVE_CLOCKS_OVER_SOFT_LIMIT" for i in r.issues
+    )

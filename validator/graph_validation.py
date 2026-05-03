@@ -20,6 +20,7 @@ import networkx as nx
 
 from . import graph_check  # 保留向后兼容；现有导出不动
 from .graph_check import check as graph_check_layer  # noqa: F401  (re-export)
+from .report import Issue
 
 __all__ = [
     "TopologyIssue",
@@ -49,9 +50,22 @@ _CONDITION_LEAF_OPS: frozenset[str] = frozenset(
     ["eq", "neq", "gt", "gte", "lt", "lte", "has", "has_not"]
 )
 _CONDITION_COMPOSITE_KEYS: frozenset[str] = frozenset(["all_of", "any_of", "not"])
+_CONDITION_LEAF_REQUIRED: frozenset[str] = frozenset(["op", "path", "value"])
 
 # state_effect.schema.json + ADR-017 tick_effects.effect_op 公用枚举
 _EFFECT_OPS: frozenset[str] = frozenset(["set", "inc", "dec", "add", "remove"])
+
+# Legacy graph_check 报告 → TopologyIssue.code 的关键字映射 (review 4.1).
+# 旧 graph_check 用 message 文本编码错误类型；本表把每条文本映射到一个
+# 稳定的 code，便于下游（T-2.8 / T-2.13）按 code 聚合而非匹配文本。
+_LEGACY_MESSAGE_CODES: tuple[tuple[str, str], ...] = (
+    ("does not exist in", "DANGLING_TARGET"),
+    ("is not in nodes map", "ENTRY_NOT_IN_NODES"),
+    ("unreachable from entry", "NEVER_REACHED"),
+    ("has no terminal node", "NO_END_NODE"),
+    ("end node(s) but none are", "END_UNREACHABLE"),
+    ("strongly-connected component", "DIALOGUE_LOOP"),
+)
 
 
 @dataclass(frozen=True)
@@ -116,23 +130,75 @@ def _path_namespace_ok(path: Any) -> bool:
     return head in STATE_PATH_NAMESPACES
 
 
-def _check_condition_form(cond: Any) -> list[str]:
-    """Form-only check：path 命名空间 + op 枚举 + 叶/复合互斥。
+def _legacy_code_for(message: str) -> str:
+    for needle, code in _LEGACY_MESSAGE_CODES:
+        if needle in message:
+            return code
+    return "LEGACY_GRAPH_ISSUE"
+
+
+def _map_legacy_issue(
+    issue: Issue,
+    severity: Literal["error", "warning"],
+) -> TopologyIssue:
+    """Map a legacy graph_check ``Issue`` into a ``TopologyIssue`` (review 4.1).
+
+    location 形态：``"node_id"`` / ``"node_id/option_id"`` / ``"root"`` /
+    ``"a,b,c"`` (SCC 节点列表)。前两种解出 node_id / option_id；其余保留为 None。
+    """
+    msg = issue.message
+    loc = issue.location or ""
+    code = _legacy_code_for(msg)
+    node_id: str | None
+    option_id: str | None
+    if code == "DANGLING_TARGET" and "/" in loc:
+        node_id, option_id = loc.split("/", 1)
+    elif code == "DIALOGUE_LOOP":
+        node_id = loc or None  # comma-joined SCC list
+        option_id = None
+    elif loc == "root" or "," in loc:
+        node_id = None
+        option_id = None
+    else:
+        node_id = loc or None
+        option_id = None
+    return TopologyIssue(
+        severity=severity,
+        code=code,
+        node_id=node_id,
+        option_id=option_id,
+        message=msg,
+    )
+
+
+def _check_condition_form(
+    cond: Any,
+    *,
+    allow_null: bool = True,
+) -> list[str]:
+    """Form-only check：path 命名空间 + op 枚举 + 叶/复合互斥 + 必填字段齐全。
 
     返回人话错误列表；空列表表示 OK。**不检查 condition satisfiability**——那归 2B。
+
+    ``allow_null``：顶层调用允许 None（"无条件"）；递归到 composite 子节点（all_of /
+    any_of 项 / not 子）时禁止 None（review 4.2）。
     """
     if cond is None:
-        return []
+        if allow_null:
+            return []
+        return ["condition cannot be null in this position"]
     if not isinstance(cond, dict):
-        return [f"condition must be null or object, got {type(cond).__name__}"]
-    issues: list[str] = []
-    leaf_keys = {k for k in ("op", "path", "value") if k in cond}
+        return [f"condition must be object, got {type(cond).__name__}"]
+
+    leaf_keys = {k for k in _CONDITION_LEAF_REQUIRED if k in cond}
     composite_keys = {k for k in _CONDITION_COMPOSITE_KEYS if k in cond}
     if leaf_keys and composite_keys:
         return [
             f"condition mixes leaf keys {sorted(leaf_keys)} with composite "
             f"keys {sorted(composite_keys)} (D4 互斥)"
         ]
+
+    issues: list[str] = []
     if composite_keys:
         if len(composite_keys) > 1:
             issues.append(
@@ -148,26 +214,62 @@ def _check_condition_form(cond: Any) -> list[str]:
             else:
                 for i, child in enumerate(children):
                     issues.extend(
-                        f"{key}[{i}]: {sub}" for sub in _check_condition_form(child)
+                        f"{key}[{i}]: {sub}"
+                        for sub in _check_condition_form(child, allow_null=False)
                     )
-        else:
+        else:  # "not" — review 4.2 修复 not:null 漏检
+            child = cond.get("not")
             issues.extend(
-                f"not: {sub}" for sub in _check_condition_form(cond.get("not"))
+                f"not: {sub}"
+                for sub in _check_condition_form(child, allow_null=False)
             )
         return issues
 
-    op = cond.get("op")
-    if not isinstance(op, str) or op not in _CONDITION_LEAF_OPS:
+    # leaf form — review 4.2 修复缺 value 漏检
+    missing = sorted(_CONDITION_LEAF_REQUIRED - set(cond.keys()))
+    if missing:
         issues.append(
-            f"condition.op {op!r} not in leaf op enum {sorted(_CONDITION_LEAF_OPS)}"
+            f"leaf condition missing required key(s): {missing}"
         )
-    path = cond.get("path")
-    if not _path_namespace_ok(path):
-        issues.append(
-            f"condition.path {path!r} not in ADR-016 namespaces {STATE_PATH_NAMESPACES}; "
-            f"path must start with one of these prefixes"
-        )
+    if "op" in cond:
+        op = cond.get("op")
+        if not isinstance(op, str) or op not in _CONDITION_LEAF_OPS:
+            issues.append(
+                f"condition.op {op!r} not in leaf op enum "
+                f"{sorted(_CONDITION_LEAF_OPS)}"
+            )
+    if "path" in cond:
+        path = cond.get("path")
+        if not _path_namespace_ok(path):
+            issues.append(
+                f"condition.path {path!r} not in ADR-016 namespaces "
+                f"{STATE_PATH_NAMESPACES}; path must start with one of these "
+                f"prefixes"
+            )
     return issues
+
+
+def _clock_is_active(clock: Any) -> bool:
+    """ADR-017 D9 软上限的保守活跃判定 (review 4.3).
+
+    True iff ``ticks_filled > 0`` 或 ``advance_rule.type`` 已定义。
+
+    范围注记：2A 上下文不足以判断 ``advance_rule`` 是否真正命中（事件触发归
+    运行时），但 ADR-017 D9 软上限是状态空间预警——宁高勿低估。任何定义良好
+    的 ``advance_rule`` 在生命周期内会触发，故视作可激活。T-2.7 实测倒推后
+    由 ADR-017 v0.2 修订真实上限。
+    """
+    if not isinstance(clock, dict):
+        return False
+    ticks_filled = clock.get("ticks_filled")
+    if isinstance(ticks_filled, int) and ticks_filled > 0:
+        return True
+    advance_rule = clock.get("advance_rule")
+    if isinstance(advance_rule, dict):
+        rule_type = advance_rule.get("type")
+        if isinstance(rule_type, str) and rule_type:
+            return True
+    return False
 
 
 def _check_effects_form(effects: Any) -> list[str]:
@@ -204,11 +306,14 @@ def validate_graph_topology(
     """2A 纯拓扑 + condition / effect 形态合法性校验 (ADR-021).
 
     检查项（不含 condition satisfiability — 那归 2B）：
-      - A1 NEVER_REACHED：从 entry 不可达节点（图遍历，所有 option 边都试）
+      - 来自 legacy graph_check（v1.0 §2.7 包装；review 4.1）：
+        * NEVER_REACHED / DANGLING_TARGET / ENTRY_NOT_IN_NODES /
+          NO_END_NODE / END_UNREACHABLE / DIALOGUE_LOOP（warning）
       - A2 DEAD_END_NODE：非 end 节点入度可达，但 option 中无任何 condition=null
                            （启发式；condition 满足性归 2B）
       - A3 CONDITION_FORM_INVALID：option.condition / effects / on_enter_effects 字段
-                                    形态非法（path 命名空间 / op 枚举 / 叶 vs 复合互斥）
+                                    形态非法（path 命名空间 / op 枚举 / 叶 vs 复合互斥
+                                    / leaf 必填字段）
       - A4 CONVERGENCE：warning，多路径汇合点（入度 > 1 且非 entry）
       - ACTIVE_CLOCKS_OVER_SOFT_LIMIT：warning，传入 ontology 时活跃 clocks 数 > 10
                                         (ADR-017 D9)
@@ -219,6 +324,16 @@ def validate_graph_topology(
     issues: list[TopologyIssue] = []
     nodes = graph.get("nodes")
     entry = graph.get("entry_node_id")
+
+    # === 包装 legacy graph_check（review 4.1）===
+    # 旧 graph_check.check 的 5 类 error + SCC warning 都映射成 TopologyIssue，
+    # 让新 2A 双报对结构非法图不再 false pass。dangling target / no end /
+    # end-unreachable 等约束由 legacy 主导；新 2A 在其上叠加 A2/A3/A4。
+    legacy_errors, legacy_warnings = graph_check.check(graph)
+    for legacy in legacy_errors:
+        issues.append(_map_legacy_issue(legacy, severity="error"))
+    for legacy in legacy_warnings:
+        issues.append(_map_legacy_issue(legacy, severity="warning"))
 
     if not _is_mapping(nodes) or not isinstance(entry, str):
         return TopologyResult(issues=issues)
@@ -236,23 +351,12 @@ def validate_graph_topology(
             if isinstance(target, str) and target in nodes:
                 dg.add_edge(node_id, target)
 
-    # A1 NEVER_REACHED — 纯图遍历（所有边都试；condition 不进入 2A）
-    unreachable: list[str] = []
+    # NEVER_REACHED — legacy 已主导报告（review 4.1）；本字段对外保留以便下游聚合
     if entry in nodes:
         reachable = nx.descendants(dg, entry) | {entry}
     else:
         reachable = set()
-    for nid in sorted(set(nodes) - reachable):
-        unreachable.append(nid)
-        issues.append(
-            TopologyIssue(
-                severity="error",
-                code="NEVER_REACHED",
-                node_id=nid,
-                option_id=None,
-                message=f"node {nid!r} is unreachable from entry {entry!r}",
-            )
-        )
+    unreachable: list[str] = sorted(set(nodes) - reachable)
 
     # A2 DEAD_END_NODE — 启发式：非 end 节点入度可达，且 option 全部 conditional
     deadlock_nodes: list[str] = []
@@ -367,17 +471,13 @@ def validate_graph_topology(
                 )
             )
 
-    # ACTIVE_CLOCKS_OVER_SOFT_LIMIT — ADR-017 D9
+    # ACTIVE_CLOCKS_OVER_SOFT_LIMIT — ADR-017 D9 (review 4.3)
+    # 活跃判定保守化：ticks_filled > 0 OR advance_rule.type 已定义。
+    # 详 _clock_is_active 文档（不低估状态空间预警）。
     if isinstance(ontology, dict):
         clocks = ontology.get("clocks") or []
         if isinstance(clocks, list):
-            active_count = 0
-            for c in clocks:
-                if not _is_mapping(c):
-                    continue
-                ticks_filled = c.get("ticks_filled")
-                if isinstance(ticks_filled, int) and ticks_filled > 0:
-                    active_count += 1
+            active_count = sum(1 for c in clocks if _clock_is_active(c))
             if active_count > ACTIVE_CLOCKS_SOFT_LIMIT:
                 issues.append(
                     TopologyIssue(
