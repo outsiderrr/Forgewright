@@ -77,7 +77,7 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 
 **重点工作**：
 - **新增 ADR**：角色槽位（role slot casting）与动态选角——支持 BG3 式"同一剧情功能由不同角色填充"模式
-- **validator 扩展**：结局可达性保证（graceful degradation validation）——证明任意合法状态组合下至少有 1 个结局可达
+- **validator 扩展**：结局可达性保证（graceful degradation validation）——抽样验证 N=100 路径 + 有界符号执行下未发现反例（按 ADR-021 拆 2A 拓扑 + 2B 抽样 + 有界符号执行；同步自 ROADMAP §阶段 2，2026-05-03 X1 修订）
 
 **禁止事项**：
 - 不得跨场景生成（阶段 3 再做）
