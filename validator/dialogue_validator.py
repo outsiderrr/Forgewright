@@ -208,6 +208,12 @@ def validate_node_mechanical(
         for idx, eff in enumerate(on_enter):
             _check_effect(eff, f"on_enter_effects[{idx}]", slugs, issues)
 
+    # node 级 reachability_condition 同样是 StateCondition——必须进 C2/C3/C6/C8 否则
+    # 节点入口条件能绕过 R8 机械预检（review 4.1）。
+    reach = node.get("reachability_condition")
+    if reach is not None:
+        _check_condition(reach, "reachability_condition", slugs, issues)
+
     for idx, opt in enumerate(options):
         if not isinstance(opt, dict):
             continue

@@ -189,6 +189,46 @@ def test_c3_in_condition_path():
     assert "BOND_ID_UNKNOWN" in _codes(res)
 
 
+def test_c3_uses_state_path_slug_not_id_strip(capsys):
+    """v1.0 §2.6 / Q1 决策回归防：slug 必须从 ontology 的 `state_path_slug` 字段读取，
+    **不是**从 `id` 去掉 `char_` 前缀推导。这里 id 与 slug 拼写不同，验证：
+
+      - `relationship.vellin.trust`（命中 slug） → pass
+      - `relationship.vellin_former_oath.trust`（命中 id 去前缀但不是 slug） → BOND_ID_UNKNOWN
+
+    若有人把 slug 推导改回 id-strip，本测试会失败。
+    """
+    ontology = {
+        "entities": [
+            {
+                "id": "char_vellin_former_oath",
+                "type": "character",
+                "display_name": "Vellin",
+                "state_path_slug": "vellin",
+            }
+        ]
+    }
+    eff_pass = {"op": "inc", "path": "relationship.vellin.trust", "value": 1}
+    res_pass = validate_node_mechanical(
+        _node(options=[_option(effects=[eff_pass])]),
+        ontology=ontology,
+        known_node_ids={"next"},
+    )
+    assert "BOND_ID_UNKNOWN" not in _codes(res_pass)
+
+    eff_fail = {
+        "op": "inc",
+        "path": "relationship.vellin_former_oath.trust",
+        "value": 1,
+    }
+    res_fail = validate_node_mechanical(
+        _node(options=[_option(effects=[eff_fail])]),
+        ontology=ontology,
+        known_node_ids={"next"},
+    )
+    assert "BOND_ID_UNKNOWN" in _codes(res_fail)
+
+
 # ---------------------------------------------------------------------------
 # C4 TARGET_UNREACHABLE
 # ---------------------------------------------------------------------------
@@ -325,6 +365,70 @@ def test_c9_end_with_options():
         _node(type="end", options=[_option()]), known_node_ids={"next"}
     )
     assert "NODE_TYPE_OPTIONS_MISMATCH" in _codes(res)
+
+
+# ---------------------------------------------------------------------------
+# reachability_condition 覆盖（review 4.1）：node 级条件也走 C2/C3/C6/C8
+# ---------------------------------------------------------------------------
+
+def test_reachability_condition_invalid_namespace():
+    """node 级 reachability_condition 的 path 必须进 C2 检查。"""
+    reach = {"op": "gte", "path": "stats.hp", "value": 1}
+    res = validate_node_mechanical(
+        _node(reachability_condition=reach), known_node_ids={"next"}
+    )
+    issues_at_reach = [i for i in res.issues if i.field_path.startswith("reachability_condition")]
+    assert any(i.code == "PATH_NS_INVALID" for i in issues_at_reach)
+
+
+def test_reachability_condition_unknown_bond_slug():
+    """node 级 reachability_condition 的 relationship slug 必须进 C3 反查。"""
+    reach = {"op": "gte", "path": "relationship.ghost.trust", "value": 1}
+    res = validate_node_mechanical(
+        _node(reachability_condition=reach),
+        ontology=_ontology(),
+        known_node_ids={"next"},
+    )
+    issues_at_reach = [i for i in res.issues if i.field_path.startswith("reachability_condition")]
+    assert any(i.code == "BOND_ID_UNKNOWN" for i in issues_at_reach)
+
+
+def test_reachability_condition_form_mix():
+    """node 级 reachability_condition 的形态混用必须进 C6。"""
+    reach = {
+        "op": "eq",
+        "path": "flag.x",
+        "value": True,
+        "all_of": [{"op": "eq", "path": "flag.y", "value": True}],
+    }
+    res = validate_node_mechanical(
+        _node(reachability_condition=reach), known_node_ids={"next"}
+    )
+    issues_at_reach = [i for i in res.issues if i.field_path.startswith("reachability_condition")]
+    assert any(i.code == "STATE_CONDITION_FORM_MIX" for i in issues_at_reach)
+
+
+def test_reachability_condition_invalid_op():
+    """node 级 reachability_condition 的 op 必须进 C8。"""
+    reach = {"op": "between", "path": "flag.x", "value": 1}
+    res = validate_node_mechanical(
+        _node(reachability_condition=reach), known_node_ids={"next"}
+    )
+    issues_at_reach = [i for i in res.issues if i.field_path.startswith("reachability_condition")]
+    assert any(i.code == "CONDITION_OP_INVALID" for i in issues_at_reach)
+
+
+def test_reachability_condition_null_or_missing_no_issue():
+    """null / 缺字段都不应触发任何 reachability 路径上的 issue。"""
+    res_null = validate_node_mechanical(
+        _node(reachability_condition=None), known_node_ids={"next"}
+    )
+    assert not any(i.field_path.startswith("reachability_condition") for i in res_null.issues)
+
+    n = _node()
+    n.pop("reachability_condition", None)
+    res_missing = validate_node_mechanical(n, known_node_ids={"next"})
+    assert not any(i.field_path.startswith("reachability_condition") for i in res_missing.issues)
 
 
 # ---------------------------------------------------------------------------
@@ -475,9 +579,13 @@ def test_all_nine_codes_are_error_severity():
 
 def test_gold_scene_only_known_c1_issues(capsys):
     """《铁誓驿站》是阶段 1.5 验收实测产物（commit 9be7a3e）；机械层不修 gold（任务指
-    示），只报告。这里的契约是：除已知 OPT_LEN_OVER（3 处长选项，作者审阅时拍板要不
-    要 C 阶段缩文）外，不许冒出任何**其他** code——任何其他 code 都是机械预检对 gold
-    误报，会被视为本任务的回归。
+    示），只报告。契约（review 4.1 修订）：
+
+    1. 不允许任何**非 C1** code 冒头——任何其他 code 都是机械预检对 gold 误报，回归。
+    2. C1 的 (node_id, field_path) 集合必须**精确等于**已知 3 处——未来 gold 若新增
+       第 4 处长选项会让本测试失败，强制作者主动决定（修文还是接受为已知遗留）。
+
+    这把 R3"选项过长"的边界锁死，防止 gold 静默退化。
     """
     graph = json.loads(GOLD_SCENE.read_text(encoding="utf-8"))
     ontology = _ontology(slugs=("vellin", "corvan", "aelwin"))
@@ -490,8 +598,18 @@ def test_gold_scene_only_known_c1_issues(capsys):
         for i in issues
         if i.code != "OPT_LEN_OVER"
     }
+    actual_c1 = {
+        (nid, i.field_path)
+        for nid, issues in by_node.items()
+        for i in issues
+        if i.code == "OPT_LEN_OVER"
+    }
+    known_c1 = {
+        ("arrival_waystation", "options[2].text"),
+        ("patrol_arrives", "options[0].text"),
+        ("patrol_arrives", "options[2].text"),
+    }
     if by_node:
-        # 显式把发现物 dump 到 stderr 给作者（pytest -s 可见；A 阶段报告手动收集）
         report = "\n".join(
             f"{nid} {i.field_path} {i.code}: {i.message}"
             for nid, issues in by_node.items()
@@ -500,4 +618,9 @@ def test_gold_scene_only_known_c1_issues(capsys):
         print(f"\n[T-2.4 gold scene mechanical findings]\n{report}")
     assert not other_codes, (
         f"gold scene produced unexpected non-C1 codes: {other_codes}"
+    )
+    assert actual_c1 == known_c1, (
+        f"gold C1 set drifted from known snapshot:\n"
+        f"  expected = {known_c1}\n"
+        f"  actual   = {actual_c1}"
     )
