@@ -60,11 +60,19 @@ class Fixture:
     node_requirement: NodeRequirement
 
 
-_LOCATION_CARD = {
-    "location_id": "scene_waystation_of_iron_oath",
-    "name": "铁誓驿站",
-    "summary": "铁誓卫队在山道上的中转驿站，黄昏时分山风呼啸；外人罕至。",
-}
+_LOCATION_CANDIDATES = [
+    {
+        "location_id": "scene_waystation_of_iron_oath",
+        "name": "铁誓驿站",
+        "summary": "铁誓卫队在山道上的中转驿站，黄昏时分山风呼啸；外人罕至。",
+    },
+    {
+        "location_id": "scene_eastern_pasture_ruin",
+        "name": "牧人废屋",
+        "summary": "驿站东侧约半日马程的废弃牧人小屋，眼下藏着逃兵 Aelwin。",
+    },
+]
+_PRIMARY_LOCATION_REF = "scene_waystation_of_iron_oath"
 
 _VELLIN = {
     "character_id": "char_vellin",
@@ -129,7 +137,8 @@ def _build_fixtures() -> list[Fixture]:
             fixture_id="dialogue_entry_vellin",
             graph_context=GraphContext(
                 scene_anchor="scene_waystation_of_iron_oath",
-                location_card=_LOCATION_CARD,
+                location_candidates=_LOCATION_CANDIDATES,
+                primary_location_ref=_PRIMARY_LOCATION_REF,
                 parent_chain=[],
                 involved_characters=[_VELLIN],
                 faction_clocks={},
@@ -145,7 +154,8 @@ def _build_fixtures() -> list[Fixture]:
             fixture_id="dialogue_middle_corvan",
             graph_context=GraphContext(
                 scene_anchor="scene_waystation_of_iron_oath",
-                location_card=_LOCATION_CARD,
+                location_candidates=_LOCATION_CANDIDATES,
+                primary_location_ref=_PRIMARY_LOCATION_REF,
                 parent_chain=[_parent_arrival()],
                 involved_characters=[_CORVAN, _VELLIN],
                 faction_clocks={},
@@ -160,8 +170,13 @@ def _build_fixtures() -> list[Fixture]:
         Fixture(
             fixture_id="dialogue_middle_aelwin",
             graph_context=GraphContext(
+                # narrative_intent below moves the action to 牧人废屋 — the
+                # primary_location_ref must match, otherwise the prompt's
+                # "推荐默认 location_ref" would push Aelwin's scene back into
+                # the waystation (review 4.2, T-2.0 R4).
                 scene_anchor="scene_waystation_of_iron_oath",
-                location_card=_LOCATION_CARD,
+                location_candidates=_LOCATION_CANDIDATES,
+                primary_location_ref="scene_eastern_pasture_ruin",
                 parent_chain=[_parent_arrival(), _parent_confession()],
                 involved_characters=[_AELWIN, _VELLIN],
                 faction_clocks={},
@@ -177,7 +192,8 @@ def _build_fixtures() -> list[Fixture]:
             fixture_id="end_silent",
             graph_context=GraphContext(
                 scene_anchor="scene_waystation_of_iron_oath",
-                location_card=_LOCATION_CARD,
+                location_candidates=_LOCATION_CANDIDATES,
+                primary_location_ref=_PRIMARY_LOCATION_REF,
                 parent_chain=[_parent_confession()],
                 involved_characters=[],
                 faction_clocks={},
@@ -200,7 +216,8 @@ def _build_fixtures() -> list[Fixture]:
 def _serialise_graph_context(ctx: GraphContext) -> dict:
     return {
         "scene_anchor": ctx.scene_anchor,
-        "location_card": ctx.location_card,
+        "location_candidates": list(ctx.location_candidates),
+        "primary_location_ref": ctx.primary_location_ref,
         "parent_chain": list(ctx.parent_chain),
         "involved_characters": list(ctx.involved_characters),
         "faction_clocks": dict(ctx.faction_clocks),

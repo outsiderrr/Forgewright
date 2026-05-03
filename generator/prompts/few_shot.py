@@ -1,15 +1,24 @@
 """Few-shot examples drawn from the hand-authored Iron Oath waystation scene.
 
 `load_iron_oath_few_shot()` reads `/content/test_scene_v0/scene.json` and
-returns 5 `(input_context, expected_node)` pairs — one per node in the scene.
-The `input_context` field is reconstructed: it's what a B+ context window
-*would* have looked like at the moment that specific node was about to be
-generated (parent chain only, no peek at sibling branches).
+returns 5 scene-derived `(input_context, expected_node)` pairs — one per node
+in the scene — concatenated with **2 hand-written composite-condition demos**
+added at the tail (T-2.0 R2 cleanup). The composite demos exist solely to make
+the StateCondition leaf-vs-composite split unambiguous; baseline_004 showed
+the scene-derived pairs alone weren't enough signal for the model to keep the
+two forms separate.
+
+The scene-derived `input_context` field is reconstructed: it's what a B+
+context window *would* have looked like at the moment that specific node was
+about to be generated (parent chain only, no peek at sibling branches). The
+composite demos build their `input_context` directly so the precondition state
+can be stated explicitly.
 
 Reading from /content/ is read-only; this module never mutates the scene.
 """
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +29,19 @@ _SCENE_PATH = (
     / "test_scene_v0"
     / "scene.json"
 )
+
+
+# T-2.0 R3 cleanup (review 4.1): the gold scene at /content/test_scene_v0/
+# scene.json is locked, but the 5 scene-derived demos enter the prompt as a
+# *copy*. This table shortens the 3 Option.text values that exceed the 25-字
+# hard cap added by T-2.0, so the few-shot demos don't contradict the system
+# prompt's "超长 = schema_invalid" rule. The originals stay intact in /content/.
+_FEW_SHOT_TEXT_OVERRIDES: dict[tuple[str, str], str] = {
+    ("arrival_waystation", "opt_read_the_room"): "[观察入微] 我看出那是军驿函件。",
+    ("vellin_confession", "opt_report_to_oath"): "我欠铁誓一份军饷。明早告诉 Corvan。",
+    ("patrol_arrives", "opt_lie_for_vellin"): "Corvan，我没看见什么信。以兰岭起誓。",
+    ("patrol_arrives", "opt_invoke_old_bond"): "[诉诸旧情] 看在兰岭那年的份上。",
+}
 
 
 @dataclass(frozen=True)
@@ -104,11 +126,18 @@ def _infer_intent(node: dict) -> str:
 
 
 def load_iron_oath_few_shot() -> list[FewShotPair]:
-    """Return all 5 (input_context, expected_node) pairs from the test scene.
+    """Return 5 scene-derived pairs followed by 2 composite-condition demos.
 
-    The list order matches the hand-authored play order so prompt hashes are
-    stable: arrival → confession → patrol_arrives → end_silent_ally →
-    end_iron_blade.
+    The scene-derived pairs come first in hand-authored play order so prompt
+    hashes are stable: arrival → confession → patrol_arrives → end_silent_ally
+    → end_iron_blade. The composite-condition demos (T-2.0 R2 cleanup) are
+    appended at the tail and explicitly annotate the all_of+not / any_of
+    shapes the model must mirror — see load_composite_condition_few_shot.
+
+    Each scene-derived node is deep-copied before being handed back so that
+    `_FEW_SHOT_TEXT_OVERRIDES` (R3 cleanup, review 4.1) can rewrite the few
+    options whose text exceeds the 25-字 cap without mutating the cached
+    `graph["nodes"]` dict — and without touching /content/ either.
     """
     graph = json.loads(_SCENE_PATH.read_text(encoding="utf-8"))
     order = [
@@ -118,13 +147,213 @@ def load_iron_oath_few_shot() -> list[FewShotPair]:
         "end_silent_ally",
         "end_iron_blade",
     ]
-    return [
-        FewShotPair(
-            input_context=_render_input_context(graph, nid),
-            expected_node=graph["nodes"][nid],
+    scene_pairs: list[FewShotPair] = []
+    for nid in order:
+        node = copy.deepcopy(graph["nodes"][nid])
+        for opt in node.get("options") or []:
+            override = _FEW_SHOT_TEXT_OVERRIDES.get((nid, opt["option_id"]))
+            if override is not None:
+                opt["text"] = override
+        scene_pairs.append(
+            FewShotPair(
+                input_context=_render_input_context(graph, nid),
+                expected_node=node,
+            )
         )
-        for nid in order
-    ]
+    return scene_pairs + load_composite_condition_few_shot()
+
+
+def load_composite_condition_few_shot() -> list[FewShotPair]:
+    """Return 2 hand-built demos illustrating composite StateCondition shapes.
+
+    Demo 1 (`all_of` + nested `not`): mirrors the
+    `arrival_waystation.opt_read_the_room` pattern but pulled out of the scene
+    so the input_context can spell out exactly which leaf conditions are true
+    when the option is supposed to be available.
+
+    Demo 2 (`any_of`): mirrors `patrol_arrives.opt_invoke_old_bond` — either
+    branch alone makes the option visible.
+
+    Both demos:
+    - use only state paths legal in the v0.1.1 namespace (`player.*`,
+      `flag.*`, `relationship.<char>.*`)
+    - keep `Option.text` ≤ 25 漢字 so the R3 cleanup constraint is honoured
+    - pick `location_ref` from the demo's `location_candidates` (R4 cleanup)
+    """
+    return [_demo_all_of_not(), _demo_any_of()]
+
+
+def _demo_all_of_not() -> FewShotPair:
+    """Demo: dialogue option with `all_of[<has>, <not eq>]` composite condition.
+
+    Reads as: "this option is available when player.traits contains
+    'observant' AND flag.composite_demo_used is not yet set."
+    """
+    input_context = (
+        "## 场景锚点\n"
+        "- scene_anchor: `scene_demo_composite`\n"
+        "\n"
+        "## 候选地点\n"
+        "- 主地点（推荐默认 `location_ref`）：`scene_demo_composite`\n"
+        "```json\n"
+        "{\n"
+        '  "location_id": "scene_demo_composite",\n'
+        '  "name": "演示场景"\n'
+        "}\n"
+        "```\n"
+        "\n"
+        "## 当前状态摘录\n"
+        "- `player.traits` 包含 `\"observant\"`\n"
+        "- `flag.composite_demo_used` 未被置位（视为 false）\n"
+        "\n"
+        "## 本次生成要求\n"
+        "- 节点类型 (`type`): `dialogue`\n"
+        "- 说话者 (`speaker_ref`): `char_demo`\n"
+        "- 叙事意图: 演示 `all_of[has, not eq]` 复合条件——仅当玩家"
+        "具备 observant 且未触发过该选项时显示。"
+    )
+    expected_node = {
+        "node_id": "demo_all_of_not",
+        "type": "dialogue",
+        "narration": "（演示：复合条件 all_of + not 的标准形态。）",
+        "speaker_ref": "char_demo",
+        "location_ref": "scene_demo_composite",
+        "on_enter_effects": [],
+        "options": [
+            {
+                "option_id": "opt_observant_first_use",
+                "text": "[观察入微] 我注意到了。",
+                "target_node_id": "demo_target_observed",
+                "condition": {
+                    "all_of": [
+                        {
+                            "op": "has",
+                            "path": "player.traits",
+                            "value": "observant",
+                        },
+                        {
+                            "not": {
+                                "op": "eq",
+                                "path": "flag.composite_demo_used",
+                                "value": True,
+                            }
+                        },
+                    ]
+                },
+                "effects": [
+                    {
+                        "op": "set",
+                        "path": "flag.composite_demo_used",
+                        "value": True,
+                    }
+                ],
+                "unavailable_behavior": "disable_with_hint",
+            },
+            {
+                "option_id": "opt_pass",
+                "text": "我没看出什么。",
+                "target_node_id": "demo_target_pass",
+                "condition": None,
+                "effects": [],
+                "unavailable_behavior": "hide",
+            },
+            {
+                "option_id": "opt_leave",
+                "text": "我先走了。",
+                "target_node_id": "demo_target_leave",
+                "condition": None,
+                "effects": [],
+                "unavailable_behavior": "hide",
+            },
+        ],
+    }
+    return FewShotPair(input_context=input_context, expected_node=expected_node)
+
+
+def _demo_any_of() -> FewShotPair:
+    """Demo: dialogue option with `any_of[<gte>, <has>]` composite condition.
+
+    Reads as: "this option is available when relationship.demo_npc.trust ≥ 2
+    OR player.bonds contains 'demo_shared_past' — either alone is enough."
+    """
+    input_context = (
+        "## 场景锚点\n"
+        "- scene_anchor: `scene_demo_composite`\n"
+        "\n"
+        "## 候选地点\n"
+        "- 主地点（推荐默认 `location_ref`）：`scene_demo_composite`\n"
+        "```json\n"
+        "{\n"
+        '  "location_id": "scene_demo_composite",\n'
+        '  "name": "演示场景"\n'
+        "}\n"
+        "```\n"
+        "\n"
+        "## 当前状态摘录\n"
+        "- `relationship.demo_npc.trust` 当前值 = 3（≥ 2 成立）\n"
+        "- `player.bonds` 不含 `\"demo_shared_past\"`（has 不成立）\n"
+        "- 二者**任一**成立即可让此选项显示\n"
+        "\n"
+        "## 本次生成要求\n"
+        "- 节点类型 (`type`): `dialogue`\n"
+        "- 说话者 (`speaker_ref`): `char_demo_npc`\n"
+        "- 叙事意图: 演示 `any_of[gte, has]` 复合条件——"
+        "信任度足够 **或** 拥有共同往事，二者其一即可。"
+    )
+    expected_node = {
+        "node_id": "demo_any_of",
+        "type": "dialogue",
+        "narration": "（演示：复合条件 any_of 的标准形态。）",
+        "speaker_ref": "char_demo_npc",
+        "location_ref": "scene_demo_composite",
+        "on_enter_effects": [],
+        "options": [
+            {
+                "option_id": "opt_old_bond",
+                "text": "[诉诸旧情] 你欠我一次。",
+                "target_node_id": "demo_target_bond",
+                "condition": {
+                    "any_of": [
+                        {
+                            "op": "gte",
+                            "path": "relationship.demo_npc.trust",
+                            "value": 2,
+                        },
+                        {
+                            "op": "has",
+                            "path": "player.bonds",
+                            "value": "demo_shared_past",
+                        },
+                    ]
+                },
+                "effects": [
+                    {
+                        "op": "inc",
+                        "path": "relationship.demo_npc.trust",
+                        "value": 1,
+                    }
+                ],
+                "unavailable_behavior": "disable",
+            },
+            {
+                "option_id": "opt_neutral",
+                "text": "我们就事论事。",
+                "target_node_id": "demo_target_neutral",
+                "condition": None,
+                "effects": [],
+                "unavailable_behavior": "hide",
+            },
+            {
+                "option_id": "opt_walk_away",
+                "text": "我没什么好说的。",
+                "target_node_id": "demo_target_walkaway",
+                "condition": None,
+                "effects": [],
+                "unavailable_behavior": "hide",
+            },
+        ],
+    }
+    return FewShotPair(input_context=input_context, expected_node=expected_node)
 
 
 def render_few_shot_block(pairs: list[FewShotPair]) -> str:

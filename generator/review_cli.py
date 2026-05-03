@@ -105,11 +105,15 @@ def _render_envelope(envelope: dict, *, position: str) -> str:
     parts.append("")
     parts.append("【上下文摘要】")
     parts.append(f"  scene_anchor: {context.get('scene_anchor')}")
-    location = context.get("location_card") or {}
-    if location:
-        parts.append(
-            f"  location:     {location.get('name', location.get('location_id', '?'))}"
+    candidates = context.get("location_candidates") or []
+    primary_ref = context.get("primary_location_ref")
+    if candidates:
+        labels = ", ".join(
+            c.get("name", c.get("location_id", "?")) for c in candidates
         )
+        parts.append(f"  locations:    {labels}")
+        if primary_ref:
+            parts.append(f"  primary_loc:  {primary_ref}")
     chars = context.get("involved_characters") or []
     if chars:
         labels = ", ".join(c.get("character_id", "?") for c in chars)

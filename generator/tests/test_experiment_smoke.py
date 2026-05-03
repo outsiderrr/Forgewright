@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from generator import metrics, review_cli
-from generator.experiment import Fixture, run_experiment
+from generator.experiment import Fixture, _build_fixtures, run_experiment
 from generator.context_assembler import GraphContext, NodeRequirement
 from generator.llm_provider import StructuredResponse
 
@@ -103,10 +103,13 @@ class _BudgetExceededFakeProvider:
 def _tiny_fixtures() -> list[Fixture]:
     base_ctx = GraphContext(
         scene_anchor="scene_waystation_of_iron_oath",
-        location_card={
-            "location_id": "scene_waystation_of_iron_oath",
-            "name": "铁誓驿站",
-        },
+        location_candidates=[
+            {
+                "location_id": "scene_waystation_of_iron_oath",
+                "name": "铁誓驿站",
+            }
+        ],
+        primary_location_ref="scene_waystation_of_iron_oath",
         parent_chain=[],
         involved_characters=[
             {"character_id": "char_vellin", "summary": "驿站管事"},
@@ -133,6 +136,40 @@ def _tiny_fixtures() -> list[Fixture]:
             ),
         ),
     ]
+
+
+# ---------------------------------------------------------------------------
+# T-2.0 R4 cleanup (review 4.2): per-fixture primary_location_ref coherence
+# ---------------------------------------------------------------------------
+
+
+def test_every_default_fixture_primary_is_in_its_location_candidates():
+    """Each shipped fixture's `primary_location_ref` must be one of the
+    `location_id` values it advertises in `location_candidates` — otherwise
+    the prompt would tell the model to "default to" an out-of-list location,
+    re-introducing exactly the R4 错配 we just cleaned up."""
+    for fixture in _build_fixtures():
+        ctx = fixture.graph_context
+        if ctx.primary_location_ref is None:
+            continue
+        candidate_ids = {c["location_id"] for c in ctx.location_candidates}
+        assert ctx.primary_location_ref in candidate_ids, (
+            f"fixture {fixture.fixture_id}: primary_location_ref="
+            f"{ctx.primary_location_ref!r} not in candidates={candidate_ids}"
+        )
+
+
+def test_aelwin_fixture_primary_location_matches_narrative():
+    """Review 4.2: `dialogue_middle_aelwin`'s narrative_intent is set in
+    牧人废屋 (eastern_pasture_ruin). Its primary_location_ref must match —
+    pointing at the waystation would push the model right back into the
+    location_ref 错配 that R4 was meant to eliminate."""
+    fixtures_by_id = {f.fixture_id: f for f in _build_fixtures()}
+    aelwin = fixtures_by_id["dialogue_middle_aelwin"]
+    assert aelwin.graph_context.primary_location_ref == "scene_eastern_pasture_ruin"
+    # Sanity: the narrative actually mentions 牧人废屋 — if a future edit
+    # moves Aelwin elsewhere, this guard surfaces the drift.
+    assert "牧人废屋" in aelwin.node_requirement.narrative_intent
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +276,13 @@ def _envelope(iter_id: int, *, success: bool, fixture_id: str = "dialogue_t",
         "fixture": {
             "graph_context": {
                 "scene_anchor": "scene_waystation_of_iron_oath",
-                "location_card": {"name": "铁誓驿站"},
+                "location_candidates": [
+                    {
+                        "location_id": "scene_waystation_of_iron_oath",
+                        "name": "铁誓驿站",
+                    }
+                ],
+                "primary_location_ref": "scene_waystation_of_iron_oath",
                 "parent_chain": [],
                 "involved_characters": [{"character_id": "char_vellin"}],
                 "faction_clocks": {},
