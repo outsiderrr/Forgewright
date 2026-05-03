@@ -14,6 +14,12 @@ list[ImageValidationError]。它针对**单个图像文件**而非 graph dict，
 from __future__ import annotations
 
 from . import consistency_check, graph_check, schema_check
+from .dialogue_validator import (
+    ValidationIssue,
+    ValidationResult,
+    validate_graph_mechanical,
+    validate_node_mechanical,
+)
 from .image_validator import (
     ImageValidationConfig,
     ImageValidationError,
@@ -28,6 +34,10 @@ __all__ = [
     "validate_image_asset",
     "ImageValidationError",
     "ImageValidationConfig",
+    "ValidationIssue",
+    "ValidationResult",
+    "validate_node_mechanical",
+    "validate_graph_mechanical",
 ]
 
 
