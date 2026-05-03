@@ -19,6 +19,12 @@ ADR-021 第二层方法论拆 2A 拓扑 + 2B 抽样 + 有界符号执行（T-2.7
 from __future__ import annotations
 
 from . import consistency_check, graph_check, schema_check
+from .dialogue_validator import (
+    ValidationIssue,
+    ValidationResult,
+    validate_graph_mechanical,
+    validate_node_mechanical,
+)
 from .graph_validation import (
     ACTIVE_CLOCKS_SOFT_LIMIT,
     STATE_PATH_NAMESPACES,
@@ -48,6 +54,11 @@ __all__ = [
     "validate_image_asset",
     "ImageValidationError",
     "ImageValidationConfig",
+    # T-2.4 dialogue node mechanical pre-check (R8 + ADR-020)
+    "ValidationIssue",
+    "ValidationResult",
+    "validate_node_mechanical",
+    "validate_graph_mechanical",
     # ADR-021 §2A
     "TopologyIssue",
     "TopologyResult",
