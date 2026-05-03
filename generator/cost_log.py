@@ -10,13 +10,24 @@ mutation operations:
     reason when an estimated charge needs to be released (e.g. the
     request never reached the provider).
 
+Concurrency: a module-level `threading.Lock` serialises in-process
+writers, and an `fcntl.flock(LOCK_EX)` on a sibling `.lock` sentinel
+file extends that exclusion across processes. Both `append` and the
+read-modify-write paths take both locks so updates never lose a
+concurrent append (or vice versa). Atomic rewrites use `tempfile.mkstemp`
+in the log's directory so two writers can't collide on the tmp filename.
+POSIX-only (Stage 2 dev runners are macOS / Linux).
+
 The default file lives at /generator/cost_log.jsonl (gitignored). Tests
 override the path via the FORGEWRIGHT_COST_LOG environment variable.
 """
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
 import os
+import tempfile
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -24,11 +35,28 @@ from pathlib import Path
 
 DEFAULT_LOG_PATH = Path(__file__).parent / "cost_log.jsonl"
 
-# Serialises every read-modify-write against the log file in-process.
-# `append` also takes it so an update can't race with a concurrent
-# append and clobber the new line. Cross-process safety is out of
-# scope (Stage 2 still has a single dev runner).
+# In-process exclusion. Cross-process exclusion is layered on top via
+# `_file_lock` below; both locks are held together for every write.
 _LOG_LOCK = threading.Lock()
+
+
+@contextlib.contextmanager
+def _file_lock(lock_path: Path):
+    """fcntl.flock(LOCK_EX) on a sibling sentinel file."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _lock_path_for(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".lock")
 
 
 def _log_path() -> Path:
@@ -61,7 +89,7 @@ def append(record: dict) -> str:
     line = json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n"
     path = _log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    with _LOG_LOCK:
+    with _LOG_LOCK, _file_lock(_lock_path_for(path)):
         with open(path, "a", encoding="utf-8") as f:
             f.write(line)
             f.flush()
@@ -140,9 +168,15 @@ def mark_refunded(record_id: str, *, reason: str) -> None:
 
 
 def _rewrite_one(record_id: str, mutate) -> None:
-    """Read all lines, mutate the matching record, atomically rewrite."""
+    """Read all lines, mutate the matching record, atomically rewrite.
+
+    Holds both the in-process lock and the cross-process file lock so a
+    concurrent `append` (or another rewrite) can't interleave between
+    the read and the rename. The temp file uses `mkstemp` for a unique
+    name, so two simultaneous rewrites never share a tmp path.
+    """
     path = _log_path()
-    with _LOG_LOCK:
+    with _LOG_LOCK, _file_lock(_lock_path_for(path)):
         if not path.exists():
             raise RecordNotFound(f"record_id={record_id} not found (log file missing)")
 
@@ -161,11 +195,21 @@ def _rewrite_one(record_id: str, mutate) -> None:
         if not found:
             raise RecordNotFound(f"record_id={record_id} not found")
 
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write("\n".join(out_lines))
-            if out_lines:
-                f.write("\n")
-            f.flush()
-            os.fsync(f.fileno())
-        tmp.replace(path)
+        fd, tmp_name = tempfile.mkstemp(
+            dir=str(path.parent),
+            prefix=path.name + ".",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write("\n".join(out_lines))
+                if out_lines:
+                    f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, path)
+        except BaseException:
+            # Replace failed (or write threw); clean up the orphan tmp.
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(tmp_name)
+            raise

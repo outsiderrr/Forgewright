@@ -310,3 +310,111 @@ def test_update_record_only_touches_the_matching_row(isolated_log):
     assert rows[rid_a]["cost_usd"] == 0.10 and "reconciled" not in rows[rid_a]
     assert rows[rid_c]["cost_usd"] == 0.30 and "reconciled" not in rows[rid_c]
     assert rows[rid_b]["cost_usd"] == 0.05 and rows[rid_b]["reconciled"] is True
+
+
+# ----- Cross-process safety regression (review §4.3) -----
+
+
+def test_concurrent_appends_and_updates_dont_lose_records(isolated_log):
+    """Threaded mix of append + reconcile must not drop any append.
+
+    Pre-fix: `_rewrite_one` and `append` shared no in-process lock with
+    each other beyond the GIL, and the rewrite snapshot could miss an
+    append landing between `read_text` and `os.replace`. With the
+    file_lock + threading.Lock combo around both paths, every appended
+    row must survive every concurrent reconcile.
+    """
+    seed_ids = [
+        budget.check_and_charge(0.001, model_id=f"seed{i}",
+                                input_tokens=1, output_tokens=1)
+        for i in range(20)
+    ]
+
+    n_appenders = 8
+    appends_per_thread = 10
+    new_ids: list[str] = []
+    new_ids_lock = threading.Lock()
+    errors: list[Exception] = []
+
+    def appender():
+        try:
+            for _ in range(appends_per_thread):
+                rid = budget.check_and_charge(
+                    0.001, model_id="appender", input_tokens=1, output_tokens=1
+                )
+                with new_ids_lock:
+                    new_ids.append(rid)
+        except Exception as e:
+            errors.append(e)
+
+    def updater(rid):
+        try:
+            budget.reconcile_after_call(
+                rid, actual_input_tokens=2, actual_output_tokens=2, actual_cost_usd=0.0005
+            )
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=appender) for _ in range(n_appenders)]
+    threads += [threading.Thread(target=updater, args=(rid,)) for rid in seed_ids]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == [], f"workers raised: {errors}"
+
+    # Every seed row + every appended row must be on disk.
+    rows = {
+        json.loads(line)["record_id"]: json.loads(line)
+        for line in isolated_log.read_text("utf-8").splitlines()
+    }
+    expected_count = len(seed_ids) + n_appenders * appends_per_thread
+    assert len(rows) == expected_count
+    for rid in seed_ids:
+        assert rid in rows
+        assert rows[rid].get("reconciled") is True  # all seeds got reconciled
+    for rid in new_ids:
+        assert rid in rows
+
+
+def test_rewrite_leaves_no_orphan_tmp_files(isolated_log):
+    """After a successful rewrite, only the .lock sentinel may remain."""
+    import os as _os
+
+    rid = budget.check_and_charge(0.01, model_id="m", input_tokens=1, output_tokens=1)
+    budget.reconcile_after_call(
+        rid, actual_input_tokens=1, actual_output_tokens=1, actual_cost_usd=0.001
+    )
+    leftover = [
+        entry
+        for entry in _os.listdir(isolated_log.parent)
+        if entry.startswith(isolated_log.name + ".") and entry.endswith(".tmp")
+    ]
+    assert leftover == [], f"orphan tmp files left behind: {leftover}"
+
+
+def test_rewrite_coexists_with_unrelated_sibling_tmp(isolated_log):
+    """A pre-existing .tmp from another operation must not block rewrite.
+
+    Pre-fix: `_rewrite_one` used a fixed `cost_log.jsonl.tmp` path; if
+    that file existed already (e.g. another writer crashed mid-rename)
+    the rewrite would silently overwrite it. With `mkstemp` the new
+    rewrite gets a fresh unique name and the orphan stays put untouched.
+    """
+    import os as _os
+
+    rid = budget.check_and_charge(0.01, model_id="m", input_tokens=1, output_tokens=1)
+    # Plant a fake orphan with the legacy fixed name.
+    legacy_orphan = isolated_log.with_suffix(isolated_log.suffix + ".tmp")
+    legacy_orphan.write_text("garbage", encoding="utf-8")
+
+    budget.reconcile_after_call(
+        rid, actual_input_tokens=1, actual_output_tokens=1, actual_cost_usd=0.001
+    )
+
+    # Reconcile should succeed; the orphan should be untouched.
+    rec = json.loads(isolated_log.read_text("utf-8").splitlines()[0])
+    assert rec["reconciled"] is True
+    assert legacy_orphan.exists() and legacy_orphan.read_text("utf-8") == "garbage"
+    legacy_orphan.unlink()  # cleanup so other tests don't see it

@@ -365,11 +365,11 @@ def test_t211_request_sent_failure_keeps_estimated_charge(tmp_path):
 
 
 def test_t211_request_not_sent_refund_via_direct_api(tmp_path):
-    """tri-state #2 (request_not_sent): exercise the refund_estimated path.
+    """tri-state #2 (request_not_sent): direct budget API round-trip.
 
-    generate_node currently defaults all ProviderError to request_sent_failure
-    (see T-2.11 PR body). The request_not_sent API surface is exercised here
-    via direct budget call so the round-trip is covered ahead of R2.1.
+    Covers the case where production code (e.g. a future provider with
+    its own exception type) calls `budget.refund_estimated` directly
+    without going through the generate_node ProviderError path.
     """
     record_id = budget.check_and_charge(
         0.45, model_id="m", input_tokens=1, output_tokens=1
@@ -384,6 +384,68 @@ def test_t211_request_not_sent_refund_via_direct_api(tmp_path):
     assert rows[0]["status"] == "refunded"
     assert rows[0]["refund_reason"] == "request_not_sent"
     assert budget.today_total_usd() == pytest.approx(0.0)
+
+
+def _provider_error_with_cause(cause: BaseException) -> ProviderError:
+    """Build a ProviderError whose __cause__ chain mirrors `raise X from Y`."""
+    err = ProviderError(f"Gemini call failed: {cause}")
+    err.__cause__ = cause
+    return err
+
+
+def test_t211_request_not_sent_via_generate_node_connection_error(tmp_path):
+    """generate_node routes a connect-level ProviderError to refund."""
+    cause = ConnectionResetError("Connection reset by peer")
+    provider = _ScriptedProvider([_provider_error_with_cause(cause)])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    # Estimated charge was refunded — no R2.1 deferral for this case.
+    assert rows[0]["cost_usd"] == 0.0
+    assert rows[0]["status"] == "refunded"
+    assert rows[0]["refund_reason"] == "request_not_sent"
+    # And the AttemptRecord reflects zero cost.
+    assert result.attempts[0].cost_usd == 0.0
+
+
+def test_t211_request_not_sent_via_generate_node_handshake_keyword(tmp_path):
+    """Bare ProviderError with handshake message in chain → also refunded."""
+    cause = OSError("TLS handshake timed out")
+    provider = _ScriptedProvider([_provider_error_with_cause(cause)])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+
+    rows = _read_log(tmp_path)
+    assert rows[0]["cost_usd"] == 0.0
+    assert rows[0]["status"] == "refunded"
+
+
+def test_t211_api_error_keeps_estimated_charge(tmp_path):
+    """ProviderError with no connect markers → request_sent_failure path."""
+    err = ProviderError("Gemini API error: 500 INTERNAL")
+    provider = _ScriptedProvider([err])
+
+    result = generate_node(
+        graph_context=_ctx(), node_requirement=_req(), provider=provider
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+
+    rows = _read_log(tmp_path)
+    assert len(rows) == 1
+    # No connection-error signal → estimated charge retained for R2.1 classification.
+    assert "status" not in rows[0]
+    assert rows[0]["cost_usd"] > 0
+    assert result.attempts[0].cost_usd > 0
 
 
 def test_t211_retry_attempts_reconcile_independently(tmp_path):

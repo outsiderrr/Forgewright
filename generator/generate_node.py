@@ -158,10 +158,29 @@ def generate_node(
                 SYSTEM_PROMPT, user_prompt, json_schema
             )
         except ProviderError as exc:
-            # T-2.11 tri-state refund: default ProviderError to
-            # request_sent_failure (don't refund — assume the call hit the
-            # server and may have billed). Differential classification of
-            # connect-failure vs API-error is R2.1 follow-up.
+            # T-2.11 tri-state refund. Provider-neutral classification:
+            # if the exception chain looks like a pre-flight / connect
+            # failure (request never reached the server), refund the
+            # estimated charge (request_not_sent). Otherwise default to
+            # request_sent_failure — the call may have billed.
+            # Provider-specific exception types (ConnectFailureError vs
+            # APIError vs MidFlightResetError) remain R2.1 work.
+            if _is_request_not_sent(exc):
+                budget.refund_estimated(record_id, reason="request_not_sent")
+                attempts.append(
+                    AttemptRecord(
+                        attempt_index=attempt_idx,
+                        raw_text=None,
+                        validator_errors=[f"provider_error: {exc}"],
+                        cost_usd=0.0,
+                    )
+                )
+                return GenerationResult(
+                    success=False,
+                    failure_reason="provider_error",
+                    attempts=attempts,
+                    total_cost_usd=total_cost,
+                )
             _log_refund_deferred(record_id, str(exc))
             attempts.append(
                 AttemptRecord(
@@ -180,6 +199,13 @@ def generate_node(
             )
 
         # ---- Reconcile pre-call estimate with provider-reported actuals. ----
+        # T-2.11 scope: `actual_cost_usd` is recomputed here via
+        # `provider.estimate_cost(...)` rather than carried on
+        # `StructuredResponse`. Adding the field to that dataclass
+        # (and the cached/billable/reasoning sub-fields the reviewer
+        # also asked for) requires editing /generator/llm_provider.py,
+        # which is outside this task's allowed module set — deferred to
+        # R2.1 alongside the differential exception classification.
         actual_cost = provider.estimate_cost(response.input_tokens, response.output_tokens)
         budget.reconcile_after_call(
             record_id,
@@ -246,6 +272,59 @@ def _log_refund_deferred(record_id: str, error_msg: str) -> None:
         record_id,
         error_msg,
     )
+
+
+# Provider-neutral connect-failure markers. Walks the exception chain
+# (`exc.__cause__` ...) for either a stdlib connection-error class or a
+# message keyword that strongly implies the request never left the host
+# — TLS handshake failures, refused/reset connections, read timeouts.
+# Producer-side responses with a status code (HTTP 4xx/5xx, etc.) do
+# *not* match here; they belong to request_sent_failure.
+_REQUEST_NOT_SENT_TYPES: tuple[type[BaseException], ...] = (
+    ConnectionError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    TimeoutError,
+)
+_REQUEST_NOT_SENT_KEYWORDS = (
+    "Server disconnected",
+    "Connection reset",
+    "Connection refused",
+    "Connection aborted",
+    "Read timeout",
+    "ReadTimeout",
+    "ConnectError",
+    "ConnectTimeout",
+    "RemoteProtocolError",
+    "handshake",
+    "timed out",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "call failed",  # GeminiProvider's connect-level wrapper prefix
+)
+
+
+def _is_request_not_sent(exc: BaseException) -> bool:
+    """Heuristic: did the request fail before reaching the provider?
+
+    Walks `exc` and its `__cause__` chain looking for a stdlib connection
+    error subclass or one of the well-known transient-network markers in
+    the message. Provider-specific exception subclasses are R2.1 work; this
+    check is intentionally conservative — when in doubt, return False so
+    the row stays charged (under-refund is safer than over-refund).
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, _REQUEST_NOT_SENT_TYPES):
+            return True
+        msg = f"{type(cur).__name__}: {cur}"
+        if any(p in msg for p in _REQUEST_NOT_SENT_KEYWORDS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
 
 
 def _validate_node(node_dict: Any, graph_context: GraphContext) -> list[str]:
