@@ -320,11 +320,199 @@
 
 ---
 
+## ADR-016：阶段 2 本体最小可生成契约
+
+**状态**：已接受（2026-05-03）
+
+**背景**：阶段 0/1 本体桩态启动阶段 2 = R4/R5 在多节点指数化放大成场景级污染（Round 5 synthesis §3.3 + GPT §3.1 共识）。阶段 2 起手必须一次性落地正式本体最小契约 schema，否则下游 prompt 模板（T-2.5）/ 场景生成（T-2.6）/ validator 扩展（T-2.7）全部建立在不可锚定的事实空间上。
+
+**决策**：阶段 2 起手期一次性落地正式本体最小契约 schema，范围如下：
+
+- **character 实体**：`id`（pattern `^char_[a-z0-9_]+$`，envelope 字段名；不引入 `character_id` 冗余名）/ `display_name` / `description` / `state_path_slug`（默认 = `id` 去 `char_` 前缀；`pattern: "^[a-z0-9_]+$"`；作者可校准）/ `character_features`（描述性特征数组，含如 vellin "stoic mercenary"）/ `dramatic_triggers`（戏剧义务字段，结构 `[{trait, when, how, priority?, cooldown_scenes?}]`；后两项 optional）/ `relations: []`（嵌入式，含 `narrative_weight`，详 ADR-018）/ `visual_assets`（已由阶段 1.5 加，保留）
+- **location 实体**：`id`（pattern `^(scene_|loc_)[a-z0-9_]+$`）/ `display_name` / `description` / `location_type: enum["scene","sublocation"]` / `parent_location_ref`（场景层级）
+- **state path 命名空间表**（阶段 2 起 path 命名必须落入这五个命名空间之一，否则 validator 拒收）：
+  - `world.*`（含 `world.scene_count` / `world.long_rest_count` 系统时间双轨）
+  - `faction.<faction_id>.*`
+  - `relationship.<state_path_slug>.*`（`<state_path_slug>` = character entity 的 `state_path_slug` 字段值，不是 `<character_id>`；保 gold scene `relationship.vellin.trust` 不动）
+  - `flag.*`
+  - `player.*`
+- **Chapter/Act 容器 schema**：`chapter_id`（pattern `^chap_[a-z0-9_]+$`）/ `display_name` / `acts: [{act_id, display_name, included_scenes: [scene_anchor]}]`；本体新增顶层 `chapters: []` 数组（U-CL-4 强建议前移到阶段 2，避免阶段 1/2 已生成内容到阶段 3 需回填层级）
+- **系统时间双轨**：`world.scene_count`（每场景 +1，被动节奏）+ `world.long_rest_count`（玩家长休 +1，玩家节奏控制感）；不做实时计时器（违反 ADR-002 极简运行时）
+- **schema 版本号策略**：新建 character / location / clock / chapter schema 文件首版即 const `"0.3.0"`；既有 dialogue_graph / node / option / state_effect / state_condition 的 `schema_version` const 保持 `"0.1.1"` 不动；新增字段（如 `generation_trace.slot_assignments`，详 ADR-019）走 optional + `additionalProperties` 兼容路径
+
+**替代方案及否决理由**：
+
+- 推到阶段 3：synthesis §3.3 + GPT §3.1 已共识阶段 2 启动需要本体最小契约
+- 仅 character + location 不加 Chapter/Act：阶段 1/2 已生成内容到阶段 3 需回填层级（U-CL-4）
+- 加 Sibling 涌现项目接口预留：premature abstraction，PZ 反思 §6 已强约束
+- state path 用 `<character_id>` 全名：会让 gold scene `relationship.vellin.trust` 失败；改 gold 风险高于加 slug 字段
+- 新增字段 bump 既有 schema_version 至 0.3.0：会破 gold scene 与所有阶段 0/1 测试；按 SCHEMA_v0.2 "非结构性变更不联动 schema_version" 先例，optional 字段走兼容路径
+
+**后果**：
+
+- 阶段 2 schema commit 全部串行卡口在本 ADR 落地后启动（T-2.2）
+- validator 扩展（T-2.7）必须支持本体引用闭合 + state path 命名空间合法性 + state_path_slug 反查
+- prompt 模板（T-2.5）必须把 character_features / dramatic_triggers / Chapter/Act / 系统时间双轨纳入 context
+
+---
+
+## ADR-017：时钟系统
+
+**状态**：已接受（2026-05-03）
+
+**背景**：PbtA Faction Clocks（DEBATE_NOTES §6.1）作为 ADR-006 真相之源的一部分，需要正式 schema；PZ 反思 §3.2 给出草图。阻塞下游 prompt 模板（T-2.5）context 注入与 validator 第二层（T-2.7）状态空间推理。
+
+**决策**：
+
+- **时钟分类三类**：`world` / `faction` / `environmental`
+- **`Clock` schema 字段**：`id` / `name` / `scope: enum["world","faction","environmental"]` / `ticks_total: int`（schema maximum 20）/ `ticks_filled: int`（PbtA 术语；非 ticks_current）/ `advance_rule: {type, params}` / `tick_effects: [{at_tick, effect_op, path, value}]`
+- **advance_rule.type 默认范围**：仅 `event_based` 子类（`every_n_scenes` / `on_long_rest` / `on_faction_action` / `on_player_choice`）；不做 time-based（运行时无真时间，违反 ADR-002）；SCHEMA_v0.3.md §4 明示"不存在 time_based 子类"
+- **边界软上限**：单 clock `ticks_total ≤ 20`（schema maximum 落地）；同时活跃 clocks `≤ 10` 由 T-2.7 sampling/validator 出 warning 级检查（schema 层不加；T-2.7 落地后由实测倒推真实上限，本 ADR v0.2 修订）
+- **`tick_effects.effect_op` 与 `StateEffect.op` 映射**：`effect_op` 枚举值与现有 `StateEffect.op`（`set` / `inc` / `dec` / `add` / `remove`）一致；T-2.7 effect 应用器用统一映射函数
+- **时钟存储位置**：`/state/ontology/<world_name>.json` 顶层 `clocks: []` 数组
+
+**替代方案及否决理由**：
+
+- 不立时钟 schema：阻塞 prompt 模板（T-2.5）context 注入；扩 ADR-006 而不分立 = 单条 ADR 太大
+- 含 time-based 步进：违反 ADR-002 + ADR-004 极简精神；运行时是 JSON 播放器无真时间
+- 同时活跃 ≤ 10 写进 schema：定义域随阶段演进；T-2.7 实测倒推后由 ADR-017 v0.2 修订，比硬写 schema 灵活
+
+**后果**：
+
+- prompt 模板必须在 GraphContext 注入当前活跃 clocks 状态（字段名统一为 `active_clocks`）
+- validator 必须校验 `tick_effects.path` 落入合法 state path 命名空间（ADR-016）
+- T-2.7 第二层 2B 抽样验证可推理时钟状态空间（`ticks_total` × clocks 数 = 抽样维度）
+
+---
+
+## ADR-018：关系层 narrative_weight
+
+**状态**：已接受（2026-05-03）
+
+**背景**：PZ 反思 §3.3——LLM 倾向把所有关系都写进每场对白，污染节奏；作者需控制"哪些关系真的进戏"。无权重字段时多角色场景下 LLM 写"全员问候"式对白，阶段 2 70% 接受率难达。
+
+**决策**：
+
+- character entity 加 `relations: []` 字段（嵌入式，不引入全局关系表）
+- 每项结构：`{target_character_ref, relation_type, narrative_weight: enum["core","minor","context_only"]}`
+- 三档语义：
+  - `core` = 必须显性体现
+  - `minor` = 可选体现
+  - `context_only` = 仅作 prompt 一致性 anchor，不出现在玩家可见对白
+- prompt 模板（T-2.5）按 `narrative_weight` 决定 context 注入：`core` / `minor` 进 prompt，`context_only` 仅作合法性约束
+
+**替代方案及否决理由**：
+
+- 不加权重字段：LLM 在多角色场景下会写"全员问候"式对白；阶段 2 70% 接受率难达
+- 加 numeric weight（0-100）：作者难校准；离散三档对作者审阅心智更友好
+- `mandatory / optional / background` 字面：与 BG3 任务系统术语易混淆；core/minor/context_only 偏向叙事理论术语
+- 全局关系表：会破 ADR-006 单一真相之源（同一关系在 from / to 两端冗余）；嵌入到 character envelope 内更自然
+
+**后果**：
+
+- 角色花名册更新工作量：T-2.2 落地 vellin / corvan / aelwin 关系矩阵
+- prompt 模板必须按 `narrative_weight` 决定注入逻辑
+
+---
+
+## ADR-019：角色槽位持久化形态
+
+**状态**：已接受（2026-05-03）
+
+**背景**：U-GPT-5——ROADMAP 阶段 2 重点工作"角色槽位（role slot casting）与动态选角"持久化决策点未拆开。需明确"抽象槽是 generator 中间产物还是持久化层一等公民"。
+
+**决策**：
+
+- 持久化层（`/state/ontology/` + `/content/<scene>/scene.json`）仍 concrete `character_refs`——不破 ADR-006 单一真相之源
+- 抽象槽（如 "the betrayer"、"the witness"、"the broken oath-keeper"）作为 generator 中间产物
+- 落到节点级 `generation_trace.slot_assignments` 字段，走 optional + `additionalProperties` 兼容路径，不 bump dialogue_graph schema_version（详 ADR-016 schema 版本号策略）；结构：`slot_assignments: {<slot_id>: {character_ref, assigned_at, source_prompt_hash}}`
+- 后续场景生成可读取此 trace 维持槽位一致性（跨场景同槽 → 同 character）
+- 阶段 2 不实现"动态换角"逻辑——那是阶段 3 跨场景一致性范畴
+
+**替代方案及否决理由**：
+
+- 持久化层引入 `slot_tags` 字段双轨：违反 ADR-006 单一真相；schema 复杂度大
+- 完全只靠 generator 中间产物 + 不写 trace：跨场景重生成不可重现
+- generation_trace bump dialogue_graph schema_version 至 0.3.0：会破 gold scene + 阶段 0/1 测试；按 SCHEMA_v0.2 先例 optional 字段走兼容路径更稳
+
+**后果**：
+
+- generation_trace 字段表追加 slot_assignments 子字段（dialogue_graph + node `schema_version` 不动）
+- `generate_scene`（T-2.6）必须在节点产物里写 `slot_assignments`
+- validator 不强制 `slot_assignments` 必填（trace 仍 optional）
+
+---
+
+## ADR-020：阶段 2 baseline 协议
+
+**状态**：已接受（2026-05-03）
+
+**背景**：U-GPT-4 硬闸门——70% 接受率口径必须先定义再写代码（ROADMAP 启动闸门）。模糊定义将下游统计一致性废，阶段 2 验收不可判定。
+
+**决策**：
+
+- **样本数 N**：15 场景（场景级单次成本高于节点级；N=20 太烧；N=10 统计弱）
+- **重试规则**：复用 ADR-013 max_retries=2（共 3 次）；schema 失败 + 图论失败回喂模型
+- **AI 判官权重**：节点级 21 维度 × 节点数 + 场景级新增 6–10 维度（图拓扑健康 / 节奏 / 角色弧线 / 决策意义 / 收束 / 长度合理 / context 一致性 / 关系层一致性 / 时钟一致性 / ID 命名规范）；具体维度由 T-2.9 落地
+- **机械失败口径**：option 长度（≤ 25 汉字）+ path 前缀（落入 ADR-016 五个命名空间）+ bond ID 白名单（state_path_slug 反查）+ target_node_id 闭合 + `unavailable_behavior` 枚举合法性 + state path 命名空间合法性 + StateCondition 形态互斥
+- **接受率分母**：通过机械预检 + 进入 review_log 的场景数
+- **接受率分子**：作者标 [A]ccept 的场景数（不是 AI 判官打分）
+- **报告同时给 gross pass rate 和人工接受率**：gross pass = 通过机械预检的场景数 / 总尝试场景数；接受率（作者签字）作为最终判定
+- **AI 判官与作者关系**：AI 判官是辅助参考分（21 维 + 场景级新增），作者最终标 [A]/[R]/[S]——与阶段 1 R6 一致
+- **成本估算口径统一**：每场景估 ~$0.5–$1.0；N=15 总 $7–$15；N=20 总 $10–$20
+
+**替代方案及否决理由**：
+
+- N=20 场景：成本 $10–$20，烧；N=15 平衡
+- 接受率分子用 AI 判官：阶段 1 R6 已锁"作者最终签字"
+- 不定义机械失败口径：U-GPT-4 漏抓的核心点；模糊定义将下游统计一致性废
+
+**后果**：
+
+- T-2.4 R8 机械预检器要按本协议落地
+- T-2.9 AI 判官 prompt 按本协议设计权重
+- T-2.12 实证 batch run 按 N=15 跑
+
+---
+
+## ADR-021：ADR-009 第二层方法论拆 2A 拓扑 + 2B 抽样验证 + 有界符号执行
+
+**状态**：已接受（2026-05-03）
+
+**背景**：U-GPT-1 🔴——当前 schema 缺状态变量定义域 / 初始状态集合 / effect 边界，"证明任意合法状态组合可达结局"目前不可判定；ROADMAP 阶段 2 完成标志措辞需修订。把启发式包装成"condition-aware 已完成"会误导阶段 2 验收。
+
+**决策**：
+
+- **2A 纯拓扑校验**（图遍历层）：结构拓扑 + condition 引用形态合法性（仅检查 path 命名空间 / op 枚举 / 字段结构）/ 前置条件路径闭合（option.condition 字段格式合法）/ 不可达节点 / 死锁（非 end 节点入度可达但 option 集合中无任何 condition=null option）/ 分支收敛性。**condition satisfiability 不在 2A 内**——避免把启发式包装成 condition-aware 已完成
+- **2B 抽样验证 + 有界符号执行**：
+  - 抽样 N=100 路径起步（从 entry 出发随机选 option，记录 state 演化，检查能否到 end 节点）
+  - 有界符号执行：在 ADR-016 命名空间内枚举 effect 链产生的 state 组合（边界由 ADR-017 时钟数 × `ticks_total` + flag 离散值集决定）
+  - condition satisfiability 全部走 2B
+- **完成标志措辞修订**（ROADMAP §阶段 2 完成标志，跨边界 X1，由作者另起 L1 doc 修订会话）：从"证明任意合法状态组合下至少有 1 个结局可达"改为"抽样验证 N=100 路径 + 有界符号执行下未发现反例"
+- **N 值首版**：N=100；经验阈值，不暗示充分证明；阶段 2 实测后由 ADR-021 v0.2 倒推合理 N
+- **完成标志拆双报**：T-2.7 完成标志分别报告（a）2A 纯拓扑 pass（gold scene 全过 + 0 error）；（b）condition-aware（2B 抽样 + 有界符号执行）pass（gold scene 抽样 N=100 全 reach end + 0 反例）
+
+**替代方案及否决理由**：
+
+- 严格证明：当前 schema 不支持，强行写完成标志会造成"过线假象"
+- 仅抽样模拟不做有界符号执行：U-GPT-1 推荐双路径——抽样找显式反例，符号执行覆盖低概率组合
+- 2A 内含 condition-aware：A2 自承"复杂；起步用启发式"；启发式包装成 condition-aware "已完成"会误导阶段 2 验收
+- 给 2A 加有限 state evaluator：state evaluator 复杂度高、超阶段 2 起步范围；拆双报清晰显示边界
+
+**后果**：
+
+- validator 第二层（T-2.7）按 2A + 2B 拆分实现
+- T-2.7 完成标志拆双报；T-2.13 验收报告引用双报数据
+- ROADMAP 完成标志措辞由作者另起 L1 修订会话同步（不在本任务范围；跨边界 X1）
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
 - 2026-04-30：作者明确授权新增 ADR-014（视觉资产双模生成策略），属 CLAUDE.md 规则 10 的明示例外（阶段 1.5 路径 C 例外）。
 - 2026-04-30：作者授权新增 ADR-015（Round 5 综合后第一条已锁结论），属 CLAUDE.md 规则 10 的明示例外。
+- 2026-05-03：作者明确授权新增 ADR-016 / 017 / 018 / 019 / 020 / 021（阶段 2 六条架构决策一次性立），属 CLAUDE.md 规则 10 的明示例外。整合自 STAGE_2_TASKS_v1.0_draft（含 GPT-5.5 critique 校准）。L2 整合规划师会话（claude/musing-fermi-f6bfd3）2026-05-03 L1-L2 校准产物。
 
 ## 版本
 
