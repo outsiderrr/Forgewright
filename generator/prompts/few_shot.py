@@ -18,6 +18,7 @@ Reading from /content/ is read-only; this module never mutates the scene.
 """
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +29,19 @@ _SCENE_PATH = (
     / "test_scene_v0"
     / "scene.json"
 )
+
+
+# T-2.0 R3 cleanup (review 4.1): the gold scene at /content/test_scene_v0/
+# scene.json is locked, but the 5 scene-derived demos enter the prompt as a
+# *copy*. This table shortens the 3 Option.text values that exceed the 25-字
+# hard cap added by T-2.0, so the few-shot demos don't contradict the system
+# prompt's "超长 = schema_invalid" rule. The originals stay intact in /content/.
+_FEW_SHOT_TEXT_OVERRIDES: dict[tuple[str, str], str] = {
+    ("arrival_waystation", "opt_read_the_room"): "[观察入微] 我看出那是军驿函件。",
+    ("vellin_confession", "opt_report_to_oath"): "我欠铁誓一份军饷。明早告诉 Corvan。",
+    ("patrol_arrives", "opt_lie_for_vellin"): "Corvan，我没看见什么信。以兰岭起誓。",
+    ("patrol_arrives", "opt_invoke_old_bond"): "[诉诸旧情] 看在兰岭那年的份上。",
+}
 
 
 @dataclass(frozen=True)
@@ -119,6 +133,11 @@ def load_iron_oath_few_shot() -> list[FewShotPair]:
     → end_iron_blade. The composite-condition demos (T-2.0 R2 cleanup) are
     appended at the tail and explicitly annotate the all_of+not / any_of
     shapes the model must mirror — see load_composite_condition_few_shot.
+
+    Each scene-derived node is deep-copied before being handed back so that
+    `_FEW_SHOT_TEXT_OVERRIDES` (R3 cleanup, review 4.1) can rewrite the few
+    options whose text exceeds the 25-字 cap without mutating the cached
+    `graph["nodes"]` dict — and without touching /content/ either.
     """
     graph = json.loads(_SCENE_PATH.read_text(encoding="utf-8"))
     order = [
@@ -128,13 +147,19 @@ def load_iron_oath_few_shot() -> list[FewShotPair]:
         "end_silent_ally",
         "end_iron_blade",
     ]
-    scene_pairs = [
-        FewShotPair(
-            input_context=_render_input_context(graph, nid),
-            expected_node=graph["nodes"][nid],
+    scene_pairs: list[FewShotPair] = []
+    for nid in order:
+        node = copy.deepcopy(graph["nodes"][nid])
+        for opt in node.get("options") or []:
+            override = _FEW_SHOT_TEXT_OVERRIDES.get((nid, opt["option_id"]))
+            if override is not None:
+                opt["text"] = override
+        scene_pairs.append(
+            FewShotPair(
+                input_context=_render_input_context(graph, nid),
+                expected_node=node,
+            )
         )
-        for nid in order
-    ]
     return scene_pairs + load_composite_condition_few_shot()
 
 

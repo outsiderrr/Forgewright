@@ -170,9 +170,13 @@ def _build_fixtures() -> list[Fixture]:
         Fixture(
             fixture_id="dialogue_middle_aelwin",
             graph_context=GraphContext(
+                # narrative_intent below moves the action to 牧人废屋 — the
+                # primary_location_ref must match, otherwise the prompt's
+                # "推荐默认 location_ref" would push Aelwin's scene back into
+                # the waystation (review 4.2, T-2.0 R4).
                 scene_anchor="scene_waystation_of_iron_oath",
                 location_candidates=_LOCATION_CANDIDATES,
-                primary_location_ref=_PRIMARY_LOCATION_REF,
+                primary_location_ref="scene_eastern_pasture_ruin",
                 parent_chain=[_parent_arrival(), _parent_confession()],
                 involved_characters=[_AELWIN, _VELLIN],
                 faction_clocks={},
