@@ -351,6 +351,7 @@
 **后果**：
 
 - 阶段 2 schema commit 全部串行卡口在本 ADR 落地后启动（T-2.2）
+- 机械预检器（T-2.4）必须按五个 state path 命名空间 + `state_path_slug` 反查执行 path 前缀 / `BOND_ID_UNKNOWN` 检查
 - validator 扩展（T-2.7）必须支持本体引用闭合 + state path 命名空间合法性 + state_path_slug 反查
 - prompt 模板（T-2.5）必须把 character_features / dramatic_triggers / Chapter/Act / 系统时间双轨纳入 context
 
@@ -379,6 +380,7 @@
 
 **后果**：
 
+- schema 落地（T-2.2）必须新建 clock schema，使用 `ticks_filled` / `ticks_total` maximum 20 / `event_based` advance_rule 契约
 - prompt 模板必须在 GraphContext 注入当前活跃 clocks 状态（字段名统一为 `active_clocks`）
 - validator 必须校验 `tick_effects.path` 落入合法 state path 命名空间（ADR-016）
 - T-2.7 第二层 2B 抽样验证可推理时钟状态空间（`ticks_total` × clocks 数 = 抽样维度）
@@ -437,7 +439,7 @@
 
 **后果**：
 
-- generation_trace 字段表追加 slot_assignments 子字段（dialogue_graph + node `schema_version` 不动）
+- schema 落地（T-2.2）必须以 optional + `additionalProperties` 兼容路径追加 `generation_trace.slot_assignments`，dialogue_graph / node `schema_version` 保持 `0.1.1`
 - `generate_scene`（T-2.6）必须在节点产物里写 `slot_assignments`
 - validator 不强制 `slot_assignments` 必填（trace 仍 optional）
 
