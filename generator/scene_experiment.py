@@ -143,12 +143,27 @@ def _build_fixtures() -> list[SceneFixture]:
 
 
 def _summarise_topology(graph: dict, ontology: dict) -> dict:
-    """Run T-2.7 2A and reduce to a JSON-serialisable summary."""
+    """Run T-2.7 2A and reduce to a JSON-serialisable summary.
+
+    Review 4.2: ADR-021 splits 2A into "纯拓扑" (structural reachability /
+    deadlock / convergence) **and** "condition 引用形态合法性" (CONDITION_
+    FORM_INVALID — path namespace, op enum, leaf vs composite). Earlier
+    revisions of this function collapsed both into one `pass` field, so
+    a reviewer couldn't tell whether the graph wiring was wrong or just
+    a malformed condition slipped through. We now surface both gates
+    independently and keep the legacy `pass` (= AND of both) for
+    backwards-compat with downstream readers.
+    """
     res = graph_validation.validate_graph_topology(graph, ontology=ontology)
     errors = [i for i in res.issues if i.severity == "error"]
     warnings = [i for i in res.issues if i.severity == "warning"]
+    condition_form_errors = [i for i in errors if i.code == "CONDITION_FORM_INVALID"]
+    pure_topology_errors = [i for i in errors if i.code != "CONDITION_FORM_INVALID"]
     return {
         "pass": not res.has_error,
+        "pure_topology_pass": not pure_topology_errors,
+        "condition_form_pass": not condition_form_errors,
+        "condition_form_issue_count": len(res.condition_form_issues),
         "error_count": len(errors),
         "warning_count": len(warnings),
         "error_codes": sorted({i.code for i in errors}),

@@ -94,11 +94,24 @@ class AIJudgeReport:
     pass1_lenient_scores: dict[str, dict[str, float]] = field(default_factory=dict)
     pass2_strict_scores: dict[str, dict[str, float]] = field(default_factory=dict)
     weakest_dimensions: list[tuple[str, float]] = field(default_factory=list)
+    # Informational only; never the ADR-020 §6 acceptance-rate numerator.
+    # Author [A]/[R] in scene_review_cli is the binding signal.
     advisory_recommendation: dict[str, Advisory] = field(default_factory=dict)
     rationales: dict[str, dict[str, str]] = field(default_factory=dict)
     total_cost_usd: float = 0.0
     stopped_early: bool = False
     skipped_scenes: list[str] = field(default_factory=list)
+
+
+# Stable machine-readable disclaimer surfaced in AI_JUDGE_REPORT.json so
+# T-2.12 / any future programmatic consumer can verify the file's
+# advisory-only authority without parsing the markdown narrative.
+_REPORT_METADATA: dict = {
+    "advisory_authority": "informational_only",
+    "acceptance_source": "scene_review_cli_author_A_R",
+    "adr": "ADR-020 §6",
+    "schema_version": "1",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +326,13 @@ def _render_markdown_report(report: AIJudgeReport, *, batch_dir: Path) -> str:
 
 
 def _serialise_report(report: AIJudgeReport) -> dict:
+    # Review 4.3: front the JSON with a non-binding metadata block so
+    # programmatic consumers (T-2.12, future verification scripts) can't
+    # mistake `advisory_recommendation` for an acceptance-rate input.
+    # The markdown narrative says the same thing, but only the JSON
+    # disclaimer is machine-readable.
     return {
+        "metadata": dict(_REPORT_METADATA),
         "pass1_lenient_scores": report.pass1_lenient_scores,
         "pass2_strict_scores": report.pass2_strict_scores,
         "weakest_dimensions": report.weakest_dimensions,

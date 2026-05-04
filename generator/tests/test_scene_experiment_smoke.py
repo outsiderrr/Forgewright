@@ -281,9 +281,133 @@ def test_scene_review_cli_records_accept_reject(tmp_path):
     assert rec0["accepted"] is True
     assert rec0["mechanical_pass"] is True
     assert rec0["topology_pass"] is True
+    # Review 4.2: dual-report fields land in the persisted log.
+    assert rec0["pure_topology_pass"] is True
+    assert rec0["condition_form_pass"] is True
     assert rec0["scene_id"]
     assert rec1["accepted"] is False
     assert rec1["reason"] == "对白突兀"
+
+
+def _seed_synthetic_review_batch(
+    tmp_path: Path,
+    *,
+    sampling: dict,
+    topology: dict | None = None,
+) -> Path:
+    """Hand-build a scene_results.jsonl row so review_cli's record-derivation
+    rules can be exercised without standing up a real generate_scene flow.
+    """
+    batch_dir = tmp_path / "synthetic"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    topo = topology or {
+        "pass": True,
+        "pure_topology_pass": True,
+        "condition_form_pass": True,
+        "condition_form_issue_count": 0,
+        "error_count": 0,
+        "warning_count": 0,
+        "error_codes": [],
+        "unreachable_nodes": [],
+        "deadlock_nodes": [],
+    }
+    env = {
+        "iter_id": 0,
+        "fixture_id": "synthetic",
+        "fixture": {
+            "scene_setting": {
+                "scene_anchor": "scene_x", "primary_location_ref": "scene_x",
+                "chapter_ref": None,
+                "expected_node_count_min": 5, "expected_node_count_max": 12,
+            },
+            "target_beats": [], "participating_npcs": [],
+        },
+        "result": {
+            "success": True, "failure_reason": None, "failure_node_id": None,
+            "graph": {"graph_id": "synth", "entry_node_id": "n", "nodes": {}},
+            "schema_issues": [], "mechanical_issues_count": 0,
+            "total_cost_usd": 0.0, "inner_attempt_count": 1,
+        },
+        "validator_summaries": {
+            "mechanical": {"pass": True, "error_node_count": 0,
+                           "error_count": 0, "error_codes": []},
+            "topology": topo,
+            "sampling": sampling,
+        },
+        "generated_at": "2026-05-04T00:00:00+00:00",
+    }
+    (batch_dir / "scene_results.jsonl").write_text(
+        json.dumps(env, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    return batch_dir
+
+
+def test_scene_review_cli_sampling_pass_rejects_partial_reach(tmp_path):
+    """Review 4.1: a 1/100-reached / 99-deadlock scene must NOT log
+    sampling_pass=True. ADR-021 2B口径是路径全通且无死锁。"""
+    batch_dir = _seed_synthetic_review_batch(
+        tmp_path,
+        sampling={
+            "sample_count": 100,
+            "reached_end_count": 1,
+            "deadlock_count": 99,
+            "avg_path_length": 7.5,
+            "reach_rate": 0.01,
+            "end_distribution": {},
+        },
+    )
+    out = io.StringIO()
+    written = scene_review_cli.run_scene_review(
+        batch_dir, input_fn=_scripted_input(["a"]), output=out
+    )
+    assert written == 1
+    rec = json.loads(
+        (batch_dir / "scene_review_log.jsonl").read_text(encoding="utf-8").strip()
+    )
+    assert rec["sampling_pass"] is False, (
+        "sampling_pass must require reached==sample_count AND 0 deadlocks "
+        "(ADR-021 2B); got reached=1/100 with 99 deadlocks → must be False."
+    )
+
+
+def test_scene_review_cli_sampling_pass_accepts_clean_run(tmp_path):
+    """A 100/100-reached / 0-deadlock scene must log sampling_pass=True."""
+    batch_dir = _seed_synthetic_review_batch(
+        tmp_path,
+        sampling={
+            "sample_count": 100,
+            "reached_end_count": 100,
+            "deadlock_count": 0,
+            "avg_path_length": 5.0,
+            "reach_rate": 1.0,
+            "end_distribution": {"end": 100},
+        },
+    )
+    out = io.StringIO()
+    scene_review_cli.run_scene_review(
+        batch_dir, input_fn=_scripted_input(["a"]), output=out
+    )
+    rec = json.loads(
+        (batch_dir / "scene_review_log.jsonl").read_text(encoding="utf-8").strip()
+    )
+    assert rec["sampling_pass"] is True
+
+
+def test_scene_experiment_topology_summary_dual_reports(tmp_path):
+    """Review 4.2: validator_summaries.topology must expose pure_topology_pass
+    and condition_form_pass independently (ADR-021 双报)."""
+    batch_dir = _seed_review_batch(tmp_path)
+    rows = [
+        json.loads(l)
+        for l in (batch_dir / "scene_results.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    for row in rows:
+        topo = (row.get("validator_summaries") or {}).get("topology") or {}
+        assert "pure_topology_pass" in topo
+        assert "condition_form_pass" in topo
+        assert "condition_form_issue_count" in topo
 
 
 def test_scene_review_cli_help_smoke():

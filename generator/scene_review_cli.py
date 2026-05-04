@@ -147,8 +147,14 @@ def _render_validators(env: dict) -> list[str]:
         f"errors={mech.get('error_count', 0)}  "
         f"codes={mech.get('error_codes') or '[]'}"
     )
+    # Review 4.2: ADR-021 双报 — 纯拓扑 + condition 形态合法性分别显示，
+    # 让作者看一眼就能区分 "图结构坏了" 还是 "condition 形态坏了"。
+    pure_topo = topo.get("pure_topology_pass")
+    cond_form = topo.get("condition_form_pass")
     out.append(
         f"  topology (T-2.7 2A): {'PASS' if topo.get('pass') else 'FAIL'}  "
+        f"pure_topology={'PASS' if pure_topo else 'FAIL' if pure_topo is False else 'n/a'}  "
+        f"condition_form={'PASS' if cond_form else 'FAIL' if cond_form is False else 'n/a'}  "
         f"errors={topo.get('error_count', 0)}  "
         f"warnings={topo.get('warning_count', 0)}  "
         f"codes={topo.get('error_codes') or '[]'}"
@@ -387,13 +393,24 @@ def run_scene_review(
         graph = (env.get("result") or {}).get("graph") or {}
         scene_id = graph.get("graph_id") or f"iter_{env.get('iter_id')}"
         summaries = env.get("validator_summaries") or {}
+        # Review 4.1: ADR-021 2B口径是 "N=100 路径 + 未发现反例/死锁"，
+        # 不是 "至少一条可通"。"reached > 0" 会把 1/100 路径通的退化场景
+        # 误记为 sampling_pass=True，污染下游 T-2.12 指标。
+        samp = summaries.get("sampling") or {}
+        sample_count = int(samp.get("sample_count", 0) or 0)
+        reached = int(samp.get("reached_end_count", 0) or 0)
+        deadlocks = int(samp.get("deadlock_count", 0) or 0)
+        topo = summaries.get("topology") or {}
         record = {
             "iter_id": env.get("iter_id"),
             "scene_id": scene_id,
             "schema_pass": True,
-            "topology_pass": (summaries.get("topology") or {}).get("pass"),
-            "sampling_pass": (summaries.get("sampling") or {}).get("reached_end_count", 0)
-            > 0,
+            "topology_pass": topo.get("pass"),
+            "pure_topology_pass": topo.get("pure_topology_pass"),
+            "condition_form_pass": topo.get("condition_form_pass"),
+            "sampling_pass": (
+                sample_count > 0 and reached == sample_count and deadlocks == 0
+            ),
             "mechanical_pass": (summaries.get("mechanical") or {}).get("pass"),
             "accepted": decision == "accept",
             "reason": None,

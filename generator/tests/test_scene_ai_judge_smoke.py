@@ -185,6 +185,13 @@ def test_scene_ai_judge_runs_both_passes_and_writes_report(tmp_path):
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert payload["advisory_recommendation"]["s_alpha"] == "marginal"
     assert ("D2", 0.0) in [tuple(x) for x in payload["weakest_dimensions"]]
+    # Review 4.3: machine-readable non-binding disclaimer must be on the
+    # JSON so T-2.12 / future programmatic consumers can verify the
+    # advisory authority without parsing the markdown narrative.
+    metadata = payload.get("metadata") or {}
+    assert metadata.get("advisory_authority") == "informational_only"
+    assert metadata.get("acceptance_source") == "scene_review_cli_author_A_R"
+    assert "ADR-020" in (metadata.get("adr") or "")
 
 
 # ---------------------------------------------------------------------------
