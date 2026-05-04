@@ -84,16 +84,16 @@
 | 编号 | 检查项 | 规则 | 来源 |
 |---|---|---|---|
 | **M1** | option 长度 | option.text ≤ 25 汉字（按 unicode 计数；中英文混排按 0.5 字符折算英文）| 阶段 1 R3 → ADR-020 |
-| **M2** | path 前缀 | 所有 effect.path / condition.path 必须落入 ADR-016 定义的五个命名空间之一：`world.*` / `faction.<faction_id>.*` / `relationship.<state_path_slug>.*` / `flag.*` / `player.*` | ADR-016 |
+| **M2** | path **首段** namespace | 检查 effect.path / condition.path 的**第一段 namespace** ∈ {`world`, `faction`, `relationship`, `flag`, `player`}（ADR-016 五命名空间）。**仅看首段**；不评其余形态（不重叠 M6） | ADR-016 |
 | **M3** | bond ID 白名单（**state_path_slug 反查**）| 出现在 `relationship.<X>.*` 中的 `<X>` 必须能反查到本体某 character entity 的 `state_path_slug` 字段值（不是 entity.id；保 gold scene `relationship.vellin.trust` 不动）| ADR-016 §state_path_slug + ADR-020 |
 | **M4** | target_node_id 闭合 | 所有 option.target_node_id 必须指向本图内已存在的 node_id；entry 节点入度 = 0；end 节点 type=end | T-2.7 / ADR-021 §2A 部分前移 |
 | **M5** | unavailable_behavior 枚举 | option.unavailable_behavior 字段值必须 ∈ schema 枚举（如 `disable_with_hint` / `hide`）；不允许自由文本 | ADR-020 |
-| **M6** | state path 命名空间合法性 | 与 M2 同源；**M2 检查前缀是否合规，M6 检查 path 整体不出现非五命名空间字段**（如禁止裸 `npc.foo.bar`）| ADR-016 |
+| **M6** | path **整体形态**合法性 | **在 M2 通过后检查 path 整体形态**：(a) 点分各 segment 仅含 `[a-z0-9_]+`；(b) 无空段（如 `world..foo`）；(c) 无尾随点（如 `world.foo.`）；(d) 非裸 namespace（如 `world` 单独不合法，必须 `world.<...>`）；(e) namespace 最小深度（`relationship.<slug>.*` 至少 3 段；`world.*` / `faction.<id>.*` / `flag.*` / `player.*` 至少 2 段）。M2 失败时 M6 不再独立报（不重复计入 failure_codes） | ADR-016 |
 | **M7** | StateCondition 形态互斥 | 同一 condition 节点不得既含 leaf 字段（`op` / `path` / `value`）又含复合字段（`all_of` / `any_of`）；阶段 1 R2 复合 condition 模型常误为 string-array 教训 | 阶段 1 R2 → ADR-020 |
 
-**机械检查执行顺序**：M4 → M2/M6 → M3 → M1 → M5 → M7（轻量结构 → 命名空间 → 引用闭合 → 文本约束 → 枚举/形态）。
+**机械检查执行顺序**：M4 → M2 → M6 → M3 → M1 → M5 → M7（轻量结构 → 首段 namespace → 整体形态 → 引用闭合 → 文本约束 → 枚举 / 形态互斥）。**M2 与 M6 互斥**：同一 path M2 失败则该 path 不再进 M6；这保证 failure_codes 在 M2/M6 上无重复，T-2.12 失败 top reason 统计可诊断。
 
-**输出**：`gross_pass: bool` + 失败时附 `failure_codes: ["M3", "M5"]` 列表。
+**输出**：`gross_pass: bool` + 失败时附 `failure_codes: ["M3", "M5"]` 列表（按上述执行顺序首次命中即记录该 path 对应的 code；同一 path 不重复记录 M2/M6 两个 code）。
 
 ---
 

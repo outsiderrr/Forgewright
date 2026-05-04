@@ -16,7 +16,7 @@
 2. **节点级 21 维沿用阶段 1 prompt 全集**——本文件不重写 21 维细则，只在 §B 段引用并明确"按 `/docs/REVIEW_PROMPT_AI_JUDGE.md` A1–E3"。如阶段 1 prompt 升版，本文件同步追加版本注记。
 3. **场景级 10 维（S1–S10）是新增**——为 ADR-016（本体）/ ADR-017（时钟）/ ADR-018（关系层）/ ADR-021（拓扑）等阶段 2 引入的新语义提供判官钩子。
 4. **机械维度由 T-2.4 dialogue_validator 拦截**——本 prompt 不重复评 §5 机械口径（option 长度 / path 前缀 / bond ID 白名单等），那是机械层职责。判官只评语义层。
-5. **双 pass 模式**（沿用阶段 1）——pass 1 lenient 标"明显问题"；pass 2 strict 复评 borderline；最终输出按 strict 计。
+5. **双 pass 模式**（沿用阶段 1）——pass 1 lenient 全量打分 + 标 borderline；pass 2 strict **全量复评**（borderline 标记仅作报告信号，不影响 pass 2 范围）；最终输出按 strict 计。
 6. **不指挥重生成**——重生成是 prompt 调优会话的事，judge 只评本场景。
 
 ---
@@ -118,15 +118,24 @@ batch-dir：generator/experiments/<batch_timestamp>_scene_<topic>/
 
 ## §B.3 总判定（advisory）
 
-判官最终 recommendation 按以下逻辑：
+**recommendation 二元化，对齐 baseline protocol §4 阈值**（避免协议口径与 prompt 口径双轨）：
 
 ```
 节点级聚合 (node_acceptance_rate < 70%) OR 场景级 reject (任一 S* = 0 OR 场景总分 < 14)
   → recommendation = "reject"
-节点级 accept ≥ 90% AND 场景级 accept (无 S*=0 AND 场景总分 ≥ 16)
+否则
   → recommendation = "accept"
-其余
-  → recommendation = "borderline"  // 作者亲自看一遍
+```
+
+**附加字段 `confidence_band`**（仅作报告信号，不改变 recommendation 口径；保留"判官信心度"维度，给作者审阅时作锚）：
+
+```
+节点级 accept ≥ 90% AND 场景总分 ≥ 16 AND 无 S*=0
+  → confidence_band = "strong_accept"
+recommendation = "accept" 但不满足 strong_accept
+  → confidence_band = "borderline_accept"   // 作者亲自看一遍
+recommendation = "reject"
+  → confidence_band = "reject"
 ```
 
 # §C 输出格式
@@ -172,7 +181,8 @@ batch-dir：generator/experiments/<batch_timestamp>_scene_<topic>/
     "total": <int 0-20>,
     "max_score": 20
   },
-  "recommendation": "accept" | "reject" | "borderline",
+  "recommendation": "accept" | "reject",
+  "confidence_band": "strong_accept" | "borderline_accept" | "reject",
   "summary": "<3-5 行整体观察；指明节点级最弱维度 + 场景级最弱维度 + 强项；不超过 200 字>",
   "reviewed_at": "<ISO 8601 UTC>",
   "judge_pass": "lenient" | "strict"  // §D 双 pass 模式
@@ -189,12 +199,12 @@ reject 原因 / 0 分必须**具体到维度 + 节点的具体问题**：
 **Pass 1（lenient）**：
 - 全场景按上述维度评分，但**评判尺度宽松**（borderline 倾向给 1 分而非 0 分）
 - 输出 `judge_pass: "lenient"` 记录到 scene_ai_judge_log.jsonl
-- 标记总分接近阈值（场景总分在 [13, 16]，或节点级聚合在 [65%, 75%]）的场景为"需 strict 复评"
+- 标记总分接近阈值（场景总分在 [13, 16]，或节点级聚合在 [65%, 75%]）的场景为 borderline——**仅作报告信号，不影响 pass 2 复评范围**
 
 **Pass 2（strict）**：
-- 仅对 pass 1 标"需复评"的场景重新评一遍
+- 对**所有**通过机械预检的场景全量复评（不仅 borderline；borderline 标记仅用于报告"边界带 + lenient→strict 改判数"信号）
 - 评判尺度**严格**（borderline 倾向给 0 分）
-- 输出 `judge_pass: "strict"` 记录覆盖（同 scene_id 的 lenient 记录可保留作对比）
+- 输出 `judge_pass: "strict"` 记录**追加**到 scene_ai_judge_log.jsonl（同 scene_id 的 lenient 记录保留作对比；judge_pass 字段区分两条）
 - 最终 recommendation 按 strict 计
 
 **为什么双 pass**（沿用阶段 1）：
@@ -206,14 +216,14 @@ reject 原因 / 0 分必须**具体到维度 + 节点的具体问题**：
 
 1. 读完 6 份必读文件 + 本体 waystation.json
 2. 读 batch-dir/results.jsonl，挑 success=true AND mechanical_pass=true 的行
-3. **Pass 1 (lenient)**：对每条逐项打分（节点级 21 维 × N_node + 场景级 10 维），写入 scene_ai_judge_log.jsonl
-4. **标记 borderline 场景**（场景总分 [13,16] 或节点接受率 [65%,75%]）
-5. **Pass 2 (strict)**：仅对 borderline 场景重评，覆盖记录（保留 pass 1 lenient 记录作对比，judge_pass 字段区分）
+3. **Pass 1 (lenient)**：对每条逐项打分（节点级 21 维 × N_node + 场景级 10 维），追加记录到 scene_ai_judge_log.jsonl，judge_pass="lenient"
+4. **标记 borderline 场景**（场景总分 [13,16] 或节点接受率 [65%,75%]）—— **仅作报告信号，不影响 pass 2 范围**
+5. **Pass 2 (strict)**：对**所有**通过机械预检的场景全量复评（同 pass 1 范围），追加记录到 scene_ai_judge_log.jsonl，judge_pass="strict"（lenient + strict 同 scene_id 各一行；总记录数 = 2 × N_eligible）
 6. 完成报告（在对话里给作者）：
-   - N 场景中 advisory accept / reject / borderline 各几条
+   - N 场景中 advisory accept / reject 各几条；其中 strong_accept / borderline_accept 各几条
    - 节点级最弱 3 维（A1–E3 中均分最低 3 项）
    - 场景级最弱 3 维（S1–S10 中均分最低 3 项）
-   - lenient → strict 改判数（揭示判官边界带）
+   - lenient → strict 改判数（揭示判官边界带；以 borderline 标记场景中改判最多）
    - 1 条最具诊断价值的失败模式描述（不是空话："判官发现 8/15 场景 S4 decision=1，提示 prompt 中需强化 option 后果差异要求"）
 
 # §F 不要做的事
@@ -229,8 +239,10 @@ reject 原因 / 0 分必须**具体到维度 + 节点的具体问题**：
 # §G 完成判定
 
 你完成的标志：
-- scene_ai_judge_log.jsonl 的 strict pass 记录数 = batch-dir/results.jsonl 里 success=true AND mechanical_pass=true 的行数（borderline 场景另有 lenient 记录）
-- 完成报告（含 advisory 接受率 + 最弱维度 + lenient→strict 改判数）已发给作者
+- scene_ai_judge_log.jsonl 的 strict pass 记录数 = batch-dir/results.jsonl 里 success=true AND mechanical_pass=true 的行数（即 N_eligible）
+- scene_ai_judge_log.jsonl 的 lenient pass 记录数同样 = N_eligible（pass 1 全量；borderline 场景在完成报告中单独统计，不影响记录数）
+- 总记录数 = 2 × N_eligible（lenient + strict 各一行 / 场景）
+- 完成报告（含 advisory 接受率 + strong_accept / borderline_accept 比 + 最弱维度 + lenient→strict 改判数）已发给作者
 
 开始。
 ```
