@@ -177,16 +177,68 @@ def _is_transient_network_error(exc: Exception) -> bool:
     return any(p in msg for p in _TRANSIENT_ERROR_SUBSTRINGS)
 
 
-def _sanitize_schema_for_gemini(schema: Any) -> Any:
+def _sanitize_schema_for_gemini(schema: Any, _path: str = "") -> Any:
+    """Adapt JSON Schema input into the OpenAPI subset Gemini accepts.
+
+    Two transformations:
+      1. Drop keywords Gemini's response_schema rejects
+         (additionalProperties / $schema / $id).
+      2. Rewrite JSON-Schema type-array nullable form
+         (`"type": ["X", "null"]`) into OpenAPI's
+         `{"type": "X", "nullable": true}`. Gemini's Pydantic client-side
+         validator rejects the array form before any token is spent.
+
+    Multi-type unions (`["string", "integer"]`) and lone-null
+    (`["null"]`) are surfaced as errors rather than silently coerced —
+    the right fix is upstream in the schema source.
+    """
     if isinstance(schema, dict):
+        converted = _convert_nullable_type_array(schema, _path)
         return {
-            k: _sanitize_schema_for_gemini(v)
-            for k, v in schema.items()
+            k: _sanitize_schema_for_gemini(v, _join_path(_path, k))
+            for k, v in converted.items()
             if k not in _GEMINI_UNSUPPORTED_KEYWORDS
         }
     if isinstance(schema, list):
-        return [_sanitize_schema_for_gemini(item) for item in schema]
+        return [
+            _sanitize_schema_for_gemini(item, f"{_path}[{i}]")
+            for i, item in enumerate(schema)
+        ]
     return schema
+
+
+def _convert_nullable_type_array(schema_dict: dict, path: str) -> dict:
+    type_value = schema_dict.get("type")
+    if not isinstance(type_value, list):
+        return schema_dict
+
+    non_null = [t for t in type_value if t != "null"]
+    has_null = "null" in type_value
+    where = path or "<root>"
+
+    if not non_null:
+        # ["null"] alone, or [] — neither is meaningful for response_schema.
+        raise ValueError(
+            f"Gemini schema sanitizer: invalid type={type_value!r} at path={where}; "
+            "expected at least one non-null type"
+        )
+
+    distinct = set(non_null)
+    if len(distinct) > 1:
+        raise NotImplementedError(
+            f"Gemini OpenAPI doesn't support multi-type unions; "
+            f"got type={type_value!r} at path={where}"
+        )
+
+    new_dict = dict(schema_dict)
+    new_dict["type"] = next(iter(distinct))
+    if has_null:
+        new_dict["nullable"] = True
+    return new_dict
+
+
+def _join_path(parent: str, key: str) -> str:
+    return f"{parent}.{key}" if parent else key
 
 
 def _extract_text(response: genai_types.GenerateContentResponse) -> str | None:
