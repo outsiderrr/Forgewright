@@ -40,3 +40,4 @@ packages = [
 
 [tool.setuptools.package-data]
 "generator.prompts.visual" = ["*.md"]
+"generator.prompts.scene" = ["*.md"]
