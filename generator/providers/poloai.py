@@ -231,10 +231,14 @@ class PoloAIProvider:
             except OpenAIError as exc:
                 # SDK-classified errors (auth, rate-limit, content-policy,
                 # 4xx/5xx) never auto-retry; let upstream decide.
-                raise ProviderError(f"PoloAI API error: {exc}") from exc
+                raise ProviderError.from_exception(
+                    exc, message=f"PoloAI API error: {exc}"
+                ) from exc
             except Exception as exc:  # connection-level failure
                 if not _is_transient_network_error(exc) or attempt == 1:
-                    raise ProviderError(f"PoloAI call failed: {exc}") from exc
+                    raise ProviderError.from_exception(
+                        exc, message=f"PoloAI call failed: {exc}"
+                    ) from exc
                 time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
         # The loop always returns or raises; this satisfies type checkers.
         raise ProviderError("PoloAI call failed: retry loop exited unexpectedly")

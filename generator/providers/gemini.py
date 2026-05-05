@@ -156,10 +156,14 @@ class GeminiProvider:
             except genai_errors.APIError as exc:
                 # SDK-classified API errors (4xx/5xx etc.) — never auto-retry,
                 # let the caller decide.
-                raise ProviderError(f"Gemini API error: {exc}") from exc
+                raise ProviderError.from_exception(
+                    exc, message=f"Gemini API error: {exc}"
+                ) from exc
             except Exception as exc:  # connection-level failure
                 if not _is_transient_network_error(exc) or attempt == 1:
-                    raise ProviderError(f"Gemini call failed: {exc}") from exc
+                    raise ProviderError.from_exception(
+                        exc, message=f"Gemini call failed: {exc}"
+                    ) from exc
                 time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
         # The loop always returns or raises; this satisfies type checkers.
         raise ProviderError("Gemini call failed: retry loop exited unexpectedly")

@@ -82,6 +82,11 @@ class GenerationResult:
     success: bool
     node: dict | None = None
     failure_reason: str | None = None  # "schema_invalid" | "budget_exceeded" | "provider_error"
+    # R2.9: only populated when failure_reason == "provider_error". Carries
+    # the underlying exception class + HTTP status + body excerpt so batch
+    # finders can disambiguate sanitizer-gap / relay-timeout / upstream-
+    # quota failures without a live retry. See baseline_007 finding b3c0ca3.
+    failure_metadata: dict | None = None
     attempts: list[AttemptRecord] = field(default_factory=list)
     total_cost_usd: float = 0.0
 
@@ -165,6 +170,7 @@ def generate_node(
             # request_sent_failure — the call may have billed.
             # Provider-specific exception types (ConnectFailureError vs
             # APIError vs MidFlightResetError) remain R2.1 work.
+            failure_metadata = exc.metadata_dict()
             if _is_request_not_sent(exc):
                 budget.refund_estimated(record_id, reason="request_not_sent")
                 attempts.append(
@@ -178,6 +184,7 @@ def generate_node(
                 return GenerationResult(
                     success=False,
                     failure_reason="provider_error",
+                    failure_metadata=failure_metadata,
                     attempts=attempts,
                     total_cost_usd=total_cost,
                 )
@@ -194,6 +201,7 @@ def generate_node(
             return GenerationResult(
                 success=False,
                 failure_reason="provider_error",
+                failure_metadata=failure_metadata,
                 attempts=attempts,
                 total_cost_usd=total_cost,
             )

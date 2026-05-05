@@ -409,9 +409,46 @@ def test_openai_error_wraps_to_provider_error(
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(ProviderError) as exc_info:
         provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 1
+    # R2.9: even bare OpenAIError (no .status_code) carries an exception
+    # class through the metadata_dict — that alone disambiguates an SDK
+    # error from a transient httpx failure.
+    md = exc_info.value.metadata_dict()
+    assert md["exception_class"] == "openai.OpenAIError"
+    assert md["http_status"] is None
+
+
+def test_openai_status_error_metadata_flows_through(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Synthetic ``.status_code`` + ``.body``-shaped error stands in for
+    openai.APIStatusError / RateLimitError. The wrapped ProviderError
+    must surface both fields so a baseline finder can read them off
+    scene_results.jsonl without a live retry."""
+    from openai import OpenAIError
+
+    class _SynthStatusError(OpenAIError):
+        def __init__(self) -> None:
+            super().__init__("rate-limited by upstream")
+            self.status_code = 429
+            self.body = '{"error": {"message": "rate limit exceeded"}}'
+
+    provider = _make_provider(monkeypatch)
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=lambda **_: (_ for _ in ()).throw(_SynthStatusError()))
+        )
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    md = exc_info.value.metadata_dict()
+    assert md["http_status"] == 429
+    assert md["exception_class"].endswith("._SynthStatusError")
+    assert "rate limit" in (md["response_body_excerpt"] or "")
 
 
 # ---------------------------------------------------------------------------
