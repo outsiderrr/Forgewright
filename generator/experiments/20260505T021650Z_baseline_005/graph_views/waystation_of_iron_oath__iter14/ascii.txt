@@ -1,0 +1,43 @@
+entry: vellin_hands_letter
+
+┌─────────────────────┐
+│ vellin_hands_letter │
+│ dia · char_vellin   │
+└─────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ ask_relationship  │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ aelwin_shouts     │
+│ dia · char_aelwin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔═══════════════╗  ╔═════════════════╗  ╔═════════════════╗
+║ end_carry_out ║  ║ end_refuse_help ║  ║ end_tear_letter ║
+║ end · (narr)  ║  ║ end · (narr)    ║  ║ end · (narr)    ║
+╚═══════════════╝  ╚═════════════════╝  ╚═════════════════╝
+
+edges:
+  vellin_hands_letter → aelwin_shouts
+  vellin_hands_letter → ask_relationship
+  vellin_hands_letter → end_tear_letter
+  ask_relationship → end_carry_out
+  ask_relationship → end_tear_letter
+  ask_relationship → aelwin_shouts
+  aelwin_shouts → end_carry_out
+  aelwin_shouts → end_refuse_help
+  aelwin_shouts → end_tear_letter
+
+end nodes: end_tear_letter, end_carry_out, end_refuse_help

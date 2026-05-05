@@ -1,0 +1,24 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_hands_over_letter" [label="vellin_hands_over_letter [entry]\\ndialogue · char_vellin"];
+  "ask_about_aelwin" [label="ask_about_aelwin\\ndialogue · char_vellin"];
+  "ask_about_vellin_motive" [label="ask_about_vellin_motive\\ndialogue · char_vellin"];
+  "aelwin_shouts" [label="aelwin_shouts\\ndialogue · char_aelwin"];
+  "end_tear_letter" [label="end_tear_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take_letter_out" [label="end_take_letter_out\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_refuse_involvement" [label="end_refuse_involvement\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_hands_over_letter" -> "ask_about_aelwin";
+  "vellin_hands_over_letter" -> "ask_about_vellin_motive";
+  "vellin_hands_over_letter" -> "ask_about_vellin_motive" [label="cond, unav=disable_with_hint"];
+  "vellin_hands_over_letter" -> "end_refuse_involvement";
+  "ask_about_aelwin" -> "end_tear_letter";
+  "ask_about_aelwin" -> "end_take_letter_out";
+  "ask_about_aelwin" -> "aelwin_shouts";
+  "ask_about_vellin_motive" -> "aelwin_shouts";
+  "ask_about_vellin_motive" -> "end_tear_letter";
+  "ask_about_vellin_motive" -> "end_take_letter_out" [label="cond, unav=disable_with_hint"];
+  "aelwin_shouts" -> "end_take_letter_out";
+  "aelwin_shouts" -> "end_tear_letter";
+  "aelwin_shouts" -> "end_refuse_involvement";
+}

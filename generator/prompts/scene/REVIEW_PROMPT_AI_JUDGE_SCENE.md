@@ -1,3 +1,62 @@
+# CLI MODE OVERRIDE — `scene_ai_judge.py` runs this template programmatically
+
+This file serves two consumers:
+1. **CLI mode** — `generator/scene_ai_judge.py` injects scene data via `{{KEY}}` substitutions and expects exactly **one JSON object** per call matching the schema below. **If you are receiving this as a single message via the runner, follow §CLI-INPUT and §CLI-OUTPUT only and ignore the manual-paste workflow (§A, §E, §F, §G) below.**
+2. **Manual-paste mode** — author opens a fresh Claude Code / ChatGPT session and pastes the §"复制下面整段到判官会话" block to score a batch directory. Long-form workflow (multi-pass, log-file emission) lives there.
+
+## §CLI-INPUT (filled by runner; placeholders below get substituted before send)
+
+- `scene_id`: `{{SCENE_ID}}`
+- `pass_mode`: `{{PASS_MODE}}` — either `lenient` or `strict`
+- `scene_anchor`: `{{SCENE_ANCHOR}}`
+- `target_beats`: `{{TARGET_BEATS}}`
+- `participating_npcs`: `{{PARTICIPATING_NPCS}}`
+- `DialogueGraph` JSON to evaluate:
+
+```json
+{{SCENE_JSON}}
+```
+
+## §CLI-OUTPUT (single JSON object, matching `scene_ai_judge.py` `_JUDGE_RESPONSE_SCHEMA`)
+
+In CLI mode, score **only the 10 scene-level dimensions S1–S10** defined in §B.2 below. Per-node 21-dim breakdown is reserved for manual-paste mode and is NOT requested here. Respond with exactly:
+
+```json
+{
+  "scene_id": "<echo {{SCENE_ID}}>",
+  "dimensions": {
+    "S1_topology":   <0|1|2>,
+    "S2_pacing":     <0|1|2>,
+    "S3_arc":        <0|1|2>,
+    "S4_decision":   <0|1|2>,
+    "S5_closure":    <0|1|2>,
+    "S6_length":     <0|1|2>,
+    "S7_context":    <0|1|2>,
+    "S8_relations":  <0|1|2>,
+    "S9_clocks":     <0|1|2>,
+    "S10_naming":    <0|1|2>
+  },
+  "advisory": "accept" | "reject" | "marginal",
+  "rationale": "<≤200 chars; cite weakest S* and node_id if applicable>"
+}
+```
+
+**Advisory rule** (mirrors §B.3, simplified for flat CLI output; total = sum of S1–S10, range 0–20):
+- Any `S*` = 0 → `"reject"` (structural blocker)
+- total ≥ 16 → `"accept"`
+- total in [11, 15] → `"marginal"`
+- total < 11 → `"reject"`
+
+`pass_mode` distinction (carried through by runner; you do not need to track lenient↔strict):
+- `lenient` — borderline cases lean to 1 over 0
+- `strict` — borderline cases lean to 0 over 1
+
+In CLI mode, do NOT write any files, do NOT enumerate per-node A1–E3 scores, do NOT open additional sessions, do NOT request more input. The runner aggregates across the batch on its end. Anything you emit outside the JSON object will be discarded.
+
+The §B.2 rubric below defines the meaning of each S1–S10 dimension. Skim it before scoring — but reply with the JSON object only, in CLI mode.
+
+---
+
 # REVIEW_PROMPT_AI_JUDGE_SCENE.md
 
 > Forgewright 阶段 2 场景级 AI 判官 prompt v1。承接 ADR-020 / `STAGE_2_BASELINE_PROTOCOL.md` §4 权重表，把节点级 21 维（阶段 1）+ 场景级 10 维（本协议新增）落字成可复用 prompt。

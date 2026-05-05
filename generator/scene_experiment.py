@@ -415,6 +415,17 @@ def run_scene_experiment(
                 ontology=ontology,
                 provider=provider,
             )
+            # graph_id from scene_strategies is derived solely from
+            # scene_anchor; multi-iter batches over the same fixture (or
+            # different fixtures sharing an anchor) collide downstream:
+            # graph_views/<id>/ overwrites between iters, scene_ai_judge
+            # keys by id (5 scenes -> 1 dict entry), scene_review_cli
+            # iterates by id (author can only [A]/[R] one of N). Suffix
+            # iter so each scene has a unique id from JSONL onward.
+            if result.success and isinstance(result.graph, dict):
+                base_graph_id = result.graph.get("graph_id")
+                if base_graph_id:
+                    result.graph["graph_id"] = f"{base_graph_id}__iter{iter_id:02d}"
             envelope = _serialise_envelope(
                 iter_id=iter_id, fixture=fixture, result=result, ontology=ontology
             )

@@ -1,0 +1,17 @@
+{
+  "total_attempts": 15,
+  "schema_pass_rate": 0.5333333333333333,
+  "mechanical_pass_rate": 0.5333333333333333,
+  "gross_pass_rate": 0.5333333333333333,
+  "topology_pass_rate": 0.5333333333333333,
+  "sampling_reach_rate": 1.0,
+  "mean_cost_per_attempt": 0.17530400000000002,
+  "total_cost_usd": 2.62956,
+  "failure_reason_distribution": {
+    "fill_node_invalid": 5,
+    "provider_error": 2
+  },
+  "reviewed_count": 1,
+  "acceptance_rate": 1.0,
+  "reject_reason_top_5": []
+}

@@ -1,0 +1,17 @@
+flowchart TD
+  vellin_hands_over_letter["vellin_hands_over_letter [entry]\ndialogue · char_vellin"]
+  questioning_vellin["questioning_vellin\ndialogue · char_vellin"]
+  aelwin_calls_out["aelwin_calls_out\ndialogue · char_aelwin"]
+  end_tear_letter(["end_tear_letter\nend · (narrator)"]):::endNode
+  end_take_letter(["end_take_letter\nend · (narrator)"]):::endNode
+  end_betray_aelwin(["end_betray_aelwin\nend · (narrator)"]):::endNode
+  vellin_hands_over_letter --> questioning_vellin
+  vellin_hands_over_letter -->|cond, unav=disable_with_hint| aelwin_calls_out
+  vellin_hands_over_letter --> end_tear_letter
+  questioning_vellin --> aelwin_calls_out
+  questioning_vellin --> end_take_letter
+  questioning_vellin --> end_tear_letter
+  aelwin_calls_out --> end_take_letter
+  aelwin_calls_out --> end_tear_letter
+  aelwin_calls_out --> end_betray_aelwin
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

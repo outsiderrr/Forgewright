@@ -1,0 +1,19 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_hands_over_letter" [label="vellin_hands_over_letter [entry]\\ndialogue · char_vellin"];
+  "questioning_vellin" [label="questioning_vellin\\ndialogue · char_vellin"];
+  "aelwin_calls_out" [label="aelwin_calls_out\\ndialogue · char_aelwin"];
+  "end_tear_letter" [label="end_tear_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take_letter" [label="end_take_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_betray_aelwin" [label="end_betray_aelwin\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_hands_over_letter" -> "questioning_vellin";
+  "vellin_hands_over_letter" -> "aelwin_calls_out" [label="cond, unav=disable_with_hint"];
+  "vellin_hands_over_letter" -> "end_tear_letter";
+  "questioning_vellin" -> "aelwin_calls_out";
+  "questioning_vellin" -> "end_take_letter";
+  "questioning_vellin" -> "end_tear_letter";
+  "aelwin_calls_out" -> "end_take_letter";
+  "aelwin_calls_out" -> "end_tear_letter";
+  "aelwin_calls_out" -> "end_betray_aelwin";
+}

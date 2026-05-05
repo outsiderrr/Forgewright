@@ -1,0 +1,45 @@
+entry: arrive_at_waystation
+
+┌──────────────────────┐
+│ arrive_at_waystation │
+│ dia · (narr)         │
+└──────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ vellin_hides_message │
+│ dia · char_vellin    │
+└──────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐
+│ player_discovers_flaw │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+╔═════════════════════╗  ╔═══════════════════════╗
+║ end_expose_directly ║  ║ end_complicit_coverup ║
+║ end · (narr)        ║  ║ end · (narr)          ║
+╚═════════════════════╝  ╚═══════════════════════╝
+
+edges:
+  arrive_at_waystation → vellin_hides_message
+  arrive_at_waystation → vellin_hides_message
+  arrive_at_waystation → vellin_hides_message
+  arrive_at_waystation → vellin_hides_message  [cond, unav=disable_with_hint]
+  vellin_hides_message → player_discovers_flaw
+  vellin_hides_message → player_discovers_flaw
+  vellin_hides_message → player_discovers_flaw
+  vellin_hides_message → player_discovers_flaw  [cond, unav=disable_with_hint]
+  player_discovers_flaw → end_expose_directly
+  player_discovers_flaw → end_complicit_coverup
+  player_discovers_flaw → end_complicit_coverup  [cond, unav=disable_with_hint]
+
+end nodes: end_complicit_coverup, end_expose_directly

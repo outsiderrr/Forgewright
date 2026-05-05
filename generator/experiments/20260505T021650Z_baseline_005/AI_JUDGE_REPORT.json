@@ -1,0 +1,57 @@
+{
+  "metadata": {
+    "advisory_authority": "informational_only",
+    "acceptance_source": "scene_review_cli_author_A_R",
+    "adr": "ADR-020 §6",
+    "schema_version": "1"
+  },
+  "pass1_lenient_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter03": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter08": {},
+    "waystation_of_iron_oath__iter09": {},
+    "waystation_of_iron_oath__iter12": {}
+  },
+  "pass2_strict_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter03": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter12": {}
+  },
+  "weakest_dimensions": [],
+  "advisory_recommendation": {
+    "waystation_of_iron_oath__iter00": "accept",
+    "waystation_of_iron_oath__iter03": "reject",
+    "waystation_of_iron_oath__iter05": "accept",
+    "waystation_of_iron_oath__iter12": "reject"
+  },
+  "rationales": {
+    "waystation_of_iron_oath__iter03": {
+      "strict": "S2=0: 严重重复beat。除entry节点外，后续几乎所有节点（如vellin_casual_reception, player_investigates_room等）的narration都在反复描写'推开沉重的橡木门'，导致叙事连贯性完全断裂。"
+    },
+    "waystation_of_iron_oath__iter05": {
+      "strict": "S1/S2(得1分): ask_about_vellin_motive节点出现严重连续性错误（作为子节点却重复了进门前的环境描写和推门动作），存在文本流漂移。其余维度(如收束与决策)表现优秀。"
+    },
+    "waystation_of_iron_oath__iter08": {
+      "lenient": "Total 20/20. Excellent topological health and branching. Perfectly hits all target beats with strong decision divergence. Character arcs, closure, and state effects are consistently well-executed."
+    },
+    "waystation_of_iron_oath__iter09": {
+      "lenient": "S2 (pacing=0): 'arrival', 'vellin_hides_message', and 'player_spots_flaw' nodes narrate the exact same physical entrance and paper-hiding sequence. Reject due to S2=0 (严重重复 beat)."
+    },
+    "waystation_of_iron_oath__iter12": {
+      "lenient": "S2 (节奏=0): arrive_at_waystation, vellin_hides_message 与 player_discovers_flaw 三个节点反复重复“推开橡木门”的抵达叙述（严重重复beat），场景上下文断裂。",
+      "strict": "S2(pacing)=0: 严重重复beat。arrive_at_waystation、vellin_hides_message和player_discovers_flaw的旁白均在反复重写'推开门'与'Vellin藏信'，叙事原地打转且逻辑穿帮。"
+    }
+  },
+  "total_cost_usd": 0.26075000000000004,
+  "stopped_early": false,
+  "skipped_scenes": [
+    "waystation_of_iron_oath__iter08:strict",
+    "waystation_of_iron_oath__iter09:strict",
+    "waystation_of_iron_oath__iter11:lenient",
+    "waystation_of_iron_oath__iter11:strict",
+    "waystation_of_iron_oath__iter14:lenient",
+    "waystation_of_iron_oath__iter14:strict"
+  ]
+}

@@ -1,0 +1,18 @@
+flowchart TD
+  arrive_at_waystation["arrive_at_waystation [entry]\ndialogue · (narrator)"]
+  vellin_hides_message["vellin_hides_message\ndialogue · char_vellin"]
+  player_discovers_flaw["player_discovers_flaw\ndialogue · char_vellin"]
+  end_complicit_coverup(["end_complicit_coverup\nend · (narrator)"]):::endNode
+  end_expose_directly(["end_expose_directly\nend · (narrator)"]):::endNode
+  arrive_at_waystation --> vellin_hides_message
+  arrive_at_waystation --> vellin_hides_message
+  arrive_at_waystation --> vellin_hides_message
+  arrive_at_waystation -->|cond, unav=disable_with_hint| vellin_hides_message
+  vellin_hides_message --> player_discovers_flaw
+  vellin_hides_message --> player_discovers_flaw
+  vellin_hides_message --> player_discovers_flaw
+  vellin_hides_message -->|cond, unav=disable_with_hint| player_discovers_flaw
+  player_discovers_flaw --> end_expose_directly
+  player_discovers_flaw --> end_complicit_coverup
+  player_discovers_flaw -->|cond, unav=disable_with_hint| end_complicit_coverup
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

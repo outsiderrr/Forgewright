@@ -1,0 +1,47 @@
+entry: vellin_hands_over_letter
+
+┌──────────────────────────┐
+│ vellin_hands_over_letter │
+│ dia · char_vellin        │
+└──────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌─────────────────────────┐
+│ ask_about_aelwin  │  │ ask_about_vellin_motive │
+│ dia · char_vellin │  │ dia · char_vellin       │
+└───────────────────┘  └─────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ aelwin_shouts     │
+│ dia · char_aelwin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔═════════════════════╗  ╔═════════════════╗  ╔════════════════════════╗
+║ end_take_letter_out ║  ║ end_tear_letter ║  ║ end_refuse_involvement ║
+║ end · (narr)        ║  ║ end · (narr)    ║  ║ end · (narr)           ║
+╚═════════════════════╝  ╚═════════════════╝  ╚════════════════════════╝
+
+edges:
+  vellin_hands_over_letter → ask_about_aelwin
+  vellin_hands_over_letter → ask_about_vellin_motive
+  vellin_hands_over_letter → ask_about_vellin_motive  [cond, unav=disable_with_hint]
+  vellin_hands_over_letter → end_refuse_involvement
+  ask_about_aelwin → end_tear_letter
+  ask_about_aelwin → end_take_letter_out
+  ask_about_aelwin → aelwin_shouts
+  ask_about_vellin_motive → aelwin_shouts
+  ask_about_vellin_motive → end_tear_letter
+  ask_about_vellin_motive → end_take_letter_out  [cond, unav=disable_with_hint]
+  aelwin_shouts → end_take_letter_out
+  aelwin_shouts → end_tear_letter
+  aelwin_shouts → end_refuse_involvement
+
+end nodes: end_tear_letter, end_take_letter_out, end_refuse_involvement
