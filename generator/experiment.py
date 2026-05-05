@@ -392,11 +392,12 @@ def run_experiment(
 
 
 def _build_default_provider() -> LLMProvider:
-    """Construct the default Gemini provider. Imported lazily so the test
-    suite (which uses FakeProvider) doesn't need a GEMINI_API_KEY."""
-    from generator.providers import GeminiProvider
+    """Construct the LLM_PROVIDER-selected provider. Imported lazily so the
+    test suite (which uses FakeProvider) doesn't need any provider env var
+    set at module-import time."""
+    from generator.providers import get_default_provider
 
-    return GeminiProvider()
+    return get_default_provider()
 
 
 def main(argv: list[str] | None = None) -> int:

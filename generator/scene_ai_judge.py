@@ -463,9 +463,9 @@ def _flush_report(report: AIJudgeReport, batch_dir: Path) -> None:
 
 
 def _build_default_provider() -> LLMProvider:
-    from generator.providers import GeminiProvider
+    from generator.providers import get_default_provider
 
-    return GeminiProvider()
+    return get_default_provider()
 
 
 def main(argv: list[str] | None = None) -> int:

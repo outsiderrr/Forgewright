@@ -467,11 +467,11 @@ def run_scene_experiment(
 
 
 def _build_default_provider() -> LLMProvider:
-    """Construct GeminiProvider lazily so test fixtures (FakeProvider) don't
-    need GEMINI_API_KEY set."""
-    from generator.providers import GeminiProvider
+    """Construct the LLM_PROVIDER-selected provider lazily so test fixtures
+    (FakeProvider) don't need any provider env var set at import time."""
+    from generator.providers import get_default_provider
 
-    return GeminiProvider()
+    return get_default_provider()
 
 
 def main(argv: list[str] | None = None) -> int:
