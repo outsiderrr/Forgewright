@@ -1,0 +1,48 @@
+entry: vellin_hands_over_letter
+
+┌──────────────────────────┐
+│ vellin_hands_over_letter │
+│ dia · char_vellin        │
+└──────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────────┐
+│ player_questions_relation │
+│ dia · char_vellin         │
+└───────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────────┐
+│ aelwin_shouts_from_window │
+│ dia · char_aelwin         │
+└───────────────────────────┘
+
+  │
+  ▼
+
+╔═══════════════════════╗  ╔═════════════════════════╗
+║ end_leave_with_letter ║  ║ end_tear_letter_silence ║
+║ end · (narr)          ║  ║ end · (narr)            ║
+╚═══════════════════════╝  ╚═════════════════════════╝
+
+╔════════════════════════╗
+║ end_refuse_involvement ║
+║ end · (narr)           ║
+╚════════════════════════╝
+
+edges:
+  vellin_hands_over_letter → player_questions_relation
+  vellin_hands_over_letter → aelwin_shouts_from_window
+  vellin_hands_over_letter → end_refuse_involvement
+  player_questions_relation → end_tear_letter_silence
+  player_questions_relation → end_leave_with_letter
+  player_questions_relation → aelwin_shouts_from_window  [cond, unav=disable_with_hint]
+  aelwin_shouts_from_window → end_leave_with_letter
+  aelwin_shouts_from_window → end_tear_letter_silence
+  aelwin_shouts_from_window → end_refuse_involvement
+
+end nodes: end_tear_letter_silence, end_leave_with_letter, end_refuse_involvement

@@ -1,0 +1,76 @@
+entry: arrival_at_waystation
+
+┌───────────────────────┐
+│ arrival_at_waystation │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+┌─────────────────────────┐  ┌───────────────────────┐
+│ vellin_casual_reception │  │ vellin_wary_reception │
+│ dia · char_vellin       │  │ dia · char_vellin     │
+└─────────────────────────┘  └───────────────────────┘
+
+┌─────────────────────────┐
+│ vellin_rushed_reception │
+│ dia · char_vellin       │
+└─────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐  ┌──────────────────────┐  ┌─────────────────────┐
+│ player_presses_vellin │  │ player_notices_blood │  │ player_spots_letter │
+│ dia · char_vellin     │  │ dia · char_vellin    │  │ dia · char_vellin   │
+└───────────────────────┘  └──────────────────────┘  └─────────────────────┘
+
+┌──────────────────────────┐
+│ player_investigates_room │
+│ dia · char_vellin        │
+└──────────────────────────┘
+
+  │
+  ▼
+
+╔═══════════════════╗  ╔═════════════════════╗  ╔════════════════════╗
+║ end_confront_duty ║  ║ end_cover_up_friend ║  ║ end_confront_angry ║
+║ end · (narr)      ║  ║ end · (narr)        ║  ║ end · (narr)       ║
+╚═══════════════════╝  ╚═════════════════════╝  ╚════════════════════╝
+
+╔═════════════════════╗
+║ end_walk_away_blind ║
+║ end · (narr)        ║
+╚═════════════════════╝
+
+edges:
+  arrival_at_waystation → vellin_casual_reception
+  arrival_at_waystation → vellin_wary_reception
+  arrival_at_waystation → vellin_rushed_reception
+  vellin_casual_reception → player_investigates_room
+  vellin_casual_reception → player_presses_vellin
+  vellin_casual_reception → player_notices_blood  [cond, unav=disable_with_hint]
+  vellin_wary_reception → player_presses_vellin
+  vellin_wary_reception → player_notices_blood
+  vellin_wary_reception → player_spots_letter  [cond, unav=disable_with_hint]
+  vellin_rushed_reception → player_notices_blood  [cond, unav=disable_with_hint]
+  vellin_rushed_reception → player_spots_letter
+  vellin_rushed_reception → player_investigates_room
+  player_investigates_room → end_cover_up_friend
+  player_investigates_room → end_confront_angry
+  player_investigates_room → end_confront_angry  [cond, unav=disable_with_hint]
+  player_investigates_room → end_walk_away_blind
+  player_presses_vellin → end_cover_up_friend
+  player_presses_vellin → end_confront_angry
+  player_presses_vellin → end_confront_duty
+  player_presses_vellin → end_cover_up_friend  [cond, unav=disable_with_hint]
+  player_notices_blood → end_cover_up_friend
+  player_notices_blood → end_walk_away_blind
+  player_notices_blood → end_confront_angry
+  player_spots_letter → end_cover_up_friend
+  player_spots_letter → end_confront_duty
+  player_spots_letter → end_confront_angry
+  player_spots_letter → end_cover_up_friend  [cond, unav=disable_with_hint]
+
+end nodes: end_cover_up_friend, end_walk_away_blind, end_confront_angry, end_confront_duty

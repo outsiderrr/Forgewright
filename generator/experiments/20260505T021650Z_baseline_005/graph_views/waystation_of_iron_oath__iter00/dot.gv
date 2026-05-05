@@ -1,0 +1,35 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival" [label="arrival [entry]\\ndialogue · char_vellin"];
+  "vellin_chat_casual" [label="vellin_chat_casual\\ndialogue · char_vellin"];
+  "vellin_chat_serious" [label="vellin_chat_serious\\ndialogue · char_vellin"];
+  "vellin_chat_observant" [label="vellin_chat_observant\\ndialogue · char_vellin"];
+  "flaw_blood" [label="flaw_blood\\ndialogue · char_vellin"];
+  "flaw_nervous" [label="flaw_nervous\\ndialogue · char_vellin"];
+  "flaw_letter" [label="flaw_letter\\ndialogue · char_vellin"];
+  "end_cover_up" [label="end_cover_up\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_leave" [label="end_leave\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose" [label="end_expose\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival" -> "vellin_chat_casual";
+  "arrival" -> "vellin_chat_serious";
+  "arrival" -> "vellin_chat_observant" [label="cond, unav=disable_with_hint"];
+  "vellin_chat_casual" -> "flaw_blood";
+  "vellin_chat_casual" -> "flaw_nervous" [label="cond, unav=disable_with_hint"];
+  "vellin_chat_casual" -> "flaw_letter";
+  "vellin_chat_serious" -> "flaw_blood";
+  "vellin_chat_serious" -> "flaw_nervous";
+  "vellin_chat_serious" -> "flaw_letter";
+  "vellin_chat_observant" -> "flaw_blood" [label="cond, unav=disable_with_hint"];
+  "vellin_chat_observant" -> "flaw_nervous";
+  "vellin_chat_observant" -> "flaw_letter";
+  "flaw_blood" -> "end_expose";
+  "flaw_blood" -> "end_cover_up";
+  "flaw_blood" -> "end_leave";
+  "flaw_nervous" -> "end_expose";
+  "flaw_nervous" -> "end_cover_up";
+  "flaw_nervous" -> "end_leave";
+  "flaw_letter" -> "end_cover_up";
+  "flaw_letter" -> "end_leave";
+  "flaw_letter" -> "end_expose";
+}

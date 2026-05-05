@@ -1,0 +1,45 @@
+entry: arrival
+
+┌───────────────────┐
+│ arrival           │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ vellin_hides_message │
+│ dia · char_vellin    │
+└──────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ player_spots_flaw │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔═══════════════╗  ╔══════════════════════╗
+║ end_confront ║  ║ end_complicit ║  ║ end_silent_departure ║
+║ end · (narr) ║  ║ end · (narr)  ║  ║ end · (narr)         ║
+╚══════════════╝  ╚═══════════════╝  ╚══════════════════════╝
+
+edges:
+  arrival → vellin_hides_message
+  arrival → vellin_hides_message
+  arrival → vellin_hides_message
+  vellin_hides_message → player_spots_flaw
+  vellin_hides_message → player_spots_flaw
+  vellin_hides_message → player_spots_flaw
+  vellin_hides_message → player_spots_flaw  [cond, unav=disable_with_hint]
+  player_spots_flaw → end_confront
+  player_spots_flaw → end_complicit
+  player_spots_flaw → end_silent_departure
+  player_spots_flaw → end_complicit  [cond, unav=disable_with_hint]
+
+end nodes: end_complicit, end_confront, end_silent_departure

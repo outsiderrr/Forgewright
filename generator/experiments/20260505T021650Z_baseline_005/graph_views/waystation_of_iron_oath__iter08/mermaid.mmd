@@ -1,0 +1,17 @@
+flowchart TD
+  vellin_hands_over_letter["vellin_hands_over_letter [entry]\ndialogue · char_vellin"]
+  player_questions_relation["player_questions_relation\ndialogue · char_vellin"]
+  aelwin_shouts_from_window["aelwin_shouts_from_window\ndialogue · char_aelwin"]
+  end_tear_letter_silence(["end_tear_letter_silence\nend · (narrator)"]):::endNode
+  end_leave_with_letter(["end_leave_with_letter\nend · (narrator)"]):::endNode
+  end_refuse_involvement(["end_refuse_involvement\nend · (narrator)"]):::endNode
+  vellin_hands_over_letter --> player_questions_relation
+  vellin_hands_over_letter --> aelwin_shouts_from_window
+  vellin_hands_over_letter --> end_refuse_involvement
+  player_questions_relation --> end_tear_letter_silence
+  player_questions_relation --> end_leave_with_letter
+  player_questions_relation -->|cond, unav=disable_with_hint| aelwin_shouts_from_window
+  aelwin_shouts_from_window --> end_leave_with_letter
+  aelwin_shouts_from_window --> end_tear_letter_silence
+  aelwin_shouts_from_window --> end_refuse_involvement
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

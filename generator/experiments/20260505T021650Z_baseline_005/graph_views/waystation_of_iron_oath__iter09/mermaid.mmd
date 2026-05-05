@@ -1,0 +1,19 @@
+flowchart TD
+  arrival["arrival [entry]\ndialogue · char_vellin"]
+  vellin_hides_message["vellin_hides_message\ndialogue · char_vellin"]
+  player_spots_flaw["player_spots_flaw\ndialogue · char_vellin"]
+  end_complicit(["end_complicit\nend · (narrator)"]):::endNode
+  end_confront(["end_confront\nend · (narrator)"]):::endNode
+  end_silent_departure(["end_silent_departure\nend · (narrator)"]):::endNode
+  arrival --> vellin_hides_message
+  arrival --> vellin_hides_message
+  arrival --> vellin_hides_message
+  vellin_hides_message --> player_spots_flaw
+  vellin_hides_message --> player_spots_flaw
+  vellin_hides_message --> player_spots_flaw
+  vellin_hides_message -->|cond, unav=disable_with_hint| player_spots_flaw
+  player_spots_flaw --> end_confront
+  player_spots_flaw --> end_complicit
+  player_spots_flaw --> end_silent_departure
+  player_spots_flaw -->|cond, unav=disable_with_hint| end_complicit
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

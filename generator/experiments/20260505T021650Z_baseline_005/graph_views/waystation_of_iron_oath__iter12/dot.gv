@@ -1,0 +1,20 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrive_at_waystation" [label="arrive_at_waystation [entry]\\ndialogue · (narrator)"];
+  "vellin_hides_message" [label="vellin_hides_message\\ndialogue · char_vellin"];
+  "player_discovers_flaw" [label="player_discovers_flaw\\ndialogue · char_vellin"];
+  "end_complicit_coverup" [label="end_complicit_coverup\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose_directly" [label="end_expose_directly\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrive_at_waystation" -> "vellin_hides_message";
+  "arrive_at_waystation" -> "vellin_hides_message";
+  "arrive_at_waystation" -> "vellin_hides_message";
+  "arrive_at_waystation" -> "vellin_hides_message" [label="cond, unav=disable_with_hint"];
+  "vellin_hides_message" -> "player_discovers_flaw";
+  "vellin_hides_message" -> "player_discovers_flaw";
+  "vellin_hides_message" -> "player_discovers_flaw";
+  "vellin_hides_message" -> "player_discovers_flaw" [label="cond, unav=disable_with_hint"];
+  "player_discovers_flaw" -> "end_expose_directly";
+  "player_discovers_flaw" -> "end_complicit_coverup";
+  "player_discovers_flaw" -> "end_complicit_coverup" [label="cond, unav=disable_with_hint"];
+}

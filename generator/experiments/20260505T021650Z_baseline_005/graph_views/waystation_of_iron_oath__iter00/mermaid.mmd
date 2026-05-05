@@ -1,0 +1,33 @@
+flowchart TD
+  arrival["arrival [entry]\ndialogue · char_vellin"]
+  vellin_chat_casual["vellin_chat_casual\ndialogue · char_vellin"]
+  vellin_chat_serious["vellin_chat_serious\ndialogue · char_vellin"]
+  vellin_chat_observant["vellin_chat_observant\ndialogue · char_vellin"]
+  flaw_blood["flaw_blood\ndialogue · char_vellin"]
+  flaw_nervous["flaw_nervous\ndialogue · char_vellin"]
+  flaw_letter["flaw_letter\ndialogue · char_vellin"]
+  end_cover_up(["end_cover_up\nend · (narrator)"]):::endNode
+  end_leave(["end_leave\nend · (narrator)"]):::endNode
+  end_expose(["end_expose\nend · (narrator)"]):::endNode
+  arrival --> vellin_chat_casual
+  arrival --> vellin_chat_serious
+  arrival -->|cond, unav=disable_with_hint| vellin_chat_observant
+  vellin_chat_casual --> flaw_blood
+  vellin_chat_casual -->|cond, unav=disable_with_hint| flaw_nervous
+  vellin_chat_casual --> flaw_letter
+  vellin_chat_serious --> flaw_blood
+  vellin_chat_serious --> flaw_nervous
+  vellin_chat_serious --> flaw_letter
+  vellin_chat_observant -->|cond, unav=disable_with_hint| flaw_blood
+  vellin_chat_observant --> flaw_nervous
+  vellin_chat_observant --> flaw_letter
+  flaw_blood --> end_expose
+  flaw_blood --> end_cover_up
+  flaw_blood --> end_leave
+  flaw_nervous --> end_expose
+  flaw_nervous --> end_cover_up
+  flaw_nervous --> end_leave
+  flaw_letter --> end_cover_up
+  flaw_letter --> end_leave
+  flaw_letter --> end_expose
+  classDef endNode fill:#fce4ec,stroke:#ad1457;
