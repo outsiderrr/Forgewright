@@ -420,11 +420,15 @@ def test_openai_error_wraps_to_provider_error(
 
 
 def test_sanitize_strips_unsupported_keywords_recursively() -> None:
+    """R2.8: ``additionalProperties`` is now stripped to match Gemini's
+    rule set. PoloAI relays to Gemini upstream where protobuf rejects
+    the keyword (baseline_006, PR #22) — the OpenAI-strict-mode benefit
+    R2.7 tried to preserve never reached the wire in practice."""
     original = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "node.schema.json",
         "type": "object",
-        "additionalProperties": False,  # KEPT — OpenAI strict mode wants it
+        "additionalProperties": False,
         "properties": {
             "items": {
                 "type": "array",
@@ -435,12 +439,61 @@ def test_sanitize_strips_unsupported_keywords_recursively() -> None:
     sanitized = _sanitize_schema_for_openai(original)
     assert "$schema" not in sanitized
     assert "$id" not in sanitized
-    # additionalProperties kept (unlike Gemini's sanitizer)
-    assert sanitized["additionalProperties"] is False
+    assert "additionalProperties" not in sanitized
     # Recursive
     assert "$id" not in sanitized["properties"]["items"]["items"]
     # Original not mutated
     assert "$schema" in original
+    assert original["additionalProperties"] is False
+
+
+def test_sanitize_rewrites_type_array_nullable_for_poloai() -> None:
+    """R2.8 regression guard: PoloAI's sanitizer must rewrite the
+    JSON-Schema type-array nullable form. R2.7 shipped without this rule
+    and baseline_006 caught the resulting upstream-protobuf rejection
+    at 0% gross_pass_rate."""
+    schema = {
+        "type": "object",
+        "properties": {
+            "speaker_ref": {"type": ["string", "null"]},
+            "extras": {
+                "type": "array",
+                "items": {"type": ["integer", "null"], "minimum": 0},
+            },
+        },
+    }
+    sanitized = _sanitize_schema_for_openai(schema)
+    assert sanitized["properties"]["speaker_ref"] == {
+        "type": "string",
+        "nullable": True,
+    }
+    assert sanitized["properties"]["extras"]["items"] == {
+        "type": "integer",
+        "nullable": True,
+        "minimum": 0,
+    }
+
+
+def test_sanitize_skeleton_schema_via_poloai_has_no_list_type_residue() -> None:
+    """End-to-end check that the live ``_SKELETON_RESPONSE_SCHEMA`` —
+    the one that triggered the baseline_006 0% pass rate — survives the
+    PoloAI sanitizer cleanly. No real API call: pure schema transform."""
+    from generator.scene_strategies import _SKELETON_RESPONSE_SCHEMA
+
+    sanitized = _sanitize_schema_for_openai(_SKELETON_RESPONSE_SCHEMA)
+
+    def _walk_types(node):
+        if isinstance(node, dict):
+            if "type" in node:
+                yield node["type"]
+            for v in node.values():
+                yield from _walk_types(v)
+        elif isinstance(node, list):
+            for item in node:
+                yield from _walk_types(item)
+
+    for t in _walk_types(sanitized):
+        assert not isinstance(t, list), f"list-form type leaked through: {t!r}"
 
 
 def test_strip_codefence_handles_plain_json() -> None:
