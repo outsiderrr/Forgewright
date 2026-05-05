@@ -784,3 +784,211 @@ def test_fill_skeleton_directly_with_minimal_skeleton():
     assert fill_res.graph is not None
     assert set(fill_res.graph["nodes"].keys()) == {"n_a", "n_b"}
     assert fill_res.graph["entry_node_id"] == "n_a"
+
+
+# ---------------------------------------------------------------------------
+# R2.6 — fill prompt context tuning (previously_filled + beat_position +
+# bleed-through guard) targeting T-2.12 baseline_005 v3 reject patterns
+# ---------------------------------------------------------------------------
+
+
+def test_r2_6_first_fill_prompt_omits_previously_filled_section():
+    """First-node fill prompt must NOT render the empty summary header.
+
+    R2.6 §3 — rendering an empty section would just be visual noise the
+    LLM has to step over. Beat-position + bleed-through guard still
+    appear (they don't depend on prior fills).
+    """
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is True
+    first_fill_prompt = provider.user_prompts[1]
+    assert "## 前面已生成节点的 narration 摘要" not in first_fill_prompt
+    assert "## 当前节点位置" in first_fill_prompt
+    assert "context bleed-through 防御" in first_fill_prompt
+
+
+def test_r2_6_later_fill_prompts_include_previously_filled_summary():
+    """Each fill prompt for index >= 1 must list earlier-filled node ids
+    so the LLM can see what setting / characters have been described
+    already and stop repeating them."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is True
+    fill_prompts = provider.user_prompts[1:]
+    # Fill #2 (index 1): summary must reference n_arrival
+    assert "## 前面已生成节点的 narration 摘要" in fill_prompts[1]
+    assert "n_arrival" in fill_prompts[1]
+    # Last fill (index 4): must reference all four prior node ids
+    last = fill_prompts[-1]
+    assert "## 前面已生成节点的 narration 摘要" in last
+    for prior_id in (
+        "n_arrival",
+        "n_confession",
+        "n_patrol",
+        "n_end_silent",
+    ):
+        assert prior_id in last, f"last fill prompt missing prior node {prior_id}"
+
+
+def test_r2_6_fill_prompts_carry_beat_position_with_correct_role():
+    """Each fill prompt surfaces beat tag, index/total, and node role."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is True
+    fill_prompts = provider.user_prompts[1:]
+    total = len(fill_prompts)
+    expected_beats = [n["beat"] for n in _VALID_SKELETON_JSON["nodes"]]
+    for idx, fp in enumerate(fill_prompts):
+        assert "## 当前节点位置" in fp
+        assert f"`{expected_beats[idx]}`" in fp
+        assert f"第 {idx + 1}/{total} 个节点" in fp
+    # Role markers
+    assert "节点角色：开场" in fill_prompts[0]
+    assert "节点角色：收束" in fill_prompts[-1]
+    for fp in fill_prompts[1:-1]:
+        assert "节点角色：中段" in fp
+
+
+def test_r2_6_fill_prompts_render_extras_between_context_and_requirement():
+    """R2.6 spec §1.2: new sections appear after the SceneGraphContext
+    block (system_time tail) and before '## 本次生成要求'."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        active_clocks=_active_clocks(),
+        system_time=_system_time(),
+        location_candidates=_location_candidates(),
+    )
+    assert result.success is True
+    # Pick a fill index >= 1 so summary section is present.
+    second_fill = provider.user_prompts[2]
+    # The few-shot block at the prompt head also renders a full
+    # `## 本次生成要求` block per example, so anchor on the LAST occurrence
+    # of each header (rfind) — that lands inside the live context block
+    # under `## 当前任务`. The R2.6 headers appear only there so find/rfind
+    # collapse for them, but symmetry keeps the assertion uniform.
+    pos_system_time = second_fill.rfind("## 系统时间")
+    pos_summary = second_fill.rfind("## 前面已生成节点的 narration 摘要")
+    pos_beat = second_fill.rfind("## 当前节点位置")
+    pos_requirement = second_fill.rfind("## 本次生成要求")
+    assert pos_system_time != -1
+    assert pos_summary != -1
+    assert pos_beat != -1
+    assert pos_requirement != -1
+    assert pos_system_time < pos_summary < pos_beat < pos_requirement
+
+
+def test_r2_6_fill_prompts_carry_bleed_through_guard_each_node():
+    """Hard constraint section appears in every fill prompt (R2.6 §1.4)."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is True
+    for idx, fp in enumerate(provider.user_prompts[1:]):
+        assert "context bleed-through 防御" in fp, (
+            f"fill prompt {idx} missing bleed-through guard"
+        )
+        assert "不要重复" in fp
+        assert "≤ 2 句话" in fp
+
+
+def test_r2_6_render_previously_filled_summary_truncates_to_recent_5_when_over_budget():
+    """Direct unit test on the helper. Skeleton schema caps at 15 nodes
+    so the truncation path won't trigger from a real skeleton, but the
+    invariant matters: when filled_so_far is large enough that the joined
+    body exceeds 2000 chars, fall back to the most recent 5 entries.
+    """
+    from generator.prompts.scene.fill import render_previously_filled_summary
+    # 25 entries with 100-char narrations. Each rendered line is
+    # "- n_node_XX: " (13) + 80-char narration preview + "..." (3) = 96 chars,
+    # joined with "\n" → 25*96 + 24 ≈ 2424 chars body, well over 2000.
+    long_narration = "X" * 100
+    filled = [(f"n_node_{i:02d}", long_narration) for i in range(25)]
+    summary = render_previously_filled_summary(filled)
+    body = summary.split("\n\n", 1)[1]
+    assert len(body) <= 2000
+    # Recent 5 only: n_node_20 .. n_node_24 in, n_node_19 and n_node_00 out.
+    assert "n_node_24" in body
+    assert "n_node_20" in body
+    assert "n_node_19" not in body
+    assert "n_node_00" not in body
+
+
+def test_r2_6_render_previously_filled_summary_empty_input_returns_empty_string():
+    """First-node case: helper returns empty string, NOT a header-only stub."""
+    from generator.prompts.scene.fill import render_previously_filled_summary
+    assert render_previously_filled_summary([]) == ""
+
+
+def test_r2_6_render_previously_filled_summary_caps_per_node_at_80_chars():
+    """Each per-node line caps narration at 80 chars + literal '...'."""
+    from generator.prompts.scene.fill import render_previously_filled_summary
+    long_narr = "推开沉重的橡木门" * 20  # ~160 漢字
+    summary = render_previously_filled_summary([("n_a", long_narr)])
+    body = summary.split("\n\n", 1)[1]
+    # Body is exactly one line: "- n_a: " + 80 chars + "..."
+    assert body.startswith("- n_a: ")
+    after_prefix = body[len("- n_a: "):]
+    assert len(after_prefix) == 80 + 3  # 80-char preview + "..."
+    assert after_prefix.endswith("...")
+
+
+def test_r2_6_extra_user_context_is_none_for_t1_6_solo_callers():
+    """Backwards compat: T-1.6 single-node generate_node callers don't
+    pass extra_user_context, so NodeRequirement defaults it to None and
+    assemble_context_block omits the inserted block entirely."""
+    from generator.context_assembler import (
+        GraphContext,
+        NodeRequirement,
+        assemble_context_block,
+    )
+    ctx = GraphContext(scene_anchor="scene_solo_test")
+    req = NodeRequirement(
+        node_type="dialogue",
+        expected_speaker_ref="char_x",
+        narrative_intent="test intent",
+    )
+    assert req.extra_user_context is None
+    block = assemble_context_block(ctx, req)
+    # None of the R2.6 section headers should appear when extra is None.
+    assert "## 前面已生成节点的 narration 摘要" not in block
+    assert "## 当前节点位置" not in block
+    assert "context bleed-through 防御" not in block

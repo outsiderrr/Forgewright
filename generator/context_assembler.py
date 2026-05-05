@@ -71,12 +71,23 @@ class NodeRequirement:
     `scene_strategies.fill_skeleton`) has already drawn the graph
     skeleton's edges and any `target_node_id` outside this list will be
     rejected as schema_invalid and re-fed to the LLM.
+
+    `extra_user_context` (R2.6) is a free-form markdown blob the
+    scene-level fill caller injects between the SceneGraphContext block
+    (system_time / active_clocks) and the `## 本次生成要求` requirement
+    block. Used to combat context bleed-through observed in T-2.12
+    baseline_005 v3 (S2=0 reject — every node's narration kept rewriting
+    the opening "推开沉重的橡木门"): fill_skeleton renders summaries of
+    previously filled nodes' narration plus a per-node beat-position
+    annotation so the LLM stops repeating opening setup. T-1.6 single-node
+    callers leave it None and see no change to their prompts.
     """
 
     node_type: Literal["dialogue", "end"]
     expected_speaker_ref: str | None
     narrative_intent: str
     allowed_targets: list[str] | None = None
+    extra_user_context: str | None = None
 
 
 def assemble_context_block(
@@ -164,6 +175,16 @@ def assemble_context_block(
         parts.append(
             f"- `world.long_rest_count`: {graph_context.system_time.get('long_rest_count', 0)}"
         )
+
+    # R2.6: scene-level fill caller can inject top-level markdown sections
+    # here (between the SceneGraphContext block above and the requirement
+    # block below) — typically the previously-filled-narration summary +
+    # beat-position annotation built by `prompts.scene.fill.render_fill_extras`.
+    # Skipped silently when None / empty so T-1.6 single-node callers see
+    # no change to their prompt structure.
+    if node_requirement.extra_user_context:
+        parts.append("")
+        parts.append(node_requirement.extra_user_context)
 
     parts.append("")
     parts.append("## 本次生成要求")

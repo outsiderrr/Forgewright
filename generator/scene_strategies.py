@@ -61,6 +61,7 @@ from generator.prompts.scene.few_shot import (
     load_iron_oath_scene_few_shot,
     render_scene_few_shot_block,
 )
+from generator.prompts.scene.fill import render_fill_extras
 from generator.prompts.scene.system import SCENE_SYSTEM_PROMPT
 
 _LOG = logging.getLogger(__name__)
@@ -460,16 +461,30 @@ def fill_skeleton(
     fill_attempts: dict[str, list[AttemptRecord]] = {}
     total_cost = 0.0
     filled_nodes: dict[str, dict] = {}
+    # R2.6: running list of (node_id, narration) for nodes already filled
+    # in this scene. Each subsequent fill prompt embeds a summary of this
+    # list so the LLM can see what setting / characters / props the
+    # opening already described and stop repeating them. T-2.12 baseline_005
+    # v3 reject rationale (S2=0 重复 beat) traced directly to this gap.
+    filled_so_far: list[tuple[str, str]] = []
+    total_nodes = len(skeleton.nodes)
 
     # Iterate in skeleton.nodes order (entry first if the skeleton is
     # well-formed — the assembled DialogueGraph respects entry_node_id
     # explicitly so order here is only for debuggability).
-    for skel_node in skeleton.nodes:
+    for index, skel_node in enumerate(skeleton.nodes):
+        extra_context = render_fill_extras(
+            filled_so_far=filled_so_far,
+            beat=skel_node.beat,
+            index=index,
+            total=total_nodes,
+        )
         node_req = NodeRequirement(
             node_type=skel_node.type,
             expected_speaker_ref=skel_node.speaker_ref,
             narrative_intent=_intent_from_beat(skel_node),
             allowed_targets=skeleton.get_allowed_targets(skel_node.node_id),
+            extra_user_context=extra_context,
         )
         graph_ctx = _graph_context_from_scene_context(
             scene_context, current_node=skel_node, skeleton=skeleton
@@ -506,6 +521,14 @@ def fill_skeleton(
         node_dict = dict(result.node or {})
         node_dict["node_id"] = skel_node.node_id
         filled_nodes[skel_node.node_id] = node_dict
+        # Capture this node's narration for the next iter's bleed-through
+        # summary. Non-string narrations (shouldn't happen post-validation,
+        # but be defensive) are stored as empty so the summary line still
+        # carries the node_id without crashing on str ops.
+        narration = node_dict.get("narration")
+        filled_so_far.append(
+            (skel_node.node_id, narration if isinstance(narration, str) else "")
+        )
 
     graph = _assemble_dialogue_graph(skeleton, filled_nodes, scene_context)
     return FillResult(
