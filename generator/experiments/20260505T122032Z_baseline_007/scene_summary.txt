@@ -1,0 +1,10 @@
+iterations:            15
+schema_pass_rate:      0.0%  (0/15)
+gross_pass_rate:       0.0%  (0/15)
+topology_pass_rate:    0.0%  (0/15)
+sampling_reach_rate:   0.0%  (avg over success scenes)
+total_cost_usd:        $1.0311
+mean_cost_per_iter:    $0.0687
+
+failure_reason_distribution:
+  provider_error         15
