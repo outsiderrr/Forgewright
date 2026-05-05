@@ -35,6 +35,7 @@ from typing import Any, Literal
 from openai import OpenAI, OpenAIError
 
 from generator.llm_provider import ProviderError, StructuredResponse
+from generator.providers._schema_sanitizer import sanitize_schema_for_openapi
 
 DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
 DEFAULT_BASE_URL = "https://poloai.top/v1"
@@ -68,13 +69,6 @@ _TRANSIENT_RETRY_DELAY_SEC = 2.0
 # poloai publishes per-call pricing.
 _INPUT_USD_PER_MTOK = 2.00
 _OUTPUT_USD_PER_MTOK = 12.00
-
-# Stripped recursively before sending to the relay. Matches Gemini's
-# stance: response_format is picky about unrecognised keywords and the
-# safest default is to drop them. ``additionalProperties`` is intentionally
-# *kept* — OpenAI strict json_schema mode requires it, and json_object /
-# prompt_only modes ignore it.
-_OPENAI_UNSUPPORTED_KEYWORDS = frozenset({"$schema", "$id"})
 
 
 class PoloAIProvider:
@@ -252,24 +246,19 @@ def _is_transient_network_error(exc: Exception) -> bool:
 
 
 def _sanitize_schema_for_openai(schema: Any) -> Any:
-    """Adapt JSON Schema for OpenAI ``response_format`` consumption.
+    """Adapt JSON Schema for the relay's ``response_format`` field.
 
-    Strips top-level metadata keys (``$schema``, ``$id``) recursively. Does
-    NOT add ``additionalProperties: false`` or rewrite ``required[]`` for
-    OpenAI strict mode — that surgery is too invasive without empirical
-    confirmation. Caller flips ``strict_schema=True`` only when their
-    schema is already strict-compatible. The original schema is left
-    intact so the validator layer keeps using the strict version.
+    Thin alias over the shared sanitizer. R2.7 shipped its own narrower
+    sanitizer that kept ``additionalProperties`` (in deference to OpenAI
+    strict json_schema mode); baseline_006 (PR #22) showed every PoloAI
+    request still hits Gemini upstream where protobuf rejects the same
+    JSON-Schema features Gemini's response_schema does. R2.8 unifies the
+    rule set with :func:`sanitize_schema_for_openapi` — both providers
+    now strip ``additionalProperties`` and rewrite the type-array
+    nullable form. The original schema is left intact so the validator
+    layer keeps using the canonical version.
     """
-    if isinstance(schema, dict):
-        return {
-            k: _sanitize_schema_for_openai(v)
-            for k, v in schema.items()
-            if k not in _OPENAI_UNSUPPORTED_KEYWORDS
-        }
-    if isinstance(schema, list):
-        return [_sanitize_schema_for_openai(item) for item in schema]
-    return schema
+    return sanitize_schema_for_openapi(schema)
 
 
 def _augment_system_prompt(
