@@ -1,0 +1,304 @@
+"""PoloAI implementation of LLMProvider — R2.7.
+
+Third-party OpenAI-compatible relay (https://poloai.top) backing onto
+Gemini 3.1 Pro. Same Protocol contract as GeminiProvider; switchable via
+the ``LLM_PROVIDER`` env var (see ``generator.providers.get_default_provider``).
+
+Per ADR-011: this module is the only place in the repo that imports the
+``openai`` SDK for chat completions. (``providers/openai_image.py`` also
+imports ``openai`` but only for the ``images.generate`` path; that's a
+separate Protocol — ``ImageProvider`` — and not affected by R2.7.)
+
+Empirical probing (2026-05-05, see PR R2.7 description):
+  - Auth: ``Authorization: Bearer sk-...`` confirmed.
+  - Model literal: ``gemini-3.1-pro-preview`` confirmed via GET /v1/models.
+  - JSON-mode contract (json_schema vs json_object vs prompt_only):
+    NOT empirically verified. The probing token's distributor group had
+    no channel binding so chat/completions returned ``model_not_found``
+    for every listed model. The implementation defaults to
+    ``json_mode='json_schema'`` (``strict=False``) on the assumption that
+    the relay mirrors the OpenAI standard. Author can override at
+    construction or via ``POLOAI_JSON_MODE`` env var. The schema is
+    additionally embedded into the system prompt for ``json_object`` /
+    ``prompt_only`` modes as defense-in-depth (in case the relay silently
+    drops the ``response_format`` field).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+from typing import Any, Literal
+
+from openai import OpenAI, OpenAIError
+
+from generator.llm_provider import ProviderError, StructuredResponse
+
+DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
+DEFAULT_BASE_URL = "https://poloai.top/v1"
+
+JsonMode = Literal["json_schema", "json_object", "prompt_only"]
+DEFAULT_JSON_MODE: JsonMode = "json_schema"
+
+# OpenAI SDK accepts seconds (float) for timeout, unlike google.genai which
+# wants milliseconds. 120s mirrors GeminiProvider for parity on long prompts.
+_HTTP_TIMEOUT_SEC = 120.0
+
+# Mirror GeminiProvider: single retry on raw connection failures only.
+# HTTP 4xx/5xx classified by the SDK never auto-retry — caller decides.
+_TRANSIENT_ERROR_SUBSTRINGS = (
+    "Server disconnected",
+    "Connection reset",
+    "Read timeout",
+    "ReadTimeout",
+    "ConnectError",
+    "ConnectTimeout",
+    "RemoteProtocolError",
+    "handshake",
+    "timed out",
+)
+_TRANSIENT_RETRY_DELAY_SEC = 2.0
+
+# Best-effort cost estimate. The relay backs onto Gemini 3.1 Pro per docs;
+# we reuse Gemini's public per-MTok rate as a floor. Relay markup over
+# official pricing is not modeled here — treat estimate_cost as a lower
+# bound, not an authoritative invoice. Refine in a follow-up PR if/when
+# poloai publishes per-call pricing.
+_INPUT_USD_PER_MTOK = 2.00
+_OUTPUT_USD_PER_MTOK = 12.00
+
+# Stripped recursively before sending to the relay. Matches Gemini's
+# stance: response_format is picky about unrecognised keywords and the
+# safest default is to drop them. ``additionalProperties`` is intentionally
+# *kept* — OpenAI strict json_schema mode requires it, and json_object /
+# prompt_only modes ignore it.
+_OPENAI_UNSUPPORTED_KEYWORDS = frozenset({"$schema", "$id"})
+
+
+class PoloAIProvider:
+    """OpenAI-compatible chat completions against poloai.top.
+
+    Backend: Gemini 3.1 Pro (per relay docs). Constructor reads env vars
+    when arguments are omitted:
+      - ``POLOAI_API_KEY`` (required, no default)
+      - ``POLOAI_MODEL_ID`` (default: ``gemini-3.1-pro-preview``)
+      - ``POLOAI_BASE_URL`` (default: ``https://poloai.top/v1``)
+      - ``POLOAI_JSON_MODE`` (default: ``json_schema``;
+        accepts ``json_schema`` | ``json_object`` | ``prompt_only``)
+      - ``POLOAI_STRICT_SCHEMA`` (default: ``false``; only consulted in
+        ``json_schema`` mode)
+    """
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model_id: str | None = None,
+        base_url: str | None = None,
+        json_mode: JsonMode | None = None,
+        strict_schema: bool | None = None,
+    ) -> None:
+        key = api_key if api_key is not None else os.environ.get("POLOAI_API_KEY")
+        if not key:
+            raise ProviderError(
+                "POLOAI_API_KEY is not set; pass api_key= or set the env var."
+            )
+        self.model_id = (
+            model_id
+            if model_id is not None
+            else os.environ.get("POLOAI_MODEL_ID", DEFAULT_MODEL_ID)
+        )
+        self._base_url = (
+            base_url
+            if base_url is not None
+            else os.environ.get("POLOAI_BASE_URL", DEFAULT_BASE_URL)
+        )
+        resolved_mode = (
+            json_mode
+            if json_mode is not None
+            else os.environ.get("POLOAI_JSON_MODE", DEFAULT_JSON_MODE)
+        )
+        if resolved_mode not in ("json_schema", "json_object", "prompt_only"):
+            raise ProviderError(
+                f"Unknown POLOAI_JSON_MODE: {resolved_mode!r} "
+                "(expected json_schema | json_object | prompt_only)"
+            )
+        self.json_mode: JsonMode = resolved_mode  # type: ignore[assignment]
+        if strict_schema is None:
+            env_strict = os.environ.get("POLOAI_STRICT_SCHEMA", "").strip().lower()
+            self.strict_schema = env_strict in ("1", "true", "yes")
+        else:
+            self.strict_schema = strict_schema
+        self._api_key = key
+        self._client_cache: OpenAI | None = None
+
+    @property
+    def _client(self) -> OpenAI:
+        # Lazy: avoid network setup at construction so tests can build the
+        # provider without side effects. Wrap any SDK __init__ failure in
+        # ProviderError so callers see a single repo-local exception type
+        # (mirrors openai_image.OpenAIImageProvider).
+        if self._client_cache is None:
+            try:
+                self._client_cache = OpenAI(
+                    api_key=self._api_key,
+                    base_url=self._base_url,
+                    timeout=_HTTP_TIMEOUT_SEC,
+                )
+            except Exception as exc:
+                raise ProviderError(f"PoloAI client setup failed: {exc}") from exc
+        return self._client_cache
+
+    def generate_structured(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        json_schema: dict,
+    ) -> StructuredResponse:
+        sanitized_schema = _sanitize_schema_for_openai(json_schema)
+        final_system = _augment_system_prompt(
+            system_prompt, sanitized_schema, self.json_mode
+        )
+
+        messages: list[dict[str, str]] = []
+        if final_system:
+            messages.append({"role": "system", "content": final_system})
+        messages.append({"role": "user", "content": user_prompt})
+
+        kwargs: dict[str, Any] = {
+            "model": self.model_id,
+            "messages": messages,
+        }
+        if self.json_mode == "json_schema":
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "structured_output",
+                    "strict": self.strict_schema,
+                    "schema": sanitized_schema,
+                },
+            }
+        elif self.json_mode == "json_object":
+            kwargs["response_format"] = {"type": "json_object"}
+        # prompt_only: no response_format field.
+
+        response = self._call_with_transient_retry(kwargs=kwargs)
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise ProviderError("PoloAI returned no choices")
+        message = getattr(choices[0], "message", None)
+        raw_text = getattr(message, "content", None) if message else None
+        if not raw_text:
+            raise ProviderError("PoloAI returned empty message content")
+
+        cleaned = _strip_json_codefence(raw_text)
+        try:
+            content = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise ProviderError(
+                f"PoloAI returned non-JSON content "
+                f"(json_mode={self.json_mode}): {exc}"
+            ) from exc
+        if not isinstance(content, dict):
+            raise ProviderError(
+                f"PoloAI structured output is not a JSON object "
+                f"(got {type(content).__name__})"
+            )
+
+        usage = getattr(response, "usage", None)
+        input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0) if usage else 0
+        output_tokens = int(getattr(usage, "completion_tokens", 0) or 0) if usage else 0
+
+        finish_reason_raw = getattr(choices[0], "finish_reason", None)
+        finish_reason = str(finish_reason_raw) if finish_reason_raw else "UNKNOWN"
+
+        return StructuredResponse(
+            content=content,
+            raw_text=raw_text,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            model_id=self.model_id,
+            finish_reason=finish_reason,
+        )
+
+    def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        # Best-effort floor; relay markup not modeled. See module docstring.
+        return (
+            input_tokens * _INPUT_USD_PER_MTOK
+            + output_tokens * _OUTPUT_USD_PER_MTOK
+        ) / 1_000_000
+
+    def _call_with_transient_retry(self, *, kwargs: dict[str, Any]) -> Any:
+        for attempt in range(2):
+            try:
+                return self._client.chat.completions.create(**kwargs)
+            except OpenAIError as exc:
+                # SDK-classified errors (auth, rate-limit, content-policy,
+                # 4xx/5xx) never auto-retry; let upstream decide.
+                raise ProviderError(f"PoloAI API error: {exc}") from exc
+            except Exception as exc:  # connection-level failure
+                if not _is_transient_network_error(exc) or attempt == 1:
+                    raise ProviderError(f"PoloAI call failed: {exc}") from exc
+                time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
+        # The loop always returns or raises; this satisfies type checkers.
+        raise ProviderError("PoloAI call failed: retry loop exited unexpectedly")
+
+
+def _is_transient_network_error(exc: Exception) -> bool:
+    msg = f"{type(exc).__name__}: {exc}"
+    return any(p in msg for p in _TRANSIENT_ERROR_SUBSTRINGS)
+
+
+def _sanitize_schema_for_openai(schema: Any) -> Any:
+    """Adapt JSON Schema for OpenAI ``response_format`` consumption.
+
+    Strips top-level metadata keys (``$schema``, ``$id``) recursively. Does
+    NOT add ``additionalProperties: false`` or rewrite ``required[]`` for
+    OpenAI strict mode — that surgery is too invasive without empirical
+    confirmation. Caller flips ``strict_schema=True`` only when their
+    schema is already strict-compatible. The original schema is left
+    intact so the validator layer keeps using the strict version.
+    """
+    if isinstance(schema, dict):
+        return {
+            k: _sanitize_schema_for_openai(v)
+            for k, v in schema.items()
+            if k not in _OPENAI_UNSUPPORTED_KEYWORDS
+        }
+    if isinstance(schema, list):
+        return [_sanitize_schema_for_openai(item) for item in schema]
+    return schema
+
+
+def _augment_system_prompt(
+    system_prompt: str, schema: dict, json_mode: JsonMode
+) -> str:
+    """Defense-in-depth: in non-strict json modes, embed the schema text
+    into the system prompt so the model still has a JSON contract even if
+    the relay silently drops ``response_format``. No-op for json_schema
+    mode (relay handles the contract natively)."""
+    if json_mode == "json_schema":
+        return system_prompt
+    schema_blob = json.dumps(schema, ensure_ascii=False)
+    enforcement = (
+        "\n\nReply with a single JSON object that matches this JSON Schema. "
+        "Do not include markdown code fences, prose, or any other content "
+        f"outside the JSON object.\nSchema:\n{schema_blob}"
+    )
+    return f"{system_prompt}{enforcement}" if system_prompt else enforcement.lstrip()
+
+
+_CODEFENCE_RE = re.compile(
+    r"^\s*```(?:json)?\s*(?P<body>.*?)\s*```\s*$", re.DOTALL | re.IGNORECASE
+)
+
+
+def _strip_json_codefence(text: str) -> str:
+    """Some relays wrap JSON in ```json ... ``` even when ``response_format``
+    is set. Strip the fence if the entire content is exactly one fenced
+    block; leave anything else untouched (json.loads will surface the real
+    error)."""
+    m = _CODEFENCE_RE.match(text)
+    return m.group("body") if m else text
