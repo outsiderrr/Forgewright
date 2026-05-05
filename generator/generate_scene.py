@@ -47,7 +47,7 @@ from typing import Any
 from generator import budget
 from generator.budget import BudgetExceeded
 from generator.context_assembler import SceneGraphContext
-from generator.llm_provider import LLMProvider
+from generator.llm_provider import LLMProvider, ProviderError
 from generator.scene_strategies import (
     SceneGenerationResult,
     SceneSetting,
@@ -104,12 +104,19 @@ class SceneResult:
       * `"mechanical_invalid"`     — assembled graph fails T-2.4
                                      mechanical pre-check on every outer
                                      attempt
+
+    R2.9: `failure_metadata` is only populated when
+    `failure_reason == "provider_error"`. It carries the underlying
+    exception class + HTTP status + redacted body excerpt so batch
+    finders can disambiguate sanitizer-gap / relay-timeout / upstream-
+    quota failure modes from a single jsonl row.
     """
 
     success: bool
     graph: dict | None = None
     failure_reason: str | None = None
     failure_node_id: str | None = None
+    failure_metadata: dict | None = None
     schema_issues: list[str] = field(default_factory=list)
     mechanical_issues: dict[str, list[ValidationIssue]] = field(default_factory=dict)
     inner_results: list[SceneGenerationResult] = field(default_factory=list)
@@ -203,6 +210,7 @@ def generate_scene(
         return SceneResult(
             success=False,
             failure_reason="provider_error",
+            failure_metadata=_metadata_from_unexpected(exc),
             schema_issues=[f"pre_flight_failed: {type(exc).__name__}: {exc}"],
         )
 
@@ -221,6 +229,7 @@ def generate_scene(
         return SceneResult(
             success=False,
             failure_reason="provider_error",
+            failure_metadata=_metadata_from_unexpected(exc),
             schema_issues=[f"context_assembly_failed: {type(exc).__name__}: {exc}"],
         )
 
@@ -261,6 +270,7 @@ def generate_scene(
             return SceneResult(
                 success=False,
                 failure_reason="provider_error",
+                failure_metadata=_metadata_from_unexpected(exc),
                 schema_issues=[f"strategy_exception: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
@@ -275,6 +285,7 @@ def generate_scene(
                 success=False,
                 failure_reason=inner.failure_reason,
                 failure_node_id=inner.failure_node_id,
+                failure_metadata=inner.failure_metadata,
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
             )
@@ -291,6 +302,11 @@ def generate_scene(
             return SceneResult(
                 success=False,
                 failure_reason="provider_error",
+                failure_metadata={
+                    "exception_class": None,
+                    "http_status": None,
+                    "response_body_excerpt": "strategy_returned_success_with_no_graph",
+                },
                 schema_issues=["strategy_returned_success_with_no_graph"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
@@ -365,6 +381,7 @@ def generate_scene(
             return SceneResult(
                 success=False,
                 failure_reason="provider_error",
+                failure_metadata=_metadata_from_unexpected(exc),
                 schema_issues=[f"trace_attach_failed: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
@@ -702,6 +719,24 @@ def _attach_generation_trace(graph: dict, *, provider: LLMProvider) -> dict:
     new_graph = dict(graph)
     new_graph["nodes"] = new_nodes
     return new_graph
+
+
+# ---------------------------------------------------------------------------
+# Failure-metadata helper (R2.9)
+# ---------------------------------------------------------------------------
+
+
+def _metadata_from_unexpected(exc: BaseException) -> dict:
+    """Build the failure_metadata dict for an unexpected (non-ProviderError)
+    exception caught at this layer.
+
+    The strategy / context-assembly / trace-attach paths wrap any
+    exception as ``failure_reason="provider_error"`` to preserve the
+    "never raise" contract. R2.9 still wants the underlying class name
+    in the jsonl so a finder can tell a TypeError from an APIError —
+    `ProviderError.from_exception` does that extraction uniformly.
+    """
+    return ProviderError.from_exception(exc, message=str(exc)).metadata_dict()
 
 
 __all__ = [

@@ -172,6 +172,8 @@ class SkeletonResult:
     success: bool
     skeleton: GraphSkeleton | None = None
     failure_reason: str | None = None  # "skeleton_invalid" | "budget_exceeded" | "provider_error"
+    # R2.9: only populated when failure_reason == "provider_error".
+    failure_metadata: dict | None = None
     attempts: list[AttemptRecord] = field(default_factory=list)
     total_cost_usd: float = 0.0
 
@@ -184,6 +186,8 @@ class FillResult:
     graph: dict | None = None
     failure_reason: str | None = None  # "fill_node_invalid" | "fill_target_out_of_skeleton" | "budget_exceeded" | "provider_error"
     failure_node_id: str | None = None
+    # R2.9: only populated when failure_reason == "provider_error".
+    failure_metadata: dict | None = None
     fill_attempts: dict[str, list[AttemptRecord]] = field(default_factory=dict)
     total_cost_usd: float = 0.0
 
@@ -197,6 +201,8 @@ class SceneGenerationResult:
     skeleton: GraphSkeleton | None = None
     failure_reason: str | None = None  # "skeleton_invalid" | "fill_node_invalid" | "fill_target_out_of_skeleton" | "budget_exceeded" | "provider_error"
     failure_node_id: str | None = None
+    # R2.9: only populated when failure_reason == "provider_error".
+    failure_metadata: dict | None = None
     skeleton_attempts: list[AttemptRecord] = field(default_factory=list)
     fill_attempts: dict[str, list[AttemptRecord]] = field(default_factory=dict)
     total_cost_usd: float = 0.0
@@ -345,6 +351,7 @@ def generate_skeleton(
                 SCENE_SYSTEM_PROMPT, user_prompt, _SKELETON_RESPONSE_SCHEMA
             )
         except ProviderError as exc:
+            failure_metadata = exc.metadata_dict()
             if _is_request_not_sent(exc):
                 budget.refund_estimated(record_id, reason="request_not_sent")
                 attempts.append(
@@ -358,6 +365,7 @@ def generate_skeleton(
                 return SkeletonResult(
                     success=False,
                     failure_reason="provider_error",
+                    failure_metadata=failure_metadata,
                     attempts=attempts,
                     total_cost_usd=total_cost,
                 )
@@ -378,6 +386,7 @@ def generate_skeleton(
             return SkeletonResult(
                 success=False,
                 failure_reason="provider_error",
+                failure_metadata=failure_metadata,
                 attempts=attempts,
                 total_cost_usd=total_cost,
             )
@@ -506,10 +515,14 @@ def fill_skeleton(
                     failure_reason = "fill_target_out_of_skeleton"
                 else:
                     failure_reason = "fill_node_invalid"
+            # R2.9: forward provider_error metadata so the scene-level
+            # envelope can record exception_class / http_status / body
+            # excerpt without reconstructing them from inner_results.
             return FillResult(
                 success=False,
                 failure_reason=failure_reason,
                 failure_node_id=skel_node.node_id,
+                failure_metadata=result.failure_metadata,
                 fill_attempts=fill_attempts,
                 total_cost_usd=total_cost,
             )
@@ -577,6 +590,7 @@ def generate_scene_skeleton_first(
         return SceneGenerationResult(
             success=False,
             failure_reason=skel_res.failure_reason,
+            failure_metadata=skel_res.failure_metadata,
             skeleton_attempts=skel_res.attempts,
             total_cost_usd=skel_res.total_cost_usd,
         )
@@ -613,6 +627,7 @@ def generate_scene_skeleton_first(
         skeleton=skel_res.skeleton,
         failure_reason=fill_res.failure_reason,
         failure_node_id=fill_res.failure_node_id,
+        failure_metadata=fill_res.failure_metadata,
         skeleton_attempts=skel_res.attempts,
         fill_attempts=fill_res.fill_attempts,
         total_cost_usd=skel_res.total_cost_usd + fill_res.total_cost_usd,

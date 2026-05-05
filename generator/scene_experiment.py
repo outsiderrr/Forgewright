@@ -241,6 +241,15 @@ def _serialise_envelope(
     mechanical summaries so review_cli can show them without re-loading
     the validator. On failure those fields are absent.
     """
+    # R2.9: surface failure_metadata only when failure_reason is the
+    # provider_error class so the column has consistent semantics across
+    # rows (a None value means "not a provider failure", not "no data
+    # available"). Other failure classes (schema_invalid /
+    # mechanical_invalid / etc.) already carry their own diagnostic
+    # fields and don't need this layer.
+    failure_metadata = (
+        result.failure_metadata if result.failure_reason == "provider_error" else None
+    )
     env: dict = {
         "iter_id": iter_id,
         "fixture_id": fixture.fixture_id,
@@ -253,6 +262,7 @@ def _serialise_envelope(
             "success": result.success,
             "failure_reason": result.failure_reason,
             "failure_node_id": result.failure_node_id,
+            "failure_metadata": failure_metadata,
             "graph": result.graph,
             "schema_issues": list(result.schema_issues),
             "mechanical_issues_count": sum(

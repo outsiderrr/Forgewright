@@ -992,3 +992,73 @@ def test_r2_6_extra_user_context_is_none_for_t1_6_solo_callers():
     assert "## 前面已生成节点的 narration 摘要" not in block
     assert "## 当前节点位置" not in block
     assert "context bleed-through 防御" not in block
+
+
+# ---------------------------------------------------------------------------
+# R2.9: ProviderError diagnostic metadata propagates through the result chain
+# ---------------------------------------------------------------------------
+
+
+def test_skeleton_phase_provider_error_propagates_failure_metadata():
+    """Skeleton-phase ProviderError must carry exception_class +
+    http_status into SceneGenerationResult.failure_metadata so the
+    scene_experiment envelope can serialise it without reconstructing
+    from inner attempts."""
+    from generator.llm_provider import ProviderError
+
+    class _FakeStatusError(Exception):
+        status_code = 400
+        body = "Invalid JSON: additionalProperties not supported"
+
+    err = ProviderError.from_exception(
+        _FakeStatusError("schema rejected"),
+        message="Gemini API error: schema rejected",
+    )
+    provider = _ScriptedProvider([err])
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+    md = result.failure_metadata
+    assert isinstance(md, dict)
+    assert md["http_status"] == 400
+    assert md["exception_class"].endswith("._FakeStatusError")
+    assert "additionalProperties" in (md["response_body_excerpt"] or "")
+
+
+def test_fill_phase_provider_error_propagates_failure_metadata():
+    """Fill-phase ProviderError flows GenerationResult → FillResult →
+    SceneGenerationResult with metadata intact. Mirrors the
+    baseline_007 fill-stage failure shape (9/15 of those rows)."""
+    from generator.llm_provider import ProviderError
+
+    class _FakeTimeoutError(Exception):
+        pass
+
+    err = ProviderError.from_exception(
+        _FakeTimeoutError("Read timeout: 120s"),
+        message="Gemini call failed: Read timeout",
+    )
+    # Skeleton succeeds, first fill call raises.
+    provider = _ScriptedProvider(
+        [
+            _make_response(copy.deepcopy(_VALID_SKELETON_JSON)),
+            err,
+        ]
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+    )
+    assert result.success is False
+    assert result.failure_reason == "provider_error"
+    md = result.failure_metadata
+    assert isinstance(md, dict)
+    assert md["http_status"] is None  # timeouts have no HTTP status
+    assert md["exception_class"].endswith("._FakeTimeoutError")

@@ -174,9 +174,14 @@ def test_gemini_does_not_retry_non_transient_error(
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
 
-    with pytest.raises(ProviderError):
+    with pytest.raises(ProviderError) as exc_info:
         provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 1  # No retry for non-transient
+    # R2.9: the raised ProviderError must carry diagnostic metadata so
+    # the upstream catch site can populate failure_metadata.
+    md = exc_info.value.metadata_dict()
+    assert md["exception_class"] == "ValueError"
+    assert md["http_status"] is None
 
 
 def test_gemini_raises_after_two_transient_failures(
@@ -200,6 +205,146 @@ def test_gemini_raises_after_two_transient_failures(
     with pytest.raises(ProviderError):
         provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 2  # 1 initial + 1 retry, then give up
+
+
+# ---------------------------------------------------------------------------
+# ProviderError diagnostic metadata (R2.9 — baseline_007 finding b3c0ca3)
+# ---------------------------------------------------------------------------
+#
+# These cover the three failure surfaces baseline_007 conflated under a single
+# `provider_error` reason: SDK-classified status errors (sanitizer-gap shape),
+# httpx-style timeouts (relay-truncation shape), and bare exceptions
+# (programming-bug fallback). The point is one jsonl row per failure should
+# tell a finder which surface fired without a live retry.
+
+
+class _FakeStatusError(Exception):
+    """Stand-in for openai.APIStatusError / genai.errors.ClientError —
+    both expose ``.status_code`` plus a body attribute."""
+
+    def __init__(self, message: str, *, status_code: int, body: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.body = body
+
+
+class _FakeTimeoutError(Exception):
+    """Stand-in for httpx.TimeoutError / openai.APITimeoutError — no
+    HTTP status is exposed because the request never got a response."""
+
+
+def test_provider_error_from_exception_captures_status_error_metadata() -> None:
+    exc = _FakeStatusError(
+        "Bad Request: schema additionalProperties not supported",
+        status_code=400,
+        body='{"error": "Invalid JSON payload received. Unknown name \\"additionalProperties\\""}',
+    )
+    err = ProviderError.from_exception(exc, message="Gemini API error")
+    md = err.metadata_dict()
+    assert md["http_status"] == 400
+    assert md["exception_class"].endswith("._FakeStatusError")
+    assert "additionalProperties" in (md["response_body_excerpt"] or "")
+    # __str__ must stay the original message — existing assertions about
+    # the wrapped error text rely on this.
+    assert str(err) == "Gemini API error"
+
+
+def test_provider_error_from_exception_captures_timeout_metadata() -> None:
+    exc = _FakeTimeoutError("Read timeout: 120s exceeded")
+    err = ProviderError.from_exception(exc, message="Gemini call failed")
+    md = err.metadata_dict()
+    # Timeout → no HTTP status (request never completed).
+    assert md["http_status"] is None
+    assert md["exception_class"].endswith("._FakeTimeoutError")
+    # `.message` attribute fallback supplies the body excerpt for the
+    # generic SDK shape.
+    assert md["response_body_excerpt"] is None or isinstance(
+        md["response_body_excerpt"], str
+    )
+
+
+def test_provider_error_from_exception_handles_plain_exception() -> None:
+    err = ProviderError.from_exception(
+        ValueError("totally generic"), message="Gemini call failed"
+    )
+    md = err.metadata_dict()
+    assert md["exception_class"] == "ValueError"
+    assert md["http_status"] is None
+
+
+def test_provider_error_from_exception_extracts_nested_response_status() -> None:
+    """openai's older APIStatusError shape: status_code lives on
+    `.response.status_code` rather than the exception itself."""
+
+    class _Resp:
+        status_code = 504
+        text = "upstream gateway timed out"
+
+    class _NestedErr(Exception):
+        response = _Resp()
+
+    err = ProviderError.from_exception(_NestedErr("relay 504"), message="x")
+    md = err.metadata_dict()
+    assert md["http_status"] == 504
+    assert "upstream" in (md["response_body_excerpt"] or "")
+
+
+def test_provider_error_from_exception_redacts_credentials_in_body() -> None:
+    """Defense in depth: even though SDK error bodies don't normally
+    include API keys, we mask anything that looks like one before it
+    lands in the jsonl. Single regex; no false-negative cost worth
+    skipping it for."""
+    exc = _FakeStatusError(
+        "auth error",
+        status_code=401,
+        body='{"detail": "missing api_key=sk-secretvalue123 for Bearer xyz789"}',
+    )
+    md = ProviderError.from_exception(exc, message="auth").metadata_dict()
+    body = md["response_body_excerpt"] or ""
+    assert "sk-secretvalue123" not in body
+    assert "xyz789" not in body
+    assert "<redacted>" in body
+
+
+def test_provider_error_from_exception_truncates_long_body() -> None:
+    long_body = "X" * 5000
+    exc = _FakeStatusError("big body", status_code=500, body=long_body)
+    md = ProviderError.from_exception(exc, message="x").metadata_dict()
+    excerpt = md["response_body_excerpt"]
+    assert excerpt is not None
+    # Cap is 500 chars + one ellipsis separator.
+    assert len(excerpt) <= 501
+    assert "…" in excerpt
+
+
+def test_provider_error_backward_compat_no_metadata() -> None:
+    """``raise ProviderError("msg")`` (no kwargs) must keep working —
+    every existing test asserting `pytest.raises(ProviderError)` and
+    `str(exc)` formatting depends on it."""
+    err = ProviderError("nothing fancy")
+    assert err.exception_class is None
+    assert err.http_status is None
+    assert err.response_body_excerpt is None
+    assert err.metadata_dict() == {
+        "exception_class": None,
+        "http_status": None,
+        "response_body_excerpt": None,
+    }
+    assert str(err) == "nothing fancy"
+
+
+def test_provider_error_metadata_dict_is_json_serialisable() -> None:
+    """The dict has to land in scene_results.jsonl unchanged — None /
+    int / str only, no exception objects leaking through."""
+    import json as _json
+
+    err = ProviderError.from_exception(
+        _FakeStatusError("x", status_code=429, body="rate limit"),
+        message="poloai 429",
+    )
+    payload = _json.dumps(err.metadata_dict())
+    assert '"http_status": 429' in payload
+    assert "rate limit" in payload
 
 
 def test_sanitize_strips_unsupported_keywords_recursively() -> None:

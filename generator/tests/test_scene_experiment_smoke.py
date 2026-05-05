@@ -133,9 +133,13 @@ class _ScriptedProvider:
             raise AssertionError(
                 f"scripted provider exhausted at call {self.call_count}"
             )
-        resp = self._script[self._idx]
+        item = self._script[self._idx]
         self._idx += 1
-        return resp
+        # R2.9 metadata test injects a ProviderError as a script item; the
+        # earlier shape only ever returned StructuredResponse rows.
+        if isinstance(item, Exception):
+            raise item
+        return item
 
     def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
         return 0.005
@@ -231,6 +235,55 @@ def test_run_scene_experiment_writes_results_and_views(tmp_path):
         for fname in ("mermaid.mmd", "dot.gv", "ascii.txt"):
             assert (d / fname).exists(), f"missing {fname} in {d}"
             assert (d / fname).read_text(encoding="utf-8").strip()
+
+    # R2.9: success rows must have failure_metadata == None (the column
+    # is reserved for provider_error rows; all other states leave it
+    # absent so a finder grepping the file gets a stable shape).
+    for row in rows:
+        assert row["result"]["failure_metadata"] is None
+
+
+def test_run_scene_experiment_serialises_failure_metadata_on_provider_error(tmp_path):
+    """A scripted ProviderError on the skeleton call must surface in the
+    jsonl envelope as `result.failure_metadata = {exception_class,
+    http_status, response_body_excerpt}`. This is the R2.9 contract that
+    lets baseline_NNN diagnose 三类失败假说 from one row."""
+    from generator.llm_provider import ProviderError
+
+    class _Synth429(Exception):
+        status_code = 429
+        body = '{"error": "rate limit exceeded by upstream relay"}'
+
+    err = ProviderError.from_exception(
+        _Synth429("rate limited"),
+        message="PoloAI API error: rate limited",
+    )
+    provider = _ScriptedProvider([err])
+    batch_dir = scene_experiment.run_scene_experiment(
+        batch_name="r29_metadata_smoke",
+        count=1,
+        provider=provider,
+        out_root=tmp_path,
+        fixtures=[_tiny_fixture()],
+        ontology=_tiny_ontology(),
+        timestamp="20260506T000000Z",
+        progress=False,
+    )
+    rows = [
+        json.loads(r)
+        for r in (batch_dir / "scene_results.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(rows) == 1
+    result = rows[0]["result"]
+    assert result["success"] is False
+    assert result["failure_reason"] == "provider_error"
+    md = result["failure_metadata"]
+    assert isinstance(md, dict)
+    assert md["http_status"] == 429
+    assert md["exception_class"].endswith("._Synth429")
+    assert "rate limit" in md["response_body_excerpt"]
 
 
 # ---------------------------------------------------------------------------
