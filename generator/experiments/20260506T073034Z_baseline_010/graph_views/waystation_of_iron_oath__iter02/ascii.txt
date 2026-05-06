@@ -1,0 +1,45 @@
+entry: vellin_hands_over_letter
+
+┌──────────────────────────┐
+│ vellin_hands_over_letter │
+│ dia · char_vellin        │
+└──────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────────────┐
+│ player_questions_relationship │
+│ dia · char_vellin             │
+└───────────────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ aelwin_calls_outside │
+│ dia · char_aelwin    │
+└──────────────────────┘
+
+  │
+  ▼
+
+╔═════════════════╗  ╔═════════════════╗  ╔══════════════════════╗
+║ end_take_letter ║  ║ end_tear_letter ║  ║ end_ignore_and_leave ║
+║ end · (narr)    ║  ║ end · (narr)    ║  ║ end · (narr)         ║
+╚═════════════════╝  ╚═════════════════╝  ╚══════════════════════╝
+
+edges:
+  vellin_hands_over_letter → player_questions_relationship
+  vellin_hands_over_letter → aelwin_calls_outside
+  vellin_hands_over_letter → aelwin_calls_outside  [cond, unav=disable_with_hint]
+  vellin_hands_over_letter → end_ignore_and_leave
+  player_questions_relationship → aelwin_calls_outside
+  player_questions_relationship → end_take_letter
+  player_questions_relationship → end_tear_letter
+  aelwin_calls_outside → end_take_letter
+  aelwin_calls_outside → end_take_letter  [cond, unav=disable_with_hint]
+  aelwin_calls_outside → end_tear_letter
+  aelwin_calls_outside → end_ignore_and_leave
+
+end nodes: end_tear_letter, end_take_letter, end_ignore_and_leave

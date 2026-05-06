@@ -1,0 +1,55 @@
+entry: arrival_at_waystation
+
+┌───────────────────────┐
+│ arrival_at_waystation │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+┌────────────────────────┐
+│ vellin_secret_revealed │
+│ dia · char_vellin      │
+└────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ corvan_arrives    │
+│ dia · char_corvan │
+└───────────────────┘
+
+  │
+  ▼
+
+┌────────────────────┐
+│ standoff_decisions │
+│ dia · char_corvan  │
+└────────────────────┘
+
+  │
+  ▼
+
+╔════════════════════╗  ╔═════════════════════════════╗  ╔═══════════════╗
+║ end_protect_vellin ║  ║ end_cooperate_investigation ║  ║ end_walk_away ║
+║ end · (narr)       ║  ║ end · (narr)                ║  ║ end · (narr)  ║
+╚════════════════════╝  ╚═════════════════════════════╝  ╚═══════════════╝
+
+edges:
+  arrival_at_waystation → vellin_secret_revealed
+  arrival_at_waystation → vellin_secret_revealed
+  arrival_at_waystation → corvan_arrives
+  vellin_secret_revealed → corvan_arrives
+  vellin_secret_revealed → corvan_arrives
+  vellin_secret_revealed → corvan_arrives
+  corvan_arrives → standoff_decisions
+  corvan_arrives → standoff_decisions
+  corvan_arrives → standoff_decisions
+  standoff_decisions → end_protect_vellin
+  standoff_decisions → end_cooperate_investigation
+  standoff_decisions → end_walk_away
+  standoff_decisions → end_protect_vellin  [cond, unav=disable_with_hint]
+
+end nodes: end_protect_vellin, end_cooperate_investigation, end_walk_away

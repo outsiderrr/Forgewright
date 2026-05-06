@@ -1,0 +1,24 @@
+flowchart TD
+  vellin_hands_over_letter["vellin_hands_over_letter [entry]\ndialogue · char_vellin"]
+  question_relationship_vellin["question_relationship_vellin\ndialogue · char_vellin"]
+  question_motives["question_motives\ndialogue · char_vellin"]
+  aelwin_calls_outside["aelwin_calls_outside\ndialogue · char_aelwin"]
+  end_tear_letter(["end_tear_letter\nend · (narrator)"]):::endNode
+  end_carry_letter_out(["end_carry_letter_out\nend · (narrator)"]):::endNode
+  end_carry_letter_aelwin_ally(["end_carry_letter_aelwin_ally\nend · (narrator)"]):::endNode
+  vellin_hands_over_letter --> question_motives
+  vellin_hands_over_letter -->|cond, unav=disable_with_hint| question_motives
+  vellin_hands_over_letter --> question_relationship_vellin
+  vellin_hands_over_letter --> end_tear_letter
+  question_relationship_vellin --> end_carry_letter_out
+  question_relationship_vellin --> end_tear_letter
+  question_relationship_vellin --> aelwin_calls_outside
+  question_motives --> end_carry_letter_out
+  question_motives --> end_tear_letter
+  question_motives --> aelwin_calls_outside
+  question_motives -->|cond, unav=disable_with_hint| aelwin_calls_outside
+  aelwin_calls_outside --> end_carry_letter_aelwin_ally
+  aelwin_calls_outside -->|cond, unav=disable_with_hint| end_carry_letter_aelwin_ally
+  aelwin_calls_outside --> end_carry_letter_out
+  aelwin_calls_outside --> end_tear_letter
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

@@ -1,0 +1,13 @@
+{
+  "total_attempts": 15,
+  "schema_pass_rate": 0.5333333333333333,
+  "mechanical_pass_rate": 0.5333333333333333,
+  "gross_pass_rate": 0.5333333333333333,
+  "topology_pass_rate": 0.5333333333333333,
+  "sampling_reach_rate": 1.0,
+  "mean_cost_per_attempt": 0.24005,
+  "total_cost_usd": 3.60075,
+  "failure_reason_distribution": {
+    "provider_error": 7
+  }
+}

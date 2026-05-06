@@ -1,0 +1,21 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_hands_over_letter" [label="vellin_hands_over_letter [entry]\\ndialogue · char_vellin"];
+  "player_questions_relationship" [label="player_questions_relationship\\ndialogue · char_vellin"];
+  "aelwin_calls_outside" [label="aelwin_calls_outside\\ndialogue · char_aelwin"];
+  "end_tear_letter" [label="end_tear_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take_letter" [label="end_take_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_ignore_and_leave" [label="end_ignore_and_leave\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_hands_over_letter" -> "player_questions_relationship";
+  "vellin_hands_over_letter" -> "aelwin_calls_outside";
+  "vellin_hands_over_letter" -> "aelwin_calls_outside" [label="cond, unav=disable_with_hint"];
+  "vellin_hands_over_letter" -> "end_ignore_and_leave";
+  "player_questions_relationship" -> "aelwin_calls_outside";
+  "player_questions_relationship" -> "end_take_letter";
+  "player_questions_relationship" -> "end_tear_letter";
+  "aelwin_calls_outside" -> "end_take_letter";
+  "aelwin_calls_outside" -> "end_take_letter" [label="cond, unav=disable_with_hint"];
+  "aelwin_calls_outside" -> "end_tear_letter";
+  "aelwin_calls_outside" -> "end_ignore_and_leave";
+}

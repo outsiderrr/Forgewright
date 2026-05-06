@@ -1,0 +1,24 @@
+flowchart TD
+  entry_greeting["entry_greeting [entry]\ndialogue · char_vellin"]
+  vellin_questioned["vellin_questioned\ndialogue · char_vellin"]
+  corvan_entrance["corvan_entrance\ndialogue · char_corvan"]
+  standoff_tension["standoff_tension\ndialogue · char_corvan"]
+  end_protect_vellin(["end_protect_vellin\nend · (narrator)"]):::endNode
+  end_cooperate_investigation(["end_cooperate_investigation\nend · (narrator)"]):::endNode
+  end_neutral_departure(["end_neutral_departure\nend · (narrator)"]):::endNode
+  entry_greeting --> vellin_questioned
+  entry_greeting -->|cond, unav=disable_with_hint| vellin_questioned
+  entry_greeting --> corvan_entrance
+  entry_greeting --> corvan_entrance
+  vellin_questioned --> corvan_entrance
+  vellin_questioned --> corvan_entrance
+  vellin_questioned -->|cond, unav=disable_with_hint| corvan_entrance
+  corvan_entrance --> standoff_tension
+  corvan_entrance --> standoff_tension
+  corvan_entrance --> standoff_tension
+  corvan_entrance -->|cond, unav=disable_with_hint| standoff_tension
+  standoff_tension --> end_protect_vellin
+  standoff_tension --> end_cooperate_investigation
+  standoff_tension -->|cond, unav=disable_with_hint| end_neutral_departure
+  standoff_tension --> end_neutral_departure
+  classDef endNode fill:#fce4ec,stroke:#ad1457;
