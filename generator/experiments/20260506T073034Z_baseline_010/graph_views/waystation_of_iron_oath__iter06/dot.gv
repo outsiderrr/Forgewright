@@ -1,0 +1,35 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "node_arrival" [label="node_arrival [entry]\\ndialogue · char_vellin"];
+  "node_reception_warm" [label="node_reception_warm\\ndialogue · char_vellin"];
+  "node_reception_cold" [label="node_reception_cold\\ndialogue · char_vellin"];
+  "node_reception_evasive" [label="node_reception_evasive\\ndialogue · char_vellin"];
+  "node_flaw_discovered" [label="node_flaw_discovered\\ndialogue · char_vellin"];
+  "node_push_for_truth" [label="node_push_for_truth\\ndialogue · char_vellin"];
+  "end_complicit" [label="end_complicit\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose" [label="end_expose\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "node_arrival" -> "node_reception_warm";
+  "node_arrival" -> "node_reception_cold";
+  "node_arrival" -> "node_reception_evasive" [label="cond, unav=disable_with_hint"];
+  "node_arrival" -> "node_reception_evasive";
+  "node_reception_warm" -> "node_push_for_truth";
+  "node_reception_warm" -> "node_push_for_truth";
+  "node_reception_warm" -> "node_flaw_discovered";
+  "node_reception_warm" -> "node_flaw_discovered" [label="cond, unav=disable_with_hint"];
+  "node_reception_cold" -> "node_push_for_truth";
+  "node_reception_cold" -> "node_flaw_discovered" [label="cond, unav=disable_with_hint"];
+  "node_reception_cold" -> "node_push_for_truth" [label="cond, unav=disable_with_hint"];
+  "node_reception_cold" -> "node_push_for_truth";
+  "node_reception_evasive" -> "node_flaw_discovered";
+  "node_reception_evasive" -> "node_push_for_truth";
+  "node_reception_evasive" -> "node_push_for_truth" [label="cond, unav=disable_with_hint"];
+  "node_flaw_discovered" -> "end_expose";
+  "node_flaw_discovered" -> "end_complicit";
+  "node_flaw_discovered" -> "node_push_for_truth";
+  "node_flaw_discovered" -> "node_push_for_truth" [label="cond, unav=disable_with_hint"];
+  "node_push_for_truth" -> "end_complicit";
+  "node_push_for_truth" -> "end_expose";
+  "node_push_for_truth" -> "end_complicit";
+  "node_push_for_truth" -> "end_complicit" [label="cond, unav=disable_with_hint"];
+}

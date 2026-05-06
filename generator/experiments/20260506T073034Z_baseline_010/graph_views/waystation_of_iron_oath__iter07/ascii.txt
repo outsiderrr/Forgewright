@@ -1,0 +1,57 @@
+entry: vellin_greeting
+
+┌───────────────────┐
+│ vellin_greeting   │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌────────────────────────┐
+│ vellin_secret_revealed │
+│ dia · char_vellin      │
+└────────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ corvan_enters     │
+│ dia · char_corvan │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ standoff_decision │
+│ dia · char_corvan │
+└───────────────────┘
+
+  │
+  ▼
+
+╔════════════════════╗  ╔══════════════════════╗  ╔═══════════════╗
+║ end_protect_vellin ║  ║ end_cooperate_corvan ║  ║ end_walk_away ║
+║ end · (narr)       ║  ║ end · (narr)         ║  ║ end · (narr)  ║
+╚════════════════════╝  ╚══════════════════════╝  ╚═══════════════╝
+
+edges:
+  vellin_greeting → vellin_secret_revealed
+  vellin_greeting → corvan_enters
+  vellin_greeting → vellin_secret_revealed  [cond, unav=disable_with_hint]
+  vellin_secret_revealed → corvan_enters
+  vellin_secret_revealed → corvan_enters
+  vellin_secret_revealed → corvan_enters
+  vellin_secret_revealed → corvan_enters  [cond, unav=disable_with_hint]
+  corvan_enters → standoff_decision
+  corvan_enters → standoff_decision
+  corvan_enters → standoff_decision
+  corvan_enters → standoff_decision  [cond, unav=disable_with_hint]
+  standoff_decision → end_protect_vellin
+  standoff_decision → end_cooperate_corvan
+  standoff_decision → end_protect_vellin  [cond, unav=disable_with_hint]
+  standoff_decision → end_walk_away
+
+end nodes: end_protect_vellin, end_cooperate_corvan, end_walk_away

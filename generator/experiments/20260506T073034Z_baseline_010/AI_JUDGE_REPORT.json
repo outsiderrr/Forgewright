@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "advisory_authority": "informational_only",
+    "acceptance_source": "scene_review_cli_author_A_R",
+    "adr": "ADR-020 §6",
+    "schema_version": "1"
+  },
+  "pass1_lenient_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter01": {},
+    "waystation_of_iron_oath__iter02": {},
+    "waystation_of_iron_oath__iter04": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter06": {},
+    "waystation_of_iron_oath__iter07": {},
+    "waystation_of_iron_oath__iter14": {}
+  },
+  "pass2_strict_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter01": {},
+    "waystation_of_iron_oath__iter02": {},
+    "waystation_of_iron_oath__iter04": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter06": {},
+    "waystation_of_iron_oath__iter07": {},
+    "waystation_of_iron_oath__iter14": {}
+  },
+  "weakest_dimensions": [],
+  "advisory_recommendation": {
+    "waystation_of_iron_oath__iter00": "accept",
+    "waystation_of_iron_oath__iter01": "accept",
+    "waystation_of_iron_oath__iter02": "accept",
+    "waystation_of_iron_oath__iter04": "accept",
+    "waystation_of_iron_oath__iter05": "accept",
+    "waystation_of_iron_oath__iter06": "accept",
+    "waystation_of_iron_oath__iter07": "marginal",
+    "waystation_of_iron_oath__iter14": "accept"
+  },
+  "rationales": {
+    "waystation_of_iron_oath__iter00": {
+      "strict": "Graph executes the target beats flawlessly with meaningful state divergence, well-woven patrol clock, and strong closure. Topology and naming conventions are fully compliant."
+    },
+    "waystation_of_iron_oath__iter01": {
+      "strict": "Score 20/20. Strong branching topology and perfectly hits all target beats. Decisions have substantial state and narrative consequences. Excellent closure across all endings."
+    },
+    "waystation_of_iron_oath__iter02": {
+      "lenient": "全维表现优异。场景完美对齐目标节拍，拓扑健康无死锁。选项效果差异显著（涉及信任升降与羁绊特质检定），各收束点均提供了明确的戏剧闭环，命名规范统一。"
+    },
+    "waystation_of_iron_oath__iter04": {
+      "strict": "S10_naming dimension scored highest for consistency. Topology is clean, pacing hits all target beats perfectly, decisions offer meaningful consequences, and endings provide strong closure."
+    },
+    "waystation_of_iron_oath__iter05": {
+      "lenient": "Score 20/20. Excellent graph topology, perfect beat alignment, meaningful branch outcomes with state changes, and strong closure. Naming conventions and logic are fully compliant.",
+      "strict": "High quality scene graph. Perfect alignment with target beats, healthy branching topology, meaningful decision consequences, and strong narrative closure for all endings."
+    },
+    "waystation_of_iron_oath__iter06": {
+      "lenient": "Dimensions mapped S1-S10: S1:2, S2:2, S3:2, S4:2, S5:2, S6:2, S7:2, S8:2, S9:2, S10:2. Full compliance."
+    },
+    "waystation_of_iron_oath__iter07": {
+      "strict": "Score manually requested json output. In actuality I should provide the full json object here without internal markdown wrapping. Let me retry with the proper raw json format exactly as required by the instruction constraint."
+    },
+    "waystation_of_iron_oath__iter14": {
+      "lenient": "Graph effectively implements target beats with solid topology, meaningful decision state effects, and clear narrative closure. Clock pressure (patrol) is well woven into dialogue.",
+      "strict": "S5=1 due to slight narration disconnect in end_refuse_involvement (player pockets letter despite refusing). All other dimensions score 2. Excellent pacing and topology."
+    }
+  },
+  "total_cost_usd": 0.782148,
+  "stopped_early": false,
+  "skipped_scenes": []
+}

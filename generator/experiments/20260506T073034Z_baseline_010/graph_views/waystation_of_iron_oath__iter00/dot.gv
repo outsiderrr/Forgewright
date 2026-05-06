@@ -1,0 +1,27 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival" [label="arrival [entry]\\ndialogue · (narrator)"];
+  "vellin_greeting_warm" [label="vellin_greeting_warm\\ndialogue · char_vellin"];
+  "vellin_greeting_cold" [label="vellin_greeting_cold\\ndialogue · char_vellin"];
+  "player_discovers_flaw" [label="player_discovers_flaw\\ndialogue · char_vellin"];
+  "end_complicit" [label="end_complicit\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose" [label="end_expose\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_walk_away" [label="end_walk_away\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival" -> "vellin_greeting_warm";
+  "arrival" -> "vellin_greeting_cold";
+  "arrival" -> "vellin_greeting_cold" [label="cond, unav=disable_with_hint"];
+  "arrival" -> "end_walk_away";
+  "vellin_greeting_warm" -> "player_discovers_flaw";
+  "vellin_greeting_warm" -> "player_discovers_flaw";
+  "vellin_greeting_warm" -> "end_complicit";
+  "vellin_greeting_warm" -> "end_walk_away";
+  "vellin_greeting_cold" -> "player_discovers_flaw";
+  "vellin_greeting_cold" -> "player_discovers_flaw";
+  "vellin_greeting_cold" -> "end_expose" [label="cond, unav=disable_with_hint"];
+  "vellin_greeting_cold" -> "end_walk_away";
+  "player_discovers_flaw" -> "end_expose";
+  "player_discovers_flaw" -> "end_complicit";
+  "player_discovers_flaw" -> "end_walk_away";
+  "player_discovers_flaw" -> "end_complicit" [label="cond, unav=disable_with_hint"];
+}

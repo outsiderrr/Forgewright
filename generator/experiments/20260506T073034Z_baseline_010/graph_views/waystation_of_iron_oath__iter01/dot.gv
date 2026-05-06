@@ -1,0 +1,26 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "entry_greeting" [label="entry_greeting [entry]\\ndialogue · char_vellin"];
+  "vellin_questioned" [label="vellin_questioned\\ndialogue · char_vellin"];
+  "corvan_entrance" [label="corvan_entrance\\ndialogue · char_corvan"];
+  "standoff_tension" [label="standoff_tension\\ndialogue · char_corvan"];
+  "end_protect_vellin" [label="end_protect_vellin\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_cooperate_investigation" [label="end_cooperate_investigation\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_neutral_departure" [label="end_neutral_departure\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "entry_greeting" -> "vellin_questioned";
+  "entry_greeting" -> "vellin_questioned" [label="cond, unav=disable_with_hint"];
+  "entry_greeting" -> "corvan_entrance";
+  "entry_greeting" -> "corvan_entrance";
+  "vellin_questioned" -> "corvan_entrance";
+  "vellin_questioned" -> "corvan_entrance";
+  "vellin_questioned" -> "corvan_entrance" [label="cond, unav=disable_with_hint"];
+  "corvan_entrance" -> "standoff_tension";
+  "corvan_entrance" -> "standoff_tension";
+  "corvan_entrance" -> "standoff_tension";
+  "corvan_entrance" -> "standoff_tension" [label="cond, unav=disable_with_hint"];
+  "standoff_tension" -> "end_protect_vellin";
+  "standoff_tension" -> "end_cooperate_investigation";
+  "standoff_tension" -> "end_neutral_departure" [label="cond, unav=disable_with_hint"];
+  "standoff_tension" -> "end_neutral_departure";
+}

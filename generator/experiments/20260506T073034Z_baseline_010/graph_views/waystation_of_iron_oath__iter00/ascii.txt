@@ -1,0 +1,50 @@
+entry: arrival
+
+┌──────────────┐
+│ arrival      │
+│ dia · (narr) │
+└──────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐  ┌──────────────────────┐
+│ vellin_greeting_warm │  │ vellin_greeting_cold │
+│ dia · char_vellin    │  │ dia · char_vellin    │
+└──────────────────────┘  └──────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐
+│ player_discovers_flaw │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔═══════════════╗  ╔═══════════════╗
+║ end_expose   ║  ║ end_complicit ║  ║ end_walk_away ║
+║ end · (narr) ║  ║ end · (narr)  ║  ║ end · (narr)  ║
+╚══════════════╝  ╚═══════════════╝  ╚═══════════════╝
+
+edges:
+  arrival → vellin_greeting_warm
+  arrival → vellin_greeting_cold
+  arrival → vellin_greeting_cold  [cond, unav=disable_with_hint]
+  arrival → end_walk_away
+  vellin_greeting_warm → player_discovers_flaw
+  vellin_greeting_warm → player_discovers_flaw
+  vellin_greeting_warm → end_complicit
+  vellin_greeting_warm → end_walk_away
+  vellin_greeting_cold → player_discovers_flaw
+  vellin_greeting_cold → player_discovers_flaw
+  vellin_greeting_cold → end_expose  [cond, unav=disable_with_hint]
+  vellin_greeting_cold → end_walk_away
+  player_discovers_flaw → end_expose
+  player_discovers_flaw → end_complicit
+  player_discovers_flaw → end_walk_away
+  player_discovers_flaw → end_complicit  [cond, unav=disable_with_hint]
+
+end nodes: end_complicit, end_expose, end_walk_away

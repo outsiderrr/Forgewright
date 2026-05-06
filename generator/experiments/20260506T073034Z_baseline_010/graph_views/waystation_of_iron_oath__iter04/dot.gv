@@ -1,0 +1,24 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival_at_waystation" [label="arrival_at_waystation [entry]\\ndialogue · char_vellin"];
+  "vellin_secret_revealed" [label="vellin_secret_revealed\\ndialogue · char_vellin"];
+  "corvan_arrives" [label="corvan_arrives\\ndialogue · char_corvan"];
+  "standoff_decisions" [label="standoff_decisions\\ndialogue · char_corvan"];
+  "end_protect_vellin" [label="end_protect_vellin\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_cooperate_investigation" [label="end_cooperate_investigation\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_walk_away" [label="end_walk_away\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival_at_waystation" -> "vellin_secret_revealed";
+  "arrival_at_waystation" -> "vellin_secret_revealed";
+  "arrival_at_waystation" -> "corvan_arrives";
+  "vellin_secret_revealed" -> "corvan_arrives";
+  "vellin_secret_revealed" -> "corvan_arrives";
+  "vellin_secret_revealed" -> "corvan_arrives";
+  "corvan_arrives" -> "standoff_decisions";
+  "corvan_arrives" -> "standoff_decisions";
+  "corvan_arrives" -> "standoff_decisions";
+  "standoff_decisions" -> "end_protect_vellin";
+  "standoff_decisions" -> "end_cooperate_investigation";
+  "standoff_decisions" -> "end_walk_away";
+  "standoff_decisions" -> "end_protect_vellin" [label="cond, unav=disable_with_hint"];
+}
