@@ -1,0 +1,58 @@
+entry: vellin_greets
+
+┌───────────────────┐
+│ vellin_greets     │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ vellin_probed     │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ corvan_enters     │
+│ dia · char_corvan │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌───────────────────┐
+│ standoff_calm     │  │ standoff_tense    │
+│ dia · char_vellin │  │ dia · char_corvan │
+└───────────────────┘  └───────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔══════════════╗  ╔═══════════════╗
+║ end_protect  ║  ║ end_bond     ║  ║ end_cooperate ║
+║ end · (narr) ║  ║ end · (narr) ║  ║ end · (narr)  ║
+╚══════════════╝  ╚══════════════╝  ╚═══════════════╝
+
+edges:
+  vellin_greets → vellin_probed
+  vellin_greets → corvan_enters
+  vellin_greets → vellin_probed  [cond, unav=disable_with_hint]
+  vellin_probed → corvan_enters
+  vellin_probed → corvan_enters
+  vellin_probed → corvan_enters
+  corvan_enters → standoff_calm
+  corvan_enters → standoff_tense
+  corvan_enters → standoff_tense  [cond, unav=disable_with_hint]
+  standoff_calm → end_protect
+  standoff_calm → end_bond  [cond, unav=disable_with_hint]
+  standoff_calm → end_cooperate
+  standoff_calm → end_cooperate  [cond]
+  standoff_tense → end_protect
+  standoff_tense → end_bond  [cond, unav=disable_with_hint]
+  standoff_tense → end_cooperate
+
+end nodes: end_protect, end_bond, end_cooperate

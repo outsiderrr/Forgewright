@@ -1,0 +1,20 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_reception" [label="vellin_reception [entry]\\ndialogue · char_vellin"];
+  "corvan_arrives" [label="corvan_arrives\\ndialogue · char_corvan"];
+  "standoff_decision" [label="standoff_decision\\ndialogue · char_corvan"];
+  "end_protect" [label="end_protect\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_cooperate" [label="end_cooperate\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_neutral" [label="end_neutral\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_reception" -> "corvan_arrives";
+  "vellin_reception" -> "corvan_arrives";
+  "vellin_reception" -> "corvan_arrives" [label="cond, unav=disable_with_hint"];
+  "corvan_arrives" -> "standoff_decision";
+  "corvan_arrives" -> "standoff_decision";
+  "corvan_arrives" -> "standoff_decision" [label="cond, unav=disable_with_hint"];
+  "standoff_decision" -> "end_protect";
+  "standoff_decision" -> "end_cooperate";
+  "standoff_decision" -> "end_neutral";
+  "standoff_decision" -> "end_protect" [label="cond, unav=disable_with_hint"];
+}

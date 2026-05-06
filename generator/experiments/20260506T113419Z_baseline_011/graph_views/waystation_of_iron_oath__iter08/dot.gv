@@ -1,0 +1,24 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "handover_letter" [label="handover_letter [entry]\\ndialogue · char_vellin"];
+  "ask_relationship" [label="ask_relationship\\ndialogue · char_vellin"];
+  "ask_aelwin_motive" [label="ask_aelwin_motive\\ndialogue · char_vellin"];
+  "aelwin_shouts" [label="aelwin_shouts\\ndialogue · char_aelwin"];
+  "end_tear_letter" [label="end_tear_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take_letter_ally" [label="end_take_letter_ally\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take_letter_report" [label="end_take_letter_report\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "handover_letter" -> "ask_aelwin_motive";
+  "handover_letter" -> "ask_relationship";
+  "handover_letter" -> "aelwin_shouts";
+  "handover_letter" -> "ask_relationship" [label="cond, unav=disable_with_hint"];
+  "ask_relationship" -> "end_take_letter_ally";
+  "ask_relationship" -> "end_tear_letter";
+  "ask_relationship" -> "aelwin_shouts";
+  "ask_aelwin_motive" -> "aelwin_shouts";
+  "ask_aelwin_motive" -> "end_tear_letter";
+  "ask_aelwin_motive" -> "end_take_letter_report";
+  "aelwin_shouts" -> "end_take_letter_ally";
+  "aelwin_shouts" -> "end_tear_letter";
+  "aelwin_shouts" -> "end_take_letter_report";
+}

@@ -1,0 +1,55 @@
+entry: arrival
+
+┌───────────────────┐
+│ arrival           │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌───────────────────┐  ┌───────────────────┐
+│ reception_casual  │  │ reception_stare   │  │ reception_press   │
+│ dia · char_vellin │  │ dia · char_vellin │  │ dia · char_vellin │
+└───────────────────┘  └───────────────────┘  └───────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐  ┌─────────────────────┐  ┌───────────────────────┐
+│ discover_flaw_letter │  │ discover_flaw_blood │  │ discover_flaw_silence │
+│ dia · char_vellin    │  │ dia · char_vellin   │  │ dia · char_vellin     │
+└──────────────────────┘  └─────────────────────┘  └───────────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔═══════════════════╗  ╔════════════════════╗
+║ end_cover_up ║  ║ end_expose_direct ║  ║ end_expose_violent ║
+║ end · (narr) ║  ║ end · (narr)      ║  ║ end · (narr)       ║
+╚══════════════╝  ╚═══════════════════╝  ╚════════════════════╝
+
+edges:
+  arrival → reception_casual
+  arrival → reception_stare
+  arrival → reception_press
+  reception_casual → discover_flaw_letter  [cond, unav=disable_with_hint]
+  reception_casual → discover_flaw_blood
+  reception_casual → discover_flaw_silence
+  reception_stare → discover_flaw_letter
+  reception_stare → discover_flaw_blood  [cond, unav=disable_with_hint]
+  reception_stare → discover_flaw_silence
+  reception_press → discover_flaw_letter  [cond, unav=disable_with_hint]
+  reception_press → discover_flaw_blood
+  reception_press → discover_flaw_silence
+  discover_flaw_letter → end_expose_direct
+  discover_flaw_letter → end_expose_violent
+  discover_flaw_letter → end_cover_up
+  discover_flaw_blood → end_cover_up
+  discover_flaw_blood → end_expose_direct
+  discover_flaw_blood → end_expose_violent
+  discover_flaw_silence → end_cover_up
+  discover_flaw_silence → end_expose_direct
+  discover_flaw_silence → end_expose_violent
+
+end nodes: end_cover_up, end_expose_direct, end_expose_violent

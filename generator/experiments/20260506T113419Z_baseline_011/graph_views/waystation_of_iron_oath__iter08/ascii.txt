@@ -1,0 +1,47 @@
+entry: handover_letter
+
+┌───────────────────┐
+│ handover_letter   │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌───────────────────┐
+│ ask_aelwin_motive │  │ ask_relationship  │
+│ dia · char_vellin │  │ dia · char_vellin │
+└───────────────────┘  └───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ aelwin_shouts     │
+│ dia · char_aelwin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔══════════════════════╗  ╔═════════════════╗  ╔════════════════════════╗
+║ end_take_letter_ally ║  ║ end_tear_letter ║  ║ end_take_letter_report ║
+║ end · (narr)         ║  ║ end · (narr)    ║  ║ end · (narr)           ║
+╚══════════════════════╝  ╚═════════════════╝  ╚════════════════════════╝
+
+edges:
+  handover_letter → ask_aelwin_motive
+  handover_letter → ask_relationship
+  handover_letter → aelwin_shouts
+  handover_letter → ask_relationship  [cond, unav=disable_with_hint]
+  ask_relationship → end_take_letter_ally
+  ask_relationship → end_tear_letter
+  ask_relationship → aelwin_shouts
+  ask_aelwin_motive → aelwin_shouts
+  ask_aelwin_motive → end_tear_letter
+  ask_aelwin_motive → end_take_letter_report
+  aelwin_shouts → end_take_letter_ally
+  aelwin_shouts → end_tear_letter
+  aelwin_shouts → end_take_letter_report
+
+end nodes: end_tear_letter, end_take_letter_ally, end_take_letter_report

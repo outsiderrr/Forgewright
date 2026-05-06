@@ -1,0 +1,49 @@
+entry: n1_handover
+
+┌───────────────────┐
+│ n1_handover       │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌───────────────────┐
+│ n2_relation       │  │ n2_motive         │
+│ dia · char_vellin │  │ dia · char_vellin │
+└───────────────────┘  └───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ n3_window         │
+│ dia · char_aelwin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔══════════════╗  ╔══════════════╗
+║ end_ignore   ║  ║ end_take     ║  ║ end_tear     ║
+║ end · (narr) ║  ║ end · (narr) ║  ║ end · (narr) ║
+╚══════════════╝  ╚══════════════╝  ╚══════════════╝
+
+edges:
+  n1_handover → n2_relation
+  n1_handover → n2_motive
+  n1_handover → n3_window
+  n2_relation → n3_window
+  n2_relation → n3_window
+  n2_relation → end_tear
+  n2_relation → end_take
+  n2_motive → n3_window
+  n2_motive → n3_window
+  n2_motive → end_take
+  n2_motive → end_tear
+  n3_window → end_ignore
+  n3_window → end_take
+  n3_window → end_tear
+  n3_window → end_take  [cond, unav=disable_with_hint]
+
+end nodes: end_tear, end_take, end_ignore

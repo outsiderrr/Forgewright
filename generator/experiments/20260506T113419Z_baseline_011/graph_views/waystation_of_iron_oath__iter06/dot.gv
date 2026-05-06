@@ -1,0 +1,29 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival" [label="arrival [entry]\\ndialogue · char_vellin"];
+  "vellin_reception" [label="vellin_reception\\ndialogue · char_vellin"];
+  "vellin_evasion" [label="vellin_evasion\\ndialogue · char_vellin"];
+  "player_investigates" [label="player_investigates\\ndialogue · char_vellin"];
+  "player_pushes_further" [label="player_pushes_further\\ndialogue · char_vellin"];
+  "end_complicit" [label="end_complicit\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_confrontation" [label="end_confrontation\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_walk_away" [label="end_walk_away\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival" -> "vellin_reception";
+  "arrival" -> "player_investigates";
+  "arrival" -> "vellin_evasion";
+  "vellin_reception" -> "player_pushes_further";
+  "vellin_reception" -> "player_investigates" [label="cond, unav=disable_with_hint"];
+  "vellin_reception" -> "end_walk_away";
+  "vellin_evasion" -> "player_pushes_further";
+  "vellin_evasion" -> "player_investigates";
+  "vellin_evasion" -> "end_walk_away";
+  "player_investigates" -> "player_pushes_further";
+  "player_investigates" -> "player_pushes_further";
+  "player_investigates" -> "end_complicit";
+  "player_investigates" -> "end_confrontation";
+  "player_pushes_further" -> "end_confrontation";
+  "player_pushes_further" -> "end_complicit";
+  "player_pushes_further" -> "end_walk_away";
+  "player_pushes_further" -> "end_confrontation" [label="cond, unav=disable_with_hint"];
+}

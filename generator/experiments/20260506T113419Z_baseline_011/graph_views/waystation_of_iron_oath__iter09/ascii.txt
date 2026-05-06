@@ -1,0 +1,44 @@
+entry: arrival
+
+┌───────────────────┐
+│ arrival           │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ vellin_reception  │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ player_finds_flaw │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔══════════════╗
+║ end_expose   ║  ║ end_conspire ║
+║ end · (narr) ║  ║ end · (narr) ║
+╚══════════════╝  ╚══════════════╝
+
+edges:
+  arrival → vellin_reception
+  arrival → vellin_reception
+  arrival → vellin_reception
+  vellin_reception → player_finds_flaw
+  vellin_reception → player_finds_flaw
+  vellin_reception → player_finds_flaw  [cond, unav=disable_with_hint]
+  player_finds_flaw → end_expose
+  player_finds_flaw → end_conspire
+  player_finds_flaw → end_expose
+  player_finds_flaw → end_conspire  [cond, unav=disable_with_hint]
+
+end nodes: end_conspire, end_expose

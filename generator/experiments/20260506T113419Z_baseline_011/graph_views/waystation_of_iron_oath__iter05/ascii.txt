@@ -1,0 +1,46 @@
+entry: vellin_hands_over_letter
+
+┌──────────────────────────┐
+│ vellin_hands_over_letter │
+│ dia · char_vellin        │
+└──────────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────────┐  ┌────────────────────────┐
+│ question_vellin_relation │  │ question_aelwin_motive │
+│ dia · char_vellin        │  │ dia · char_vellin      │
+└──────────────────────────┘  └────────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ aelwin_calls_outside │
+│ dia · char_aelwin    │
+└──────────────────────┘
+
+  │
+  ▼
+
+╔══════════════════════╗  ╔════════════════════════╗  ╔═════════════════╗
+║ end_carry_letter_out ║  ║ end_reject_involvement ║  ║ end_tear_letter ║
+║ end · (narr)         ║  ║ end · (narr)           ║  ║ end · (narr)    ║
+╚══════════════════════╝  ╚════════════════════════╝  ╚═════════════════╝
+
+edges:
+  vellin_hands_over_letter → question_vellin_relation
+  vellin_hands_over_letter → question_aelwin_motive
+  vellin_hands_over_letter → end_reject_involvement
+  question_vellin_relation → end_carry_letter_out
+  question_vellin_relation → end_tear_letter
+  question_vellin_relation → aelwin_calls_outside
+  question_aelwin_motive → end_carry_letter_out
+  question_aelwin_motive → aelwin_calls_outside
+  question_aelwin_motive → end_tear_letter
+  aelwin_calls_outside → end_carry_letter_out
+  aelwin_calls_outside → end_reject_involvement
+  aelwin_calls_outside → end_tear_letter
+
+end nodes: end_tear_letter, end_carry_letter_out, end_reject_involvement

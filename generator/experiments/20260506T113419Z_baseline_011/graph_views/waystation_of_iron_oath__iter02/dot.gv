@@ -1,0 +1,26 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "n1_handover" [label="n1_handover [entry]\\ndialogue · char_vellin"];
+  "n2_relation" [label="n2_relation\\ndialogue · char_vellin"];
+  "n2_motive" [label="n2_motive\\ndialogue · char_vellin"];
+  "n3_window" [label="n3_window\\ndialogue · char_aelwin"];
+  "end_tear" [label="end_tear\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_take" [label="end_take\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_ignore" [label="end_ignore\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "n1_handover" -> "n2_relation";
+  "n1_handover" -> "n2_motive";
+  "n1_handover" -> "n3_window";
+  "n2_relation" -> "n3_window";
+  "n2_relation" -> "n3_window";
+  "n2_relation" -> "end_tear";
+  "n2_relation" -> "end_take";
+  "n2_motive" -> "n3_window";
+  "n2_motive" -> "n3_window";
+  "n2_motive" -> "end_take";
+  "n2_motive" -> "end_tear";
+  "n3_window" -> "end_ignore";
+  "n3_window" -> "end_take";
+  "n3_window" -> "end_tear";
+  "n3_window" -> "end_take" [label="cond, unav=disable_with_hint"];
+}

@@ -1,0 +1,55 @@
+entry: n1_vellin_greeting
+
+┌────────────────────┐
+│ n1_vellin_greeting │
+│ dia · char_vellin  │
+└────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ n2_vellin_secret  │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ n3_corvan_interrupts │
+│ dia · char_corvan    │
+└──────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐
+│ n4_standoff_pressure │
+│ dia · char_corvan    │
+└──────────────────────┘
+
+  │
+  ▼
+
+╔══════════════════════╗  ╔═════════════════════╗  ╔══════════════════╗
+║ n5_end_protect_force ║  ║ n6_end_protect_past ║  ║ n7_end_cooperate ║
+║ end · (narr)         ║  ║ end · (narr)        ║  ║ end · (narr)     ║
+╚══════════════════════╝  ╚═════════════════════╝  ╚══════════════════╝
+
+edges:
+  n1_vellin_greeting → n2_vellin_secret
+  n1_vellin_greeting → n3_corvan_interrupts
+  n1_vellin_greeting → n3_corvan_interrupts
+  n2_vellin_secret → n3_corvan_interrupts
+  n2_vellin_secret → n3_corvan_interrupts
+  n2_vellin_secret → n3_corvan_interrupts  [cond, unav=disable_with_hint]
+  n3_corvan_interrupts → n4_standoff_pressure
+  n3_corvan_interrupts → n4_standoff_pressure
+  n3_corvan_interrupts → n4_standoff_pressure
+  n4_standoff_pressure → n5_end_protect_force
+  n4_standoff_pressure → n6_end_protect_past  [cond, unav=disable_with_hint]
+  n4_standoff_pressure → n7_end_cooperate
+  n4_standoff_pressure → n7_end_cooperate
+
+end nodes: n5_end_protect_force, n6_end_protect_past, n7_end_cooperate

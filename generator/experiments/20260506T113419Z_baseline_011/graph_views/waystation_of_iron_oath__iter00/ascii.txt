@@ -1,0 +1,47 @@
+entry: node_arrival
+
+┌──────────────┐
+│ node_arrival │
+│ dia · (narr) │
+└──────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐  ┌───────────────────────────┐
+│ node_reception_normal │  │ node_reception_suspicious │
+│ dia · char_vellin     │  │ dia · char_vellin         │
+└───────────────────────┘  └───────────────────────────┘
+
+  │
+  ▼
+
+╔═══════════════╗  ┌───────────────────┐
+║ end_walk_away ║  │ node_find_flaw    │
+║ end · (narr)  ║  │ dia · char_vellin │
+╚═══════════════╝  └───────────────────┘
+
+  │
+  ▼
+
+╔══════════════╗  ╔═══════════════╗
+║ end_expose   ║  ║ end_complicit ║
+║ end · (narr) ║  ║ end · (narr)  ║
+╚══════════════╝  ╚═══════════════╝
+
+edges:
+  node_arrival → node_reception_normal
+  node_arrival → node_reception_suspicious
+  node_arrival → node_reception_normal
+  node_reception_normal → node_find_flaw
+  node_reception_normal → node_find_flaw
+  node_reception_normal → end_walk_away
+  node_reception_suspicious → node_find_flaw
+  node_reception_suspicious → node_find_flaw
+  node_reception_suspicious → node_find_flaw  [cond, unav=disable_with_hint]
+  node_find_flaw → end_expose
+  node_find_flaw → end_complicit  [cond, unav=disable_with_hint]
+  node_find_flaw → end_complicit
+  node_find_flaw → end_expose
+
+end nodes: end_complicit, end_expose, end_walk_away

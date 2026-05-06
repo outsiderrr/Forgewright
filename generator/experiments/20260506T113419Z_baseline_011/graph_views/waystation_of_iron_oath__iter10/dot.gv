@@ -1,0 +1,37 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival_at_waystation" [label="arrival_at_waystation [entry]\\ndialogue · char_vellin"];
+  "corvan_enters_calm" [label="corvan_enters_calm\\ndialogue · char_corvan"];
+  "corvan_enters_suspicious" [label="corvan_enters_suspicious\\ndialogue · char_corvan"];
+  "corvan_enters_hostile" [label="corvan_enters_hostile\\ndialogue · char_corvan"];
+  "standoff_protect" [label="standoff_protect\\ndialogue · char_vellin"];
+  "standoff_neutral" [label="standoff_neutral\\ndialogue · char_corvan"];
+  "standoff_cooperate" [label="standoff_cooperate\\ndialogue · char_vellin"];
+  "end_protect_vellin" [label="end_protect_vellin\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_cooperate_investigation" [label="end_cooperate_investigation\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_compromise" [label="end_compromise\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival_at_waystation" -> "corvan_enters_suspicious";
+  "arrival_at_waystation" -> "corvan_enters_calm";
+  "arrival_at_waystation" -> "corvan_enters_calm";
+  "arrival_at_waystation" -> "corvan_enters_hostile";
+  "corvan_enters_calm" -> "standoff_protect";
+  "corvan_enters_calm" -> "standoff_neutral";
+  "corvan_enters_calm" -> "standoff_cooperate";
+  "corvan_enters_suspicious" -> "standoff_protect";
+  "corvan_enters_suspicious" -> "standoff_neutral";
+  "corvan_enters_suspicious" -> "standoff_cooperate";
+  "corvan_enters_hostile" -> "standoff_protect";
+  "corvan_enters_hostile" -> "standoff_neutral" [label="cond, unav=disable_with_hint"];
+  "corvan_enters_hostile" -> "standoff_cooperate";
+  "corvan_enters_hostile" -> "standoff_neutral";
+  "standoff_protect" -> "end_protect_vellin";
+  "standoff_protect" -> "end_cooperate_investigation";
+  "standoff_protect" -> "end_compromise" [label="cond, unav=disable_with_hint"];
+  "standoff_neutral" -> "end_protect_vellin";
+  "standoff_neutral" -> "end_cooperate_investigation";
+  "standoff_neutral" -> "end_compromise" [label="cond, unav=disable_with_hint"];
+  "standoff_cooperate" -> "end_protect_vellin";
+  "standoff_cooperate" -> "end_cooperate_investigation";
+  "standoff_cooperate" -> "end_compromise" [label="cond, unav=disable_with_hint"];
+}

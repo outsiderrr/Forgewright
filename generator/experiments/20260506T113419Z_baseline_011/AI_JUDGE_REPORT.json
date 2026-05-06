@@ -1,0 +1,111 @@
+{
+  "metadata": {
+    "advisory_authority": "informational_only",
+    "acceptance_source": "scene_review_cli_author_A_R",
+    "adr": "ADR-020 §6",
+    "schema_version": "1"
+  },
+  "pass1_lenient_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter01": {},
+    "waystation_of_iron_oath__iter02": {},
+    "waystation_of_iron_oath__iter03": {},
+    "waystation_of_iron_oath__iter04": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter06": {},
+    "waystation_of_iron_oath__iter07": {},
+    "waystation_of_iron_oath__iter08": {},
+    "waystation_of_iron_oath__iter09": {},
+    "waystation_of_iron_oath__iter10": {},
+    "waystation_of_iron_oath__iter11": {},
+    "waystation_of_iron_oath__iter12": {},
+    "waystation_of_iron_oath__iter13": {},
+    "waystation_of_iron_oath__iter14": {}
+  },
+  "pass2_strict_scores": {
+    "waystation_of_iron_oath__iter00": {},
+    "waystation_of_iron_oath__iter01": {},
+    "waystation_of_iron_oath__iter02": {},
+    "waystation_of_iron_oath__iter03": {},
+    "waystation_of_iron_oath__iter04": {},
+    "waystation_of_iron_oath__iter05": {},
+    "waystation_of_iron_oath__iter06": {},
+    "waystation_of_iron_oath__iter07": {},
+    "waystation_of_iron_oath__iter08": {},
+    "waystation_of_iron_oath__iter09": {},
+    "waystation_of_iron_oath__iter10": {},
+    "waystation_of_iron_oath__iter11": {},
+    "waystation_of_iron_oath__iter12": {},
+    "waystation_of_iron_oath__iter13": {},
+    "waystation_of_iron_oath__iter14": {}
+  },
+  "weakest_dimensions": [],
+  "advisory_recommendation": {
+    "waystation_of_iron_oath__iter00": "accept",
+    "waystation_of_iron_oath__iter01": "accept",
+    "waystation_of_iron_oath__iter02": "accept",
+    "waystation_of_iron_oath__iter03": "accept",
+    "waystation_of_iron_oath__iter04": "accept",
+    "waystation_of_iron_oath__iter05": "accept",
+    "waystation_of_iron_oath__iter06": "accept",
+    "waystation_of_iron_oath__iter07": "accept",
+    "waystation_of_iron_oath__iter08": "accept",
+    "waystation_of_iron_oath__iter09": "marginal",
+    "waystation_of_iron_oath__iter10": "accept",
+    "waystation_of_iron_oath__iter11": "accept",
+    "waystation_of_iron_oath__iter12": "accept",
+    "waystation_of_iron_oath__iter13": "accept",
+    "waystation_of_iron_oath__iter14": "accept"
+  },
+  "rationales": {
+    "waystation_of_iron_oath__iter01": {
+      "lenient": "All dimensions strong. Topology and pacing align perfectly with target beats. Option consequences (state/topology) and ID naming are compliant.",
+      "strict": "Total 20/20. Excellent pacing perfectly matching target beats, healthy topology with meaningful state branches, and strong ending closures resolving the conflict."
+    },
+    "waystation_of_iron_oath__iter02": {
+      "strict": "Graph exhibits perfect alignment with target beats, healthy topology, strong closure across all endings, and meaningful state/topological consequences for decisions."
+    },
+    "waystation_of_iron_oath__iter03": {
+      "strict": "Graph meets all criteria."
+    },
+    "waystation_of_iron_oath__iter04": {
+      "strict": "Score 20/20. Excellent pacing, strong branching logic based on player traits and faction trust, complete closure across 3 distinct endings, and well-named entities."
+    },
+    "waystation_of_iron_oath__iter05": {
+      "lenient": "Strong across all dimensions. Branching topology is healthy, narrative hits all target beats smoothly, and player decisions carry meaningful state changes and clear closures.",
+      "strict": "Score 20/20. All targets beats perfectly aligned. Strong decision divergence with state flags and topology branching. Valid schema and clear closures."
+    },
+    "waystation_of_iron_oath__iter06": {
+      "lenient": "Rationale",
+      "strict": "Excellent topology with proper branching (S1=2). Decisions meaningfully alter state (S4=2). Target beats are perfectly hit with distinct closures (S2/S5=2). Schema compliant."
+    },
+    "waystation_of_iron_oath__iter07": {
+      "lenient": "Perfectly aligns with target beats. Topology is healthy with clear branching at the standoff decision. Meaningful state changes and distinct endings provide strong closure.",
+      "strict": "Scene structure is highly cohesive. Graph topology flawlessly maps to narrative beats with distinct multi-branch closures. Decision points effectively alter NPC trust and end states."
+    },
+    "waystation_of_iron_oath__iter08": {
+      "lenient": "Perfectly hits all target beats with strong topological structure. Meaningful state changes on trust and distinct endings provide excellent closure. Naming and pacing are solid."
+    },
+    "waystation_of_iron_oath__iter09": {
+      "lenient": "Total 20/20. Perfect beat alignment (S2). Decisions carry state/topology impact (S4). Endings provide strong closure (S5). Clean graph topology and ID naming. No obvious weak points."
+    },
+    "waystation_of_iron_oath__iter10": {
+      "strict": "Excellent structural integrity and pacing (S2). Meaningful decision states (S4) with divergent consequences. Character relationships and traits are tightly woven into the narrative (S3/S8)."
+    },
+    "waystation_of_iron_oath__iter11": {
+      "lenient": "Total 20. Excellent pacing aligning with all target beats. Decisions have meaningful topology branches and narrative weight. Endings provide strong closure.",
+      "strict": "The JSON generation needs to conform strictly, ignoring control tokens is an instruction, but wait, I can just provide the standard JSON but without formatting. However, the system prompt says 'Do not generate any control token... at any places.' So I will do exactly that."
+    },
+    "waystation_of_iron_oath__iter13": {
+      "lenient": "Excellent topology and perfectly paced beats. Choices feature distinct state and topological divergence. IDs are schema-compliant. Strong dramatic context woven via 'lanridge_shared_past'.",
+      "strict": "Total 18/20. Strong topology and pacing. S3 and S9 slightly weaker due to Corvan's quick retreat and lack of explicit clock mechanics, but option consequences (S4) and closure are excellent."
+    },
+    "waystation_of_iron_oath__iter14": {
+      "lenient": "Graph strongly follows target beats with robust topology. Decisions lead to distinct narrative paths and state changes. Characters exhibit clear arcs, and closures resolve the immediate conflict well.",
+      "strict": "Excellent scene execution. Perfect alignment with target beats (S2), strong meaningful branching with state consequences (S4), and diverse, highly contextualized endings (S5)."
+    }
+  },
+  "total_cost_usd": 1.4728700000000001,
+  "stopped_early": false,
+  "skipped_scenes": []
+}

@@ -1,0 +1,45 @@
+entry: arrival_waystation
+
+┌────────────────────┐
+│ arrival_waystation │
+│ dia · (narr)       │
+└────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐
+│ vellin_reception  │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐
+│ player_discovers_flaw │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+╔══════════════════════════╗  ╔═════════════════════╗
+║ end_direct_confrontation ║  ║ end_complicit_cover ║
+║ end · (narr)             ║  ║ end · (narr)        ║
+╚══════════════════════════╝  ╚═════════════════════╝
+
+edges:
+  arrival_waystation → vellin_reception
+  arrival_waystation → vellin_reception
+  arrival_waystation → player_discovers_flaw
+  vellin_reception → player_discovers_flaw
+  vellin_reception → player_discovers_flaw
+  vellin_reception → player_discovers_flaw  [cond, unav=disable_with_hint]
+  vellin_reception → player_discovers_flaw
+  player_discovers_flaw → end_direct_confrontation
+  player_discovers_flaw → end_complicit_cover
+  player_discovers_flaw → end_direct_confrontation  [cond, unav=disable_with_hint]
+  player_discovers_flaw → end_complicit_cover  [cond]
+
+end nodes: end_complicit_cover, end_direct_confrontation
