@@ -1,0 +1,16 @@
+{
+  "metadata": {
+    "advisory_authority": "informational_only",
+    "acceptance_source": "scene_review_cli_author_A_R",
+    "adr": "ADR-020 §6",
+    "schema_version": "1"
+  },
+  "pass1_lenient_scores": {},
+  "pass2_strict_scores": {},
+  "weakest_dimensions": [],
+  "advisory_recommendation": {},
+  "rationales": {},
+  "total_cost_usd": 0.0,
+  "stopped_early": false,
+  "skipped_scenes": []
+}
