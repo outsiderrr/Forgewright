@@ -1,6 +1,6 @@
 """Tests for `_sanitize_schema_for_gemini` — JSON Schema → Gemini OpenAPI subset.
 
-Two concerns:
+Three concerns:
 
 1. JSON-Schema type-array nullable form (`"type": ["X", "null"]`) must be
    rewritten to OpenAPI nullable form (`{"type": "X", "nullable": True}`).
@@ -10,6 +10,13 @@ Two concerns:
 
 2. Pre-existing keyword stripping (additionalProperties / $schema / $id)
    must keep working through the rewritten code path.
+
+3. JSON-Schema 2020-12 reference machinery (`$defs` / `$ref`) must be
+   inlined before being sent to Gemini's response_schema. Gemini's
+   protobuf rejects both keywords with "Unknown name \\"$defs\\"" /
+   "Unknown name \\"$ref\\"" errors. Pydantic's `model_json_schema()`
+   emits both for nested models — this is what baseline_009 (PR #27)
+   caught at 14/15 = 93.3% provider_error.
 
 The real `_SKELETON_RESPONSE_SCHEMA` from `scene_strategies` is read-only
 fixture: this test verifies sanitize is a closed transform on it (no
@@ -39,6 +46,17 @@ def _walk_types(node):
     elif isinstance(node, list):
         for item in node:
             yield from _walk_types(item)
+
+
+def _walk_keys(node):
+    """Yield every dict key found anywhere in a schema subtree."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield k
+            yield from _walk_keys(v)
+    elif isinstance(node, list):
+        for item in node:
+            yield from _walk_keys(item)
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +217,9 @@ def test_nullable_inside_array_items_is_converted() -> None:
     }
 
 
-def test_nullable_inside_defs_is_converted() -> None:
+def test_nullable_inside_defs_is_inlined_and_converted() -> None:
+    # R2.10a: $defs is now inlined and dropped from the result; the
+    # nullable rewrite must reach into the inlined sub-schema.
     schema = {
         "type": "object",
         "$defs": {
@@ -208,7 +228,8 @@ def test_nullable_inside_defs_is_converted() -> None:
         "properties": {"name": {"$ref": "#/$defs/MaybeName"}},
     }
     sanitized = _sanitize_schema_for_gemini(schema)
-    assert sanitized["$defs"]["MaybeName"] == {
+    assert "$defs" not in sanitized
+    assert sanitized["properties"]["name"] == {
         "type": "string",
         "nullable": True,
     }
@@ -269,3 +290,192 @@ def test_unsupported_keywords_still_stripped_alongside_nullable_rewrite() -> Non
         "type": "integer",
         "nullable": True,
     }
+
+
+# ---------------------------------------------------------------------------
+# R2.10a — $defs / $ref inlining
+# ---------------------------------------------------------------------------
+
+
+def test_inlines_simple_def() -> None:
+    schema = {
+        "type": "object",
+        "$defs": {
+            "Name": {"type": "string", "minLength": 1},
+        },
+        "properties": {"name": {"$ref": "#/$defs/Name"}},
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    assert "$defs" not in sanitized
+    assert "$ref" not in list(_walk_keys(sanitized))
+    assert sanitized["properties"]["name"] == {"type": "string", "minLength": 1}
+
+
+def test_inlines_nested_def() -> None:
+    # A → B → C: three layers of $ref must all resolve.
+    schema = {
+        "$defs": {
+            "A": {"$ref": "#/$defs/B"},
+            "B": {"$ref": "#/$defs/C"},
+            "C": {"type": "integer", "minimum": 0},
+        },
+        "properties": {"x": {"$ref": "#/$defs/A"}},
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    assert "$defs" not in sanitized
+    assert "$ref" not in list(_walk_keys(sanitized))
+    assert sanitized["properties"]["x"] == {"type": "integer", "minimum": 0}
+
+
+def test_inlines_multi_use_def() -> None:
+    # Same $defs entry referenced from two different positions; both
+    # sites must independently inline (the result has no shared aliasing
+    # so a downstream mutation of one wouldn't affect the other).
+    schema = {
+        "$defs": {
+            "Coord": {"type": "number"},
+        },
+        "properties": {
+            "x": {"$ref": "#/$defs/Coord"},
+            "y": {"$ref": "#/$defs/Coord"},
+        },
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    assert "$defs" not in sanitized
+    assert sanitized["properties"]["x"] == {"type": "number"}
+    assert sanitized["properties"]["y"] == {"type": "number"}
+    # Independent dicts (no aliasing).
+    assert sanitized["properties"]["x"] is not sanitized["properties"]["y"]
+
+
+def test_ref_with_sibling_keywords_merges_with_sibling_priority() -> None:
+    # 2020-12 sibling form: {"$ref": "...", "description": "..."} —
+    # sibling keywords merge onto the inlined sub-schema with sibling
+    # values winning over the referenced sub-schema's same-named keys.
+    schema = {
+        "$defs": {
+            "Base": {
+                "type": "string",
+                "description": "base description",
+                "minLength": 1,
+            },
+        },
+        "properties": {
+            "x": {
+                "$ref": "#/$defs/Base",
+                "description": "override description",
+            },
+        },
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    x = sanitized["properties"]["x"]
+    assert x["type"] == "string"
+    assert x["minLength"] == 1
+    # Sibling description wins over the base.
+    assert x["description"] == "override description"
+
+
+def test_circular_ref_replaced_with_empty_schema() -> None:
+    # A→B, B→A direct cycle. R2.10a chose lossy approximation
+    # (collapse cycle point to {}) rather than raise — the canonical
+    # use case (Pydantic-emitted StateCondition fill schema) has cycles
+    # by design and we need to keep generation flowing. Validator layer
+    # still uses the canonical recursive schema for response checks.
+    schema = {
+        "$defs": {
+            "A": {"type": "object", "properties": {"b": {"$ref": "#/$defs/B"}}},
+            "B": {"type": "object", "properties": {"a": {"$ref": "#/$defs/A"}}},
+        },
+        "properties": {"root": {"$ref": "#/$defs/A"}},
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    assert "$defs" not in sanitized
+    assert "$ref" not in list(_walk_keys(sanitized))
+    # Walk down: root → A inlined → properties.b → B inlined →
+    # properties.a → A again (cycle) → {}.
+    cycle_point = (
+        sanitized["properties"]["root"]["properties"]["b"]["properties"]["a"]
+    )
+    assert cycle_point == {}
+
+
+def test_self_ref_replaced_with_empty_schema() -> None:
+    # Self-reference: A → A. Should replace inner A with {} on the
+    # second hit and keep the outer A's siblings.
+    schema = {
+        "$defs": {
+            "Tree": {
+                "type": "object",
+                "properties": {"child": {"$ref": "#/$defs/Tree"}},
+            },
+        },
+        "properties": {"root": {"$ref": "#/$defs/Tree"}},
+    }
+    sanitized = _sanitize_schema_for_gemini(schema)
+    assert "$defs" not in sanitized
+    root = sanitized["properties"]["root"]
+    assert root["type"] == "object"
+    assert root["properties"]["child"] == {}
+
+
+def test_ref_outside_defs_raises() -> None:
+    # JSON pointer to a non-$defs path. Pydantic doesn't emit these and
+    # our hand-written schemas don't either; raising forces the schema
+    # author to fix the source rather than letting us silently drop.
+    schema = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "alias": {"$ref": "#/properties/name"},
+        },
+    }
+    with pytest.raises(NotImplementedError) as exc_info:
+        _sanitize_schema_for_gemini(schema)
+    assert "#/$defs/" in str(exc_info.value)
+    assert "#/properties/name" in str(exc_info.value)
+
+
+def test_ref_to_unknown_def_raises() -> None:
+    schema = {
+        "$defs": {"Known": {"type": "string"}},
+        "properties": {"x": {"$ref": "#/$defs/Missing"}},
+    }
+    with pytest.raises(NotImplementedError) as exc_info:
+        _sanitize_schema_for_gemini(schema)
+    assert "Missing" in str(exc_info.value)
+
+
+def test_node_fill_schema_round_trip_has_no_ref_machinery() -> None:
+    # The fill schema that breaks Gemini protobuf in baseline_009. After
+    # R2.10a sanitize, no $defs / $ref / $schema / $id residue may
+    # remain — that's the load-bearing invariant the upstream call
+    # relies on.
+    from generator.models import Node
+
+    fill_schema = Node.model_json_schema()
+    sanitized = _sanitize_schema_for_gemini(fill_schema)
+
+    keys = set(_walk_keys(sanitized))
+    assert "$defs" not in keys
+    assert "$ref" not in keys
+    assert "$schema" not in keys
+    assert "$id" not in keys
+    assert "additionalProperties" not in keys
+    # And no list-form `type` survived (R2.2 invariant carried forward).
+    for t in _walk_types(sanitized):
+        assert not isinstance(t, list), f"list-form type leaked: {t!r}"
+
+
+def test_node_fill_schema_round_trip_does_not_mutate_source() -> None:
+    # Validator layer keeps using the canonical fully-recursive schema;
+    # sanitizer must not mutate the Pydantic-emitted schema in place.
+    from generator.models import Node
+
+    fill_schema = Node.model_json_schema()
+    assert "$defs" in fill_schema  # premise
+    _sanitize_schema_for_gemini(fill_schema)
+    assert "$defs" in fill_schema  # still there
+    # And StateCondition still has its anyOf with $ref children.
+    state_condition = fill_schema["$defs"]["StateCondition"]
+    assert "anyOf" in state_condition
+    assert any("$ref" in arm for arm in state_condition["anyOf"])
