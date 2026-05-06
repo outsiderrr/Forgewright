@@ -249,6 +249,7 @@ Schema 定稿后可并行三路：
 - **2026-04-30**：Round 5 总规划综合评审完成（Claude × GPT-5.5）；ADR-015（阶段 1.5 与阶段 2 sequencing）立项；ROADMAP 阶段 2 启动闸门 + 阶段 3 完成标志强化项占位增订；详见 `/docs/DEBATE_NOTES.md` Round 5 段落与 `/docs/reviews/master_plan/`
 - **2026-05-02**：阶段 1.5 验收**部分通过 / 有条件通过**（见 `/docs/STAGE_1.5_ACCEPTANCE.md`）。10 任务 ABC 全闭环 + 工具链端到端实证（mini probe vellin 5 张入库 PASS）；R1.5-1~6 遗留（剩余 14 立绘 + 1 background 全 batch 生图作者主动跳过 / 接受率未测 / AI 判官 vs 作者 kappa 未算 / C4 parity smoke 未跑 / alpha 形式合规但实际不透明 / mini probe 工作流 ergonomic）。ADR-015 串行卡口解锁——阶段 2 schema commit 现可启动
 - **2026-05-03**：§阶段 2 完成标志措辞从"证明任意合法状态组合下至少有 1 个结局可达"修订为"抽样验证 N=100 路径 + 有界符号执行下未发现反例"，与 ADR-021（待立项）实际口径对齐。来源：STAGE_2_TASKS_v1.0_draft §13 X1（GPT-5.5 critique 5.4 整合）。
+- **2026-05-07**：阶段 2 验收**通过**（见 `/docs/STAGE_2_ACCEPTANCE.md`）。baseline_011 N=15 gross_pass_rate **100%**（schema / topology / sampling / mechanical 全 100%）；ADR-016/017/018/019/020/021 立项 + 落地；R2.X follow-up 修复链路 7 项（R2.2 → R2.6 → R2.7 → R2.8 → R2.9 → R2.10a → R2.10b）；R2-5 / R2-10c / R2-iter-逃逸 / R2-cyclic / R2-1 / X4 六条遗留（不阻塞阶段 3 启动）。审美层（[A]/[R]/[S]）评估推迟到阶段 4——feedback memory 锁定，X4 ADR-020 v0.2 修订属未来 L1 文档级元任务。`/docs/HANDOFF_STAGE_2_TO_3.md` v0.1 草稿同期产出。
 
 ## 版本
 
