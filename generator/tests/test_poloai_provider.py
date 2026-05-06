@@ -342,7 +342,7 @@ def test_retries_once_on_transient_then_succeeds(
         chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
-    monkeypatch.setattr("generator.providers.poloai.time.sleep", lambda _s: None)
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
 
     resp = provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 2
@@ -369,9 +369,13 @@ def test_does_not_retry_non_transient_error(
     assert len(call_log) == 1
 
 
-def test_raises_after_two_transient_failures(
+def test_raises_after_max_retries_exhausted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """R2.10b: 1 initial + 3 retries = 4 total attempts before giving up.
+    Replaces R2.7's single-shot retry. baseline_010 iter 9-12 showed 4
+    consecutive 500s in a 16-second window — three exponential delays
+    (2 + 5 + 10 ≈ 17s) gives us the best shot at jumping the cluster."""
     provider = _make_provider(monkeypatch)
     call_log: list[str] = []
 
@@ -383,11 +387,227 @@ def test_raises_after_two_transient_failures(
         chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
-    monkeypatch.setattr("generator.providers.poloai.time.sleep", lambda _s: None)
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
 
     with pytest.raises(ProviderError):
         provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+
+
+def test_exponential_backoff_delay_progression(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retry helper must sleep [2.0, 5.0, 10.0] between attempts.
+    This guards against silent drift of the policy that's our only line
+    of defence against the iter 9-12 500-cluster pattern."""
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+    sleep_log: list[float] = []
+
+    def _create(**kwargs):
+        call_log.append("call")
+        raise Exception("Server disconnected without sending a response")
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr(
+        "generator.providers._retry.time.sleep", lambda s: sleep_log.append(s)
+    )
+
+    with pytest.raises(ProviderError):
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    assert sleep_log == [2.0, 5.0, 10.0]
+
+
+def _build_synth_status_error(status_code: int, body: str = "") -> Exception:
+    """Stand-in for openai.APIStatusError carrying a status_code."""
+    from openai import OpenAIError
+
+    class _Synth(OpenAIError):
+        def __init__(self) -> None:
+            super().__init__(f"synthetic {status_code}")
+            self.status_code = status_code
+            self.body = body
+
+    return _Synth()
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_retry_on_5xx_server_errors(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """5xx upstream errors trigger backoff retry. baseline_010 iter
+    9-12 captured exactly this on HTTP 500 (Database error from upstream
+    Gemini relay); 502/503/504 are the symmetric relay-fault shapes."""
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+    fake = _fake_openai_response()
+
+    def _create(**kwargs):
+        call_log.append("call")
+        if len(call_log) < 4:
+            raise _build_synth_status_error(status, body="upstream gateway")
+        return fake
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    resp = provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    assert resp.content == {"ok": True}
+
+
+def test_retry_on_api_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """openai.APIConnectionError is an OpenAIError subclass — before R2.10b
+    it was caught by ``except OpenAIError`` and never retried, even though
+    its semantic ('request never reached upstream') is exactly what backoff
+    was designed for. baseline_010 iter 3/8/13 lost cost on this path."""
+    from openai import APIConnectionError
+
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+    fake = _fake_openai_response()
+
+    def _create(**kwargs):
+        call_log.append("call")
+        if len(call_log) < 2:
+            # APIConnectionError requires a `request` kwarg; pass minimal mock
+            raise APIConnectionError(request=SimpleNamespace())  # type: ignore[arg-type]
+        return fake
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    resp = provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 2
+    assert resp.content == {"ok": True}
+
+
+def test_retry_on_api_timeout_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """APITimeoutError is APIConnectionError subclass — same retry path."""
+    from openai import APITimeoutError
+
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+    fake = _fake_openai_response()
+
+    def _create(**kwargs):
+        call_log.append("call")
+        if len(call_log) < 2:
+            raise APITimeoutError(request=SimpleNamespace())  # type: ignore[arg-type]
+        return fake
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    resp = provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 2
+
+
+def test_no_retry_on_400_bad_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """4xx is the sanitizer-gap signal — retrying just burns cost on the
+    same broken payload. The R2.9 metadata excerpt already gives a finder
+    enough to root-cause from a single attempt."""
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+
+    def _create(**kwargs):
+        call_log.append("call")
+        raise _build_synth_status_error(400, body='{"error": "Invalid schema"}')
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 1
+    assert exc_info.value.metadata_dict()["http_status"] == 400
+
+
+def test_no_retry_on_429_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    """429 = upstream is shedding load. Exponential backoff in-process
+    doesn't fix that; the operator needs to widen the limit or back off
+    at the batch layer. baseline_009 also showed PoloAI's relay can wrap
+    a 429 in an HTTP 400 envelope — that path also stays non-retry
+    because R2.9 body excerpts already disambiguate the real cause."""
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+
+    def _create(**kwargs):
+        call_log.append("call")
+        raise _build_synth_status_error(429, body='{"error": "rate limit exceeded"}')
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 1
+    assert exc_info.value.metadata_dict()["http_status"] == 429
+
+
+def test_no_retry_on_401_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+
+    def _create(**kwargs):
+        call_log.append("call")
+        raise _build_synth_status_error(401, body='{"error": "invalid api key"}')
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 1
+    assert exc_info.value.metadata_dict()["http_status"] == 401
+
+
+def test_max_retries_exhausted_carries_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When all 4 attempts hit the same 500, the final ProviderError must
+    still carry R2.9 metadata so a baseline finder sees the upstream
+    failure surface, not a generic 'retry exhausted' fog."""
+    provider = _make_provider(monkeypatch)
+    call_log: list[str] = []
+
+    def _create(**kwargs):
+        call_log.append("call")
+        raise _build_synth_status_error(
+            500, body='{"message": "Database error, please contact"}'
+        )
+
+    fake_client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=_create))
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    md = exc_info.value.metadata_dict()
+    assert md["http_status"] == 500
+    assert "Database error" in (md["response_body_excerpt"] or "")
 
 
 def test_openai_error_wraps_to_provider_error(
