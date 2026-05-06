@@ -1,0 +1,20 @@
+flowchart TD
+  vellin_hands_over["vellin_hands_over [entry]\ndialogue · char_vellin"]
+  question_relation["question_relation\ndialogue · char_vellin"]
+  aelwin_calls["aelwin_calls\ndialogue · char_aelwin"]
+  end_tear_silent(["end_tear_silent\nend · (narrator)"]):::endNode
+  end_take_stealth(["end_take_stealth\nend · (narrator)"]):::endNode
+  end_tear_angry(["end_tear_angry\nend · (narrator)"]):::endNode
+  end_take_bold(["end_take_bold\nend · (narrator)"]):::endNode
+  vellin_hands_over --> question_relation
+  vellin_hands_over --> aelwin_calls
+  vellin_hands_over --> end_take_stealth
+  vellin_hands_over -->|cond, unav=disable_with_hint| question_relation
+  question_relation --> aelwin_calls
+  question_relation --> aelwin_calls
+  question_relation --> end_tear_silent
+  question_relation --> end_take_bold
+  aelwin_calls --> end_tear_angry
+  aelwin_calls --> end_take_stealth
+  aelwin_calls --> end_tear_silent
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

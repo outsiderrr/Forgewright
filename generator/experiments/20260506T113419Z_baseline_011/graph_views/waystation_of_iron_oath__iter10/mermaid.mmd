@@ -1,0 +1,35 @@
+flowchart TD
+  arrival_at_waystation["arrival_at_waystation [entry]\ndialogue · char_vellin"]
+  corvan_enters_calm["corvan_enters_calm\ndialogue · char_corvan"]
+  corvan_enters_suspicious["corvan_enters_suspicious\ndialogue · char_corvan"]
+  corvan_enters_hostile["corvan_enters_hostile\ndialogue · char_corvan"]
+  standoff_protect["standoff_protect\ndialogue · char_vellin"]
+  standoff_neutral["standoff_neutral\ndialogue · char_corvan"]
+  standoff_cooperate["standoff_cooperate\ndialogue · char_vellin"]
+  end_protect_vellin(["end_protect_vellin\nend · (narrator)"]):::endNode
+  end_cooperate_investigation(["end_cooperate_investigation\nend · (narrator)"]):::endNode
+  end_compromise(["end_compromise\nend · (narrator)"]):::endNode
+  arrival_at_waystation --> corvan_enters_suspicious
+  arrival_at_waystation --> corvan_enters_calm
+  arrival_at_waystation --> corvan_enters_calm
+  arrival_at_waystation --> corvan_enters_hostile
+  corvan_enters_calm --> standoff_protect
+  corvan_enters_calm --> standoff_neutral
+  corvan_enters_calm --> standoff_cooperate
+  corvan_enters_suspicious --> standoff_protect
+  corvan_enters_suspicious --> standoff_neutral
+  corvan_enters_suspicious --> standoff_cooperate
+  corvan_enters_hostile --> standoff_protect
+  corvan_enters_hostile -->|cond, unav=disable_with_hint| standoff_neutral
+  corvan_enters_hostile --> standoff_cooperate
+  corvan_enters_hostile --> standoff_neutral
+  standoff_protect --> end_protect_vellin
+  standoff_protect --> end_cooperate_investigation
+  standoff_protect -->|cond, unav=disable_with_hint| end_compromise
+  standoff_neutral --> end_protect_vellin
+  standoff_neutral --> end_cooperate_investigation
+  standoff_neutral -->|cond, unav=disable_with_hint| end_compromise
+  standoff_cooperate --> end_protect_vellin
+  standoff_cooperate --> end_cooperate_investigation
+  standoff_cooperate -->|cond, unav=disable_with_hint| end_compromise
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

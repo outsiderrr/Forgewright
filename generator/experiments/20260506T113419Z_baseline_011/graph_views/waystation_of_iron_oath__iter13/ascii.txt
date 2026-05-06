@@ -1,0 +1,64 @@
+entry: node_arrival
+
+┌───────────────────┐
+│ node_arrival      │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌─────────────────────┐
+│ node_vellin_tension │
+│ dia · char_vellin   │
+└─────────────────────┘
+
+  │
+  ▼
+
+┌────────────────────┐
+│ node_corvan_enters │
+│ dia · char_corvan  │
+└────────────────────┘
+
+  │
+  ▼
+
+┌──────────────────────┐  ┌───────────────────────┐
+│ node_standoff_defend │  │ node_standoff_neutral │
+│ dia · char_corvan    │  │ dia · char_vellin     │
+└──────────────────────┘  └───────────────────────┘
+
+  │
+  ▼
+
+╔═══════════════════╗  ╔══════════════════════╗  ╔═══════════════╗
+║ end_protect_force ║  ║ end_protect_peaceful ║  ║ end_cooperate ║
+║ end · (narr)      ║  ║ end · (narr)         ║  ║ end · (narr)  ║
+╚═══════════════════╝  ╚══════════════════════╝  ╚═══════════════╝
+
+╔═══════════════╗
+║ end_walk_away ║
+║ end · (narr)  ║
+╚═══════════════╝
+
+edges:
+  node_arrival → node_vellin_tension
+  node_arrival → node_corvan_enters
+  node_arrival → node_vellin_tension  [cond, unav=disable_with_hint]
+  node_vellin_tension → node_corvan_enters
+  node_vellin_tension → node_corvan_enters
+  node_vellin_tension → node_corvan_enters
+  node_vellin_tension → node_corvan_enters  [cond, unav=disable_with_hint]
+  node_corvan_enters → node_standoff_defend
+  node_corvan_enters → node_standoff_neutral
+  node_corvan_enters → node_standoff_neutral
+  node_corvan_enters → node_standoff_neutral  [cond, unav=disable_with_hint]
+  node_standoff_defend → end_protect_force
+  node_standoff_defend → end_protect_peaceful  [cond, unav=disable_with_hint]
+  node_standoff_defend → end_cooperate
+  node_standoff_neutral → end_protect_peaceful
+  node_standoff_neutral → end_cooperate
+  node_standoff_neutral → end_walk_away
+
+end nodes: end_protect_force, end_protect_peaceful, end_cooperate, end_walk_away

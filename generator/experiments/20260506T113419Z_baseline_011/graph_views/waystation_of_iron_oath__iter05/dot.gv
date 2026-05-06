@@ -1,0 +1,23 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_hands_over_letter" [label="vellin_hands_over_letter [entry]\\ndialogue · char_vellin"];
+  "question_vellin_relation" [label="question_vellin_relation\\ndialogue · char_vellin"];
+  "question_aelwin_motive" [label="question_aelwin_motive\\ndialogue · char_vellin"];
+  "aelwin_calls_outside" [label="aelwin_calls_outside\\ndialogue · char_aelwin"];
+  "end_tear_letter" [label="end_tear_letter\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_carry_letter_out" [label="end_carry_letter_out\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_reject_involvement" [label="end_reject_involvement\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_hands_over_letter" -> "question_vellin_relation";
+  "vellin_hands_over_letter" -> "question_aelwin_motive";
+  "vellin_hands_over_letter" -> "end_reject_involvement";
+  "question_vellin_relation" -> "end_carry_letter_out";
+  "question_vellin_relation" -> "end_tear_letter";
+  "question_vellin_relation" -> "aelwin_calls_outside";
+  "question_aelwin_motive" -> "end_carry_letter_out";
+  "question_aelwin_motive" -> "aelwin_calls_outside";
+  "question_aelwin_motive" -> "end_tear_letter";
+  "aelwin_calls_outside" -> "end_carry_letter_out";
+  "aelwin_calls_outside" -> "end_reject_involvement";
+  "aelwin_calls_outside" -> "end_tear_letter";
+}

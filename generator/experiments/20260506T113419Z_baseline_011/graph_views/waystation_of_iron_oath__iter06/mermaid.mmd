@@ -1,0 +1,27 @@
+flowchart TD
+  arrival["arrival [entry]\ndialogue · char_vellin"]
+  vellin_reception["vellin_reception\ndialogue · char_vellin"]
+  vellin_evasion["vellin_evasion\ndialogue · char_vellin"]
+  player_investigates["player_investigates\ndialogue · char_vellin"]
+  player_pushes_further["player_pushes_further\ndialogue · char_vellin"]
+  end_complicit(["end_complicit\nend · (narrator)"]):::endNode
+  end_confrontation(["end_confrontation\nend · (narrator)"]):::endNode
+  end_walk_away(["end_walk_away\nend · (narrator)"]):::endNode
+  arrival --> vellin_reception
+  arrival --> player_investigates
+  arrival --> vellin_evasion
+  vellin_reception --> player_pushes_further
+  vellin_reception -->|cond, unav=disable_with_hint| player_investigates
+  vellin_reception --> end_walk_away
+  vellin_evasion --> player_pushes_further
+  vellin_evasion --> player_investigates
+  vellin_evasion --> end_walk_away
+  player_investigates --> player_pushes_further
+  player_investigates --> player_pushes_further
+  player_investigates --> end_complicit
+  player_investigates --> end_confrontation
+  player_pushes_further --> end_confrontation
+  player_pushes_further --> end_complicit
+  player_pushes_further --> end_walk_away
+  player_pushes_further -->|cond, unav=disable_with_hint| end_confrontation
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

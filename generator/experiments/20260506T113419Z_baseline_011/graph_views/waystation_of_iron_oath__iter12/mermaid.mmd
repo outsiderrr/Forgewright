@@ -1,0 +1,33 @@
+flowchart TD
+  arrival["arrival [entry]\ndialogue · char_vellin"]
+  reception_casual["reception_casual\ndialogue · char_vellin"]
+  reception_stare["reception_stare\ndialogue · char_vellin"]
+  reception_press["reception_press\ndialogue · char_vellin"]
+  discover_flaw_letter["discover_flaw_letter\ndialogue · char_vellin"]
+  discover_flaw_blood["discover_flaw_blood\ndialogue · char_vellin"]
+  discover_flaw_silence["discover_flaw_silence\ndialogue · char_vellin"]
+  end_cover_up(["end_cover_up\nend · (narrator)"]):::endNode
+  end_expose_direct(["end_expose_direct\nend · (narrator)"]):::endNode
+  end_expose_violent(["end_expose_violent\nend · (narrator)"]):::endNode
+  arrival --> reception_casual
+  arrival --> reception_stare
+  arrival --> reception_press
+  reception_casual -->|cond, unav=disable_with_hint| discover_flaw_letter
+  reception_casual --> discover_flaw_blood
+  reception_casual --> discover_flaw_silence
+  reception_stare --> discover_flaw_letter
+  reception_stare -->|cond, unav=disable_with_hint| discover_flaw_blood
+  reception_stare --> discover_flaw_silence
+  reception_press -->|cond, unav=disable_with_hint| discover_flaw_letter
+  reception_press --> discover_flaw_blood
+  reception_press --> discover_flaw_silence
+  discover_flaw_letter --> end_expose_direct
+  discover_flaw_letter --> end_expose_violent
+  discover_flaw_letter --> end_cover_up
+  discover_flaw_blood --> end_cover_up
+  discover_flaw_blood --> end_expose_direct
+  discover_flaw_blood --> end_expose_violent
+  discover_flaw_silence --> end_cover_up
+  discover_flaw_silence --> end_expose_direct
+  discover_flaw_silence --> end_expose_violent
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

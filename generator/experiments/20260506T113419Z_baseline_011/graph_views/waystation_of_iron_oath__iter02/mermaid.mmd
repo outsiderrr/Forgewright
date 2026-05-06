@@ -1,0 +1,24 @@
+flowchart TD
+  n1_handover["n1_handover [entry]\ndialogue · char_vellin"]
+  n2_relation["n2_relation\ndialogue · char_vellin"]
+  n2_motive["n2_motive\ndialogue · char_vellin"]
+  n3_window["n3_window\ndialogue · char_aelwin"]
+  end_tear(["end_tear\nend · (narrator)"]):::endNode
+  end_take(["end_take\nend · (narrator)"]):::endNode
+  end_ignore(["end_ignore\nend · (narrator)"]):::endNode
+  n1_handover --> n2_relation
+  n1_handover --> n2_motive
+  n1_handover --> n3_window
+  n2_relation --> n3_window
+  n2_relation --> n3_window
+  n2_relation --> end_tear
+  n2_relation --> end_take
+  n2_motive --> n3_window
+  n2_motive --> n3_window
+  n2_motive --> end_take
+  n2_motive --> end_tear
+  n3_window --> end_ignore
+  n3_window --> end_take
+  n3_window --> end_tear
+  n3_window -->|cond, unav=disable_with_hint| end_take
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

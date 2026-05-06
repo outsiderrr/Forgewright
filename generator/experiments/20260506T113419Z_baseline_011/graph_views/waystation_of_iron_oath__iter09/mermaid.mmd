@@ -1,0 +1,17 @@
+flowchart TD
+  arrival["arrival [entry]\ndialogue · char_vellin"]
+  vellin_reception["vellin_reception\ndialogue · char_vellin"]
+  player_finds_flaw["player_finds_flaw\ndialogue · char_vellin"]
+  end_conspire(["end_conspire\nend · (narrator)"]):::endNode
+  end_expose(["end_expose\nend · (narrator)"]):::endNode
+  arrival --> vellin_reception
+  arrival --> vellin_reception
+  arrival --> vellin_reception
+  vellin_reception --> player_finds_flaw
+  vellin_reception --> player_finds_flaw
+  vellin_reception -->|cond, unav=disable_with_hint| player_finds_flaw
+  player_finds_flaw --> end_expose
+  player_finds_flaw --> end_conspire
+  player_finds_flaw --> end_expose
+  player_finds_flaw -->|cond, unav=disable_with_hint| end_conspire
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

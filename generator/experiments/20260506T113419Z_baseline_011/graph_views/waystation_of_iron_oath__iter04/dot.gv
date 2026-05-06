@@ -1,0 +1,28 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "vellin_greets" [label="vellin_greets [entry]\\ndialogue · char_vellin"];
+  "vellin_probed" [label="vellin_probed\\ndialogue · char_vellin"];
+  "corvan_enters" [label="corvan_enters\\ndialogue · char_corvan"];
+  "standoff_calm" [label="standoff_calm\\ndialogue · char_vellin"];
+  "standoff_tense" [label="standoff_tense\\ndialogue · char_corvan"];
+  "end_protect" [label="end_protect\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_bond" [label="end_bond\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_cooperate" [label="end_cooperate\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "vellin_greets" -> "vellin_probed";
+  "vellin_greets" -> "corvan_enters";
+  "vellin_greets" -> "vellin_probed" [label="cond, unav=disable_with_hint"];
+  "vellin_probed" -> "corvan_enters";
+  "vellin_probed" -> "corvan_enters";
+  "vellin_probed" -> "corvan_enters";
+  "corvan_enters" -> "standoff_calm";
+  "corvan_enters" -> "standoff_tense";
+  "corvan_enters" -> "standoff_tense" [label="cond, unav=disable_with_hint"];
+  "standoff_calm" -> "end_protect";
+  "standoff_calm" -> "end_bond" [label="cond, unav=disable_with_hint"];
+  "standoff_calm" -> "end_cooperate";
+  "standoff_calm" -> "end_cooperate" [label="cond"];
+  "standoff_tense" -> "end_protect";
+  "standoff_tense" -> "end_bond" [label="cond, unav=disable_with_hint"];
+  "standoff_tense" -> "end_cooperate";
+}

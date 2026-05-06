@@ -1,0 +1,10 @@
+iterations:            15
+schema_pass_rate:      100.0%  (15/15)
+gross_pass_rate:       100.0%  (15/15)
+topology_pass_rate:    100.0%  (15/15)
+sampling_reach_rate:   100.0%  (avg over success scenes)
+total_cost_usd:        $6.3429
+mean_cost_per_iter:    $0.4229
+
+failure_reason_distribution:
+  (none)

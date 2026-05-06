@@ -1,0 +1,59 @@
+entry: arrival
+
+┌───────────────────┐
+│ arrival           │
+│ dia · char_vellin │
+└───────────────────┘
+
+  │
+  ▼
+
+┌───────────────────┐  ┌───────────────────┐
+│ vellin_reception  │  │ vellin_evasion    │
+│ dia · char_vellin │  │ dia · char_vellin │
+└───────────────────┘  └───────────────────┘
+
+  │
+  ▼
+
+┌─────────────────────┐
+│ player_investigates │
+│ dia · char_vellin   │
+└─────────────────────┘
+
+  │
+  ▼
+
+┌───────────────────────┐
+│ player_pushes_further │
+│ dia · char_vellin     │
+└───────────────────────┘
+
+  │
+  ▼
+
+╔═══════════════════╗  ╔═══════════════╗  ╔═══════════════╗
+║ end_confrontation ║  ║ end_complicit ║  ║ end_walk_away ║
+║ end · (narr)      ║  ║ end · (narr)  ║  ║ end · (narr)  ║
+╚═══════════════════╝  ╚═══════════════╝  ╚═══════════════╝
+
+edges:
+  arrival → vellin_reception
+  arrival → player_investigates
+  arrival → vellin_evasion
+  vellin_reception → player_pushes_further
+  vellin_reception → player_investigates  [cond, unav=disable_with_hint]
+  vellin_reception → end_walk_away
+  vellin_evasion → player_pushes_further
+  vellin_evasion → player_investigates
+  vellin_evasion → end_walk_away
+  player_investigates → player_pushes_further
+  player_investigates → player_pushes_further
+  player_investigates → end_complicit
+  player_investigates → end_confrontation
+  player_pushes_further → end_confrontation
+  player_pushes_further → end_complicit
+  player_pushes_further → end_walk_away
+  player_pushes_further → end_confrontation  [cond, unav=disable_with_hint]
+
+end nodes: end_complicit, end_confrontation, end_walk_away

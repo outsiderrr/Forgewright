@@ -1,0 +1,19 @@
+flowchart TD
+  vellin_hands_over_letter["vellin_hands_over_letter [entry]\ndialogue · char_vellin"]
+  player_questions_vellin["player_questions_vellin\ndialogue · char_vellin"]
+  aelwin_window_shout["aelwin_window_shout\ndialogue · char_aelwin"]
+  end_tear_letter(["end_tear_letter\nend · (narrator)"]):::endNode
+  end_take_letter(["end_take_letter\nend · (narrator)"]):::endNode
+  end_burn_letter(["end_burn_letter\nend · (narrator)"]):::endNode
+  vellin_hands_over_letter --> player_questions_vellin
+  vellin_hands_over_letter --> player_questions_vellin
+  vellin_hands_over_letter -->|cond, unav=disable_with_hint| player_questions_vellin
+  vellin_hands_over_letter -->|cond, unav=disable_with_hint| aelwin_window_shout
+  player_questions_vellin --> end_burn_letter
+  player_questions_vellin --> end_tear_letter
+  player_questions_vellin --> aelwin_window_shout
+  player_questions_vellin -->|cond, unav=disable_with_hint| aelwin_window_shout
+  aelwin_window_shout --> end_take_letter
+  aelwin_window_shout --> end_take_letter
+  aelwin_window_shout --> end_tear_letter
+  classDef endNode fill:#fce4ec,stroke:#ad1457;

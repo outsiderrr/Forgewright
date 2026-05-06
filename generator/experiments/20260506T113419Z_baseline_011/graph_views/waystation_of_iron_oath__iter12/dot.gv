@@ -1,0 +1,35 @@
+digraph G {
+  rankdir=TB;
+  node [shape=box, fontname="Helvetica"];
+  "arrival" [label="arrival [entry]\\ndialogue · char_vellin"];
+  "reception_casual" [label="reception_casual\\ndialogue · char_vellin"];
+  "reception_stare" [label="reception_stare\\ndialogue · char_vellin"];
+  "reception_press" [label="reception_press\\ndialogue · char_vellin"];
+  "discover_flaw_letter" [label="discover_flaw_letter\\ndialogue · char_vellin"];
+  "discover_flaw_blood" [label="discover_flaw_blood\\ndialogue · char_vellin"];
+  "discover_flaw_silence" [label="discover_flaw_silence\\ndialogue · char_vellin"];
+  "end_cover_up" [label="end_cover_up\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose_direct" [label="end_expose_direct\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "end_expose_violent" [label="end_expose_violent\\nend · (narrator)", shape=oval, style=filled, fillcolor="#fce4ec"];
+  "arrival" -> "reception_casual";
+  "arrival" -> "reception_stare";
+  "arrival" -> "reception_press";
+  "reception_casual" -> "discover_flaw_letter" [label="cond, unav=disable_with_hint"];
+  "reception_casual" -> "discover_flaw_blood";
+  "reception_casual" -> "discover_flaw_silence";
+  "reception_stare" -> "discover_flaw_letter";
+  "reception_stare" -> "discover_flaw_blood" [label="cond, unav=disable_with_hint"];
+  "reception_stare" -> "discover_flaw_silence";
+  "reception_press" -> "discover_flaw_letter" [label="cond, unav=disable_with_hint"];
+  "reception_press" -> "discover_flaw_blood";
+  "reception_press" -> "discover_flaw_silence";
+  "discover_flaw_letter" -> "end_expose_direct";
+  "discover_flaw_letter" -> "end_expose_violent";
+  "discover_flaw_letter" -> "end_cover_up";
+  "discover_flaw_blood" -> "end_cover_up";
+  "discover_flaw_blood" -> "end_expose_direct";
+  "discover_flaw_blood" -> "end_expose_violent";
+  "discover_flaw_silence" -> "end_cover_up";
+  "discover_flaw_silence" -> "end_expose_direct";
+  "discover_flaw_silence" -> "end_expose_violent";
+}
