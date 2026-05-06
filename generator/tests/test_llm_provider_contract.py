@@ -150,7 +150,7 @@ def test_gemini_retries_once_on_transient_then_succeeds(
         models=SimpleNamespace(generate_content=fake_generate_content)
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
-    monkeypatch.setattr("generator.providers.gemini.time.sleep", lambda _s: None)
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
 
     response = provider.generate_structured("sys", "user", {"type": "object"})
     assert len(call_log) == 2
@@ -184,9 +184,10 @@ def test_gemini_does_not_retry_non_transient_error(
     assert md["http_status"] is None
 
 
-def test_gemini_raises_after_two_transient_failures(
+def test_gemini_raises_after_max_retries_exhausted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """R2.10b: 1 initial + 3 retries = 4 total attempts."""
     monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
     provider = GeminiProvider()
 
@@ -200,11 +201,155 @@ def test_gemini_raises_after_two_transient_failures(
         models=SimpleNamespace(generate_content=fake_generate_content)
     )
     provider._client_cache = fake_client  # type: ignore[assignment]
-    monkeypatch.setattr("generator.providers.gemini.time.sleep", lambda _s: None)
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
 
     with pytest.raises(ProviderError):
         provider.generate_structured("sys", "user", {"type": "object"})
-    assert len(call_log) == 2  # 1 initial + 1 retry, then give up
+    assert len(call_log) == 4
+
+
+def test_gemini_exponential_backoff_delay_progression(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Symmetric guard with the PoloAIProvider equivalent — neither
+    provider's backoff sequence may drift relative to ``_retry``'s
+    canonical (2.0, 5.0, 10.0)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
+    provider = GeminiProvider()
+
+    call_log: list[str] = []
+    sleep_log: list[float] = []
+
+    def fake_generate_content(**kwargs):
+        call_log.append("call")
+        raise Exception("Server disconnected without sending a response")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr(
+        "generator.providers._retry.time.sleep", lambda s: sleep_log.append(s)
+    )
+
+    with pytest.raises(ProviderError):
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    assert sleep_log == [2.0, 5.0, 10.0]
+
+
+def _build_genai_api_error(code: int, message: str = "synthetic") -> Exception:
+    """Stand-in for genai.errors.APIError carrying ``.code``."""
+    from google.genai import errors as genai_errors
+
+    err = genai_errors.APIError.__new__(genai_errors.APIError)
+    Exception.__init__(err, f"{code} {message}")
+    err.code = code
+    err.status = "ERROR"
+    err.message = message
+    err.details = {"message": message}
+    return err
+
+
+@pytest.mark.parametrize("status", [500, 502, 503, 504])
+def test_gemini_retry_on_5xx_server_errors(
+    monkeypatch: pytest.MonkeyPatch, status: int
+) -> None:
+    """Gemini-side mirror of the PoloAI 5xx retry path. baseline_010
+    didn't surface this on the Gemini side (PoloAI was the active relay),
+    but the symmetric coverage prevents R2.7-style sanitizer drift if a
+    future batch flips ``LLM_PROVIDER`` back to Gemini."""
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
+    provider = GeminiProvider()
+    call_log: list[str] = []
+    fake_response = _fake_gemini_response()
+
+    def fake_generate_content(**kwargs):
+        call_log.append("call")
+        if len(call_log) < 4:
+            raise _build_genai_api_error(status, "upstream gateway")
+        return fake_response
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    response = provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    assert response.content == {"ok": True}
+
+
+def test_gemini_no_retry_on_400_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """4xx is sanitizer-gap territory — see baseline_006 R2.8 history.
+    Don't burn cost re-running the same broken schema."""
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
+    provider = GeminiProvider()
+    call_log: list[str] = []
+
+    def fake_generate_content(**kwargs):
+        call_log.append("call")
+        raise _build_genai_api_error(400, "Invalid JSON payload")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError):
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 1
+
+
+def test_gemini_no_retry_on_429_rate_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
+    provider = GeminiProvider()
+    call_log: list[str] = []
+
+    def fake_generate_content(**kwargs):
+        call_log.append("call")
+        raise _build_genai_api_error(429, "rate limit exceeded")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+
+    with pytest.raises(ProviderError):
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 1
+
+
+def test_gemini_max_retries_exhausted_carries_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "dummy-key-for-instantiation")
+    provider = GeminiProvider()
+    call_log: list[str] = []
+
+    def fake_generate_content(**kwargs):
+        call_log.append("call")
+        raise _build_genai_api_error(500, "upstream temporary failure")
+
+    fake_client = SimpleNamespace(
+        models=SimpleNamespace(generate_content=fake_generate_content)
+    )
+    provider._client_cache = fake_client  # type: ignore[assignment]
+    monkeypatch.setattr("generator.providers._retry.time.sleep", lambda _s: None)
+
+    with pytest.raises(ProviderError) as exc_info:
+        provider.generate_structured("sys", "user", {"type": "object"})
+    assert len(call_log) == 4
+    md = exc_info.value.metadata_dict()
+    # R2.9 metadata extraction reads `.status_code` first; genai's APIError
+    # only exposes `.code`, so http_status will be None here. The
+    # exception_class plus body excerpt still disambiguates the surface.
+    assert md["exception_class"].endswith("APIError")
 
 
 # ---------------------------------------------------------------------------

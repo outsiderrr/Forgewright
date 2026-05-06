@@ -29,12 +29,15 @@ from __future__ import annotations
 import json
 import os
 import re
-import time
 from typing import Any, Literal
 
-from openai import OpenAI, OpenAIError
+from openai import APIConnectionError, APITimeoutError, OpenAI, OpenAIError
 
-from generator.llm_provider import ProviderError, StructuredResponse
+from generator.llm_provider import ProviderError, StructuredResponse, _extract_http_status
+from generator.providers._retry import (
+    _RETRYABLE_HTTP_STATUSES,
+    retry_on_transient,
+)
 from generator.providers._schema_sanitizer import sanitize_schema_for_openapi
 
 DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
@@ -47,8 +50,12 @@ DEFAULT_JSON_MODE: JsonMode = "json_schema"
 # wants milliseconds. 120s mirrors GeminiProvider for parity on long prompts.
 _HTTP_TIMEOUT_SEC = 120.0
 
-# Mirror GeminiProvider: single retry on raw connection failures only.
-# HTTP 4xx/5xx classified by the SDK never auto-retry — caller decides.
+# Fallback substring match for raw httpx-level exceptions that escape the
+# OpenAI SDK's wrapping (proxy hiccups, mid-flight resets, TLS handshake
+# stutters). The structured paths below — APIConnectionError /
+# APITimeoutError / 5xx APIStatusError — cover the bulk of baseline_010's
+# upstream-fault surface; this list is the safety net for anything that
+# bypasses the SDK error hierarchy entirely.
 _TRANSIENT_ERROR_SUBSTRINGS = (
     "Server disconnected",
     "Connection reset",
@@ -60,7 +67,6 @@ _TRANSIENT_ERROR_SUBSTRINGS = (
     "handshake",
     "timed out",
 )
-_TRANSIENT_RETRY_DELAY_SEC = 2.0
 
 # Best-effort cost estimate. The relay backs onto Gemini 3.1 Pro per docs;
 # we reuse Gemini's public per-MTok rate as a floor. Relay markup over
@@ -225,26 +231,50 @@ class PoloAIProvider:
         ) / 1_000_000
 
     def _call_with_transient_retry(self, *, kwargs: dict[str, Any]) -> Any:
-        for attempt in range(2):
-            try:
-                return self._client.chat.completions.create(**kwargs)
-            except OpenAIError as exc:
-                # SDK-classified errors (auth, rate-limit, content-policy,
-                # 4xx/5xx) never auto-retry; let upstream decide.
-                raise ProviderError.from_exception(
-                    exc, message=f"PoloAI API error: {exc}"
-                ) from exc
-            except Exception as exc:  # connection-level failure
-                if not _is_transient_network_error(exc) or attempt == 1:
-                    raise ProviderError.from_exception(
-                        exc, message=f"PoloAI call failed: {exc}"
-                    ) from exc
-                time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
-        # The loop always returns or raises; this satisfies type checkers.
-        raise ProviderError("PoloAI call failed: retry loop exited unexpectedly")
+        try:
+            return retry_on_transient(
+                lambda: self._client.chat.completions.create(**kwargs),
+                is_transient=_should_retry,
+            )
+        except OpenAIError as exc:
+            # SDK-classified errors that survived the retry path (either
+            # never retryable — 4xx auth / sanitizer-gap / 429 rate-limit
+            # — or retryable but exhausted). Wrap with full R2.9 metadata.
+            raise ProviderError.from_exception(
+                exc, message=f"PoloAI API error: {exc}"
+            ) from exc
+        except Exception as exc:  # connection-level / unwrapped httpx errors
+            raise ProviderError.from_exception(
+                exc, message=f"PoloAI call failed: {exc}"
+            ) from exc
 
 
-def _is_transient_network_error(exc: Exception) -> bool:
+def _should_retry(exc: BaseException) -> bool:
+    """Classify whether an exception from the OpenAI client is worth retrying.
+
+    Retryable surfaces:
+      - ``APIConnectionError`` / ``APITimeoutError`` — request never
+        reached upstream (no HTTP status). baseline_010 iter 3/8/13.
+      - ``APIStatusError`` with status in {500, 502, 503, 504} — upstream
+        relay 5xx. baseline_010 iter 9/10/11/12 cluster.
+      - Raw httpx-level errors that escape the SDK's wrapping (matched
+        by the substring fallback in ``_is_transient_network_error``).
+
+    Non-retryable: 4xx (auth, content-policy, sanitizer-gap), 429
+    rate-limit (load-shed by upstream — exponential backoff doesn't
+    help), and anything that doesn't fit either bucket.
+    """
+    if isinstance(exc, (APIConnectionError, APITimeoutError)):
+        return True
+    if isinstance(exc, OpenAIError):
+        status = _extract_http_status(exc)
+        if status is not None and status in _RETRYABLE_HTTP_STATUSES:
+            return True
+        return False
+    return _is_transient_network_error(exc)
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
     msg = f"{type(exc).__name__}: {exc}"
     return any(p in msg for p in _TRANSIENT_ERROR_SUBSTRINGS)
 

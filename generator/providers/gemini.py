@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any
 
 from google import genai
@@ -17,6 +16,10 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from generator.llm_provider import ProviderError, StructuredResponse
+from generator.providers._retry import (
+    _RETRYABLE_HTTP_STATUSES,
+    retry_on_transient,
+)
 from generator.providers._schema_sanitizer import sanitize_schema_for_openapi
 
 DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
@@ -32,10 +35,12 @@ DEFAULT_MODEL_ID = "gemini-3.1-pro-preview"
 # completes. Always express this constant in ms.
 _HTTP_TIMEOUT_MS = 120_000
 
-# Socket-level transient errors. Gemini SDK's built-in retry_options only
-# covers HTTP status codes, so we add our own pass for raw connection failures
-# (proxy hiccups, mid-flight resets, TLS handshake hiccups). One retry only —
-# costs are real.
+# Fallback substring match for raw httpx-level exceptions that escape
+# google.genai's APIError wrapping (proxy hiccups, mid-flight resets, TLS
+# handshake stutters). The structured paths below — APIError with
+# .code in {500, 502, 503, 504} — cover SDK-classified upstream 5xx. This
+# list is the safety net for transport-level failures that bypass the
+# SDK error hierarchy entirely.
 _TRANSIENT_ERROR_SUBSTRINGS = (
     "Server disconnected",
     "Connection reset",
@@ -47,7 +52,6 @@ _TRANSIENT_ERROR_SUBSTRINGS = (
     "handshake",
     "timed out",
 )
-_TRANSIENT_RETRY_DELAY_SEC = 2.0
 
 # Gemini 3 Pro public pricing (USD per 1M tokens), input ≤ 200K context tier.
 # Source: https://ai.google.dev/gemini-api/docs/pricing
@@ -146,30 +150,50 @@ class GeminiProvider:
         config: genai_types.GenerateContentConfig,
         user_prompt: str,
     ) -> genai_types.GenerateContentResponse:
-        for attempt in range(2):  # 1 initial + 1 retry on transient
-            try:
-                return self._client.models.generate_content(
+        try:
+            return retry_on_transient(
+                lambda: self._client.models.generate_content(
                     model=self.model_id,
                     contents=user_prompt,
                     config=config,
-                )
-            except genai_errors.APIError as exc:
-                # SDK-classified API errors (4xx/5xx etc.) — never auto-retry,
-                # let the caller decide.
-                raise ProviderError.from_exception(
-                    exc, message=f"Gemini API error: {exc}"
-                ) from exc
-            except Exception as exc:  # connection-level failure
-                if not _is_transient_network_error(exc) or attempt == 1:
-                    raise ProviderError.from_exception(
-                        exc, message=f"Gemini call failed: {exc}"
-                    ) from exc
-                time.sleep(_TRANSIENT_RETRY_DELAY_SEC)
-        # The loop always returns or raises; this satisfies type checkers.
-        raise ProviderError("Gemini call failed: retry loop exited unexpectedly")
+                ),
+                is_transient=_should_retry,
+            )
+        except genai_errors.APIError as exc:
+            # SDK-classified API error that survived the retry path
+            # (either non-retryable 4xx, or 5xx that exhausted retries).
+            raise ProviderError.from_exception(
+                exc, message=f"Gemini API error: {exc}"
+            ) from exc
+        except Exception as exc:  # connection-level / unwrapped httpx errors
+            raise ProviderError.from_exception(
+                exc, message=f"Gemini call failed: {exc}"
+            ) from exc
 
 
-def _is_transient_network_error(exc: Exception) -> bool:
+def _should_retry(exc: BaseException) -> bool:
+    """Classify whether a google.genai exception is worth retrying.
+
+    Retryable: ``ServerError`` and any ``APIError`` whose ``.code`` lands
+    in {500, 502, 503, 504} — upstream transient. Non-retryable: 4xx
+    (``ClientError``: auth, sanitizer-gap, quota), 429 rate-limit. Raw
+    httpx-level errors fall through to the substring-fallback path
+    matching the PoloAIProvider shape.
+
+    google.genai exposes the HTTP status as ``.code`` on its ``APIError``,
+    not ``status_code``; that quirk is documented in the user-level
+    memory note ``gemini_sdk_quirks.md`` (alongside ``HttpOptions.timeout``
+    being milliseconds).
+    """
+    if isinstance(exc, genai_errors.APIError):
+        code = getattr(exc, "code", None)
+        if isinstance(code, int) and code in _RETRYABLE_HTTP_STATUSES:
+            return True
+        return False
+    return _is_transient_network_error(exc)
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
     msg = f"{type(exc).__name__}: {exc}"
     return any(p in msg for p in _TRANSIENT_ERROR_SUBSTRINGS)
 
