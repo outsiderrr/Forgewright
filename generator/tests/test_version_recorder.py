@@ -1,10 +1,13 @@
 """Tests for generator.version_recorder (T-3.8a).
 
-Covers (per VR-5):
+Covers (per VR-5 + PR #37 review):
   - First call writes v1 with `previous_versions=[]`
   - Subsequent call bumps version + archives prior into previous_versions
   - git unavailable fallback (FileNotFoundError + CalledProcessError) →
     git_commit / git_branch fields recorded as None, write still succeeds
+  - git invocation is anchored to scene's repo via `-C` (review §4.1)
+  - whitelist rejects non-read-only git args (review §4.1)
+  - concurrent bumps from a thread pool don't lose versions (review §4.2)
   - CLI integration (default method, --method override, --changed-fields
     parsing, missing scene exit code)
 
@@ -16,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import pytest
@@ -70,17 +74,19 @@ def stub_git(monkeypatch: pytest.MonkeyPatch) -> dict[str, str | None]:
     """Force git introspection to return deterministic values.
 
     Returns a mutable dict so tests can rebind `commit` / `branch`
-    between record_version calls to simulate evolving git state.
+    between record_version calls to simulate evolving git state. The
+    fakes accept the new `scene_path` argument added in PR #37 review
+    §4.1 but ignore it — tests assert anchoring separately.
     """
     state: dict[str, str | None] = {
         "commit": "deadbeef" * 5,  # 40 chars
         "branch": "test/branch-1",
     }
 
-    def fake_commit() -> str | None:
+    def fake_commit(scene_path: Path) -> str | None:
         return state["commit"]
 
-    def fake_branch() -> str | None:
+    def fake_branch(scene_path: Path) -> str | None:
         return state["branch"]
 
     monkeypatch.setattr(version_recorder, "_git_head_commit", fake_commit)
@@ -228,6 +234,133 @@ def test_git_non_repo_records_none(
     meta = record_version(scene_file, "batch_scheduler")
     assert meta.git_commit_at_generation is None
     assert meta.git_branch_at_generation is None
+
+
+# ---------------------------------------------------------------------------
+# Review §4.1: git invocation must be anchored to scene's repo via `-C`
+# ---------------------------------------------------------------------------
+
+
+def test_git_invocation_anchored_via_dash_C(
+    scene_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`record_version` must call `git -C <scene_dir> rev-parse ...`.
+
+    Without `-C`, a CLI run from a non-repo cwd records the calling
+    process's git HEAD (or `None`) instead of the scene's repo HEAD —
+    the audit trail would silently point at the wrong repo.
+    """
+    captured: list[list[str]] = []
+
+    def fake_run(args, **kwargs):  # type: ignore[no-untyped-def]
+        captured.append(list(args))
+        return subprocess.CompletedProcess(
+            args=args,
+            returncode=0,
+            stdout="abc1234567" * 4 + "\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    record_version(scene_file, "batch_scheduler")
+
+    assert captured, "expected at least one git invocation"
+    expected_repo = str(scene_file.parent)
+    for cmd in captured:
+        assert cmd[0] == "git"
+        assert cmd[1] == "-C"
+        assert cmd[2] == expected_repo
+        # Only `rev-parse` invocations are allowed by the whitelist.
+        assert cmd[3] == "rev-parse"
+
+
+def test_run_git_readonly_rejects_non_whitelisted_args() -> None:
+    """The whitelist makes mutation commands structurally impossible."""
+    with pytest.raises(ValueError, match="whitelisted"):
+        version_recorder._run_git_readonly(Path("."), ("commit", "-m", "x"))
+    with pytest.raises(ValueError, match="whitelisted"):
+        version_recorder._run_git_readonly(Path("."), ("push",))
+
+
+def test_git_anchored_to_scene_repo_e2e(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End-to-end: scene in an isolated git repo + CLI run from outside.
+
+    Sets up a fresh git repo at `tmp_path/iso_repo/`, commits a scene,
+    then calls `record_version` while pytest's cwd is the project's
+    main worktree (a *different* repo). The recorded HEAD must be the
+    isolated repo's, not the worktree's — that's the whole point of
+    `-C` anchoring (review §4.1).
+    """
+    iso_repo = tmp_path / "iso_repo"
+    iso_repo.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args],
+            cwd=iso_repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    git("config", "commit.gpgsign", "false")
+
+    scene = iso_repo / "scene.json"
+    scene.write_text(
+        json.dumps({"graph_id": "iso_scene"}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    git("add", "scene.json")
+    git("commit", "-q", "-m", "init scene")
+    iso_head = git("rev-parse", "HEAD")
+
+    # Invoke record_version (which runs subprocess git from whatever cwd
+    # pytest happens to be in — typically the project root, which is
+    # itself a git repo with a different HEAD).
+    meta = record_version(scene, "batch_scheduler")
+
+    assert meta.git_commit_at_generation == iso_head
+    assert meta.git_branch_at_generation == "main"
+
+
+# ---------------------------------------------------------------------------
+# Review §4.2: concurrent bumps must not lose versions
+# ---------------------------------------------------------------------------
+
+
+def test_concurrent_bumps_no_lost_versions(
+    scene_file: Path, stub_git: dict[str, str | None]
+) -> None:
+    """5 concurrent record_version calls on the same scene → final v5,
+    previous_versions == [1, 2, 3, 4]. Without the load-bump-write lock,
+    races would produce a final version < 5 and gaps in the chain."""
+
+    def call(_: int) -> int:
+        return record_version(scene_file, "batch_scheduler").version
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futures = [ex.submit(call, i) for i in range(5)]
+        observed = sorted(f.result() for f in as_completed(futures))
+
+    assert observed == [1, 2, 3, 4, 5]
+
+    raw = json.loads(
+        sidecar_path_for(scene_file).read_text(encoding="utf-8")
+    )
+    assert raw["version"] == 5
+    assert [pv["version"] for pv in raw["previous_versions"]] == [1, 2, 3, 4]
+
+
+def test_sidecar_lock_file_is_sibling(scene_file: Path) -> None:
+    sidecar = sidecar_path_for(scene_file)
+    lock = version_recorder._sidecar_lock_path(sidecar)
+    assert lock.parent == sidecar.parent
+    assert lock.name == "scene.version.json.lock"
 
 
 # ---------------------------------------------------------------------------

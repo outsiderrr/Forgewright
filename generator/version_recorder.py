@@ -38,16 +38,21 @@ Public API:
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import logging
 import os
 import subprocess
 import sys
-import tempfile
+import threading
+from collections.abc import Iterator
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, cast, get_args
+
+from generator._atomic_write import write_json_atomic
 
 _LOG = logging.getLogger(__name__)
 
@@ -109,18 +114,46 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _run_git(*args: str) -> str | None:
-    """Return stripped stdout for `git <args>` or None if git is unavailable.
+# Whitelist of git invocations this module is allowed to make. Anchors
+# the audit trail to the scene's repo (via `-C`) and provably excludes
+# any mutation command (commit / add / push) — see CLAUDE.md safety
+# rules + T-3.8a F7 修订. PR #37 review §4.1 narrowed the original
+# generic `_run_git(*args)` wrapper down to this whitelist.
+_ALLOWED_READ_ONLY_GIT_ARGS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("rev-parse", "HEAD"),
+        ("rev-parse", "--abbrev-ref", "HEAD"),
+    }
+)
 
-    Falls through quietly on:
-      - FileNotFoundError (git binary missing from PATH)
-      - CalledProcessError (e.g. cwd is not inside a repo, detached
-        worktrees with no HEAD, etc.)
-      - Empty stdout
+
+def _run_git_readonly(repo_hint: Path, args: tuple[str, ...]) -> str | None:
+    """Read-only `git -C <repo_hint> <args>` — never mutates the repo.
+
+    `args` must be a member of `_ALLOWED_READ_ONLY_GIT_ARGS`; passing
+    anything else raises `ValueError` at the call site rather than
+    silently shelling out. The `-C` flag anchors the invocation to the
+    scene's directory so a CLI run from a non-repo cwd still records
+    the scene's repo HEAD (review §4.1).
+
+    Falls through to `None` on:
+      - `FileNotFoundError` (git binary missing from PATH)
+      - `subprocess.CalledProcessError` (e.g. repo_hint is not inside a
+        git repo, detached worktree with no HEAD, etc.)
+      - empty stdout
+
+    Never invokes `git commit` / `git add` / `git push` (CLAUDE.md
+    safety + F7 修订: this module records audit metadata only).
     """
+    if args not in _ALLOWED_READ_ONLY_GIT_ARGS:
+        raise ValueError(
+            f"_run_git_readonly only accepts whitelisted read-only "
+            f"invocations; got {args!r}. Add to _ALLOWED_READ_ONLY_GIT_ARGS "
+            f"if a new audit field is genuinely needed."
+        )
     try:
         out = subprocess.run(
-            ["git", *args],
+            ["git", "-C", str(repo_hint), *args],
             capture_output=True,
             check=True,
             text=True,
@@ -132,7 +165,8 @@ def _run_git(*args: str) -> str | None:
         return None
     except subprocess.CalledProcessError as exc:
         _LOG.warning(
-            "git %s exited %d; recording None for git fields. stderr=%s",
+            "git -C %s %s exited %d; recording None for git fields. stderr=%s",
+            repo_hint,
             " ".join(args),
             exc.returncode,
             (exc.stderr or "").strip(),
@@ -141,12 +175,14 @@ def _run_git(*args: str) -> str | None:
     return out or None
 
 
-def _git_head_commit() -> str | None:
-    return _run_git("rev-parse", "HEAD")
+def _git_head_commit(scene_path: Path) -> str | None:
+    return _run_git_readonly(scene_path.parent, ("rev-parse", "HEAD"))
 
 
-def _git_head_branch() -> str | None:
-    return _run_git("rev-parse", "--abbrev-ref", "HEAD")
+def _git_head_branch(scene_path: Path) -> str | None:
+    return _run_git_readonly(
+        scene_path.parent, ("rev-parse", "--abbrev-ref", "HEAD")
+    )
 
 
 def _read_scene_id(scene_path: Path) -> str:
@@ -190,41 +226,57 @@ def _load_sidecar(sidecar: Path) -> VersionMetadata:
 
 
 def _save_sidecar(sidecar: Path, meta: VersionMetadata) -> None:
-    """Atomic write: tempfile + fsync + os.replace + parent fsync.
+    """Atomically write the sidecar via the shared `_atomic_write` helper.
 
-    Mirrors `generator.manifest` so a mid-write crash leaves the prior
-    sidecar intact rather than half-written.
+    Wraps `write_json_atomic` so the tempfile + fsync + replace recipe
+    stays a single source of truth (review §4.3); a mid-write crash
+    leaves the prior sidecar intact rather than half-written.
     """
-    payload = asdict(meta)
-    text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    write_json_atomic(sidecar, asdict(meta))
 
-    sidecar.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(
-        prefix=sidecar.name + ".", suffix=".tmp", dir=str(sidecar.parent)
-    )
+
+# ---------------------------------------------------------------------------
+# Concurrency control (review §4.2)
+# ---------------------------------------------------------------------------
+#
+# `record_version` is read-modify-write on the sidecar: load → bump →
+# write. Without serialisation, two concurrent calls on the same scene
+# (batch_scheduler + manual CLI rerun, two threads in T-3.5's N=3 pool,
+# etc.) can both read v_n and both write v_{n+1}, losing one bump and
+# its `changed_fields` audit. We layer two locks:
+#
+#   * a per-process `threading.Lock` so threads in the same Python
+#     process serialise — fcntl.flock is process-level so it does NOT
+#     do this on its own
+#   * a sibling `<sidecar>.lock` file under `fcntl.flock(LOCK_EX)` so a
+#     manual CLI invocation overlapping the batch scheduler also
+#     serialises
+#
+# Locks are held across the whole load → bump → write critical section
+# so the version + previous_versions chain stays gap-free.
+
+_RECORD_LOCK = threading.Lock()
+
+
+def _sidecar_lock_path(sidecar: Path) -> Path:
+    """`<sidecar>.lock` — sibling sentinel for the cross-process lock."""
+    return sidecar.with_suffix(sidecar.suffix + ".lock")
+
+
+@contextlib.contextmanager
+def _sidecar_file_lock(sidecar: Path) -> Iterator[None]:
+    """fcntl.flock(LOCK_EX) on a sibling `.lock` sentinel. POSIX-only."""
+    lock_path = _sidecar_lock_path(sidecar)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, sidecar)
-    except Exception:
+        fcntl.flock(fd, fcntl.LOCK_EX)
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-
-    try:
-        dir_fd = os.open(str(sidecar.parent), os.O_RDONLY)
-    except OSError:
-        return
-    try:
-        os.fsync(dir_fd)
-    except OSError:
-        pass
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
-        os.close(dir_fd)
+        os.close(fd)
 
 
 def record_version(
@@ -256,10 +308,15 @@ def record_version(
 
     Side effects
     ------------
-    - Writes `<scene>.version.json` atomically (tempfile + fsync + replace).
-    - Reads `git rev-parse HEAD` + `--abbrev-ref HEAD` via subprocess; if
-      git is unavailable the relevant fields are recorded as `None` and
-      a warning is logged. Never invokes git commit / add / push.
+    - Writes `<scene>.version.json` atomically (review §4.3 shared helper).
+    - Holds a per-process `threading.Lock` + a sibling `<sidecar>.lock`
+      `fcntl.flock` for the load → bump → write critical section so
+      concurrent calls (T-3.5 N=3 pool, manual CLI overlap) don't lose
+      a bump (review §4.2).
+    - Reads `git rev-parse HEAD` + `--abbrev-ref HEAD` anchored to
+      `scene_path.parent` via `git -C` (review §4.1); if git is
+      unavailable the relevant fields are recorded as `None` and a
+      warning is logged. Never invokes git commit / add / push.
     """
     if generation_method not in _ALLOWED_METHODS:
         raise ValueError(
@@ -268,50 +325,55 @@ def record_version(
         )
 
     sidecar = sidecar_path_for(scene_path)
-    now = _now_iso()
-    git_commit = _git_head_commit()
-    git_branch = _git_head_branch()
     cf = list(changed_fields or [])
     method = cast(GenerationMethod, generation_method)
 
-    if sidecar.exists():
-        old = _load_sidecar(sidecar)
-        archived = PreviousVersion(
-            version=old.version,
-            commit=old.git_commit_at_generation,
-            modified_at=old.last_modified_at,
-            changed_fields=cf,
-        )
-        meta = VersionMetadata(
-            scene_id=old.scene_id,
-            version=old.version + 1,
-            first_generated_at=old.first_generated_at,
-            last_modified_at=now,
-            git_commit_at_generation=git_commit,
-            git_branch_at_generation=git_branch,
-            generation_method=method,
-            previous_versions=[*old.previous_versions, archived],
-        )
-    else:
-        if not scene_path.exists():
-            raise FileNotFoundError(
-                f"scene file {scene_path} does not exist; cannot create "
-                f"version sidecar for a missing scene."
-            )
-        scene_id = _read_scene_id(scene_path)
-        meta = VersionMetadata(
-            scene_id=scene_id,
-            version=1,
-            first_generated_at=now,
-            last_modified_at=now,
-            git_commit_at_generation=git_commit,
-            git_branch_at_generation=git_branch,
-            generation_method=method,
-            previous_versions=[],
-        )
+    with _RECORD_LOCK, _sidecar_file_lock(sidecar):
+        # Sample git + clock under the lock so the audit trail reflects
+        # the actual write moment, not whatever was true seconds ago
+        # while we waited on a contending writer.
+        now = _now_iso()
+        git_commit = _git_head_commit(scene_path)
+        git_branch = _git_head_branch(scene_path)
 
-    _save_sidecar(sidecar, meta)
-    return meta
+        if sidecar.exists():
+            old = _load_sidecar(sidecar)
+            archived = PreviousVersion(
+                version=old.version,
+                commit=old.git_commit_at_generation,
+                modified_at=old.last_modified_at,
+                changed_fields=cf,
+            )
+            meta = VersionMetadata(
+                scene_id=old.scene_id,
+                version=old.version + 1,
+                first_generated_at=old.first_generated_at,
+                last_modified_at=now,
+                git_commit_at_generation=git_commit,
+                git_branch_at_generation=git_branch,
+                generation_method=method,
+                previous_versions=[*old.previous_versions, archived],
+            )
+        else:
+            if not scene_path.exists():
+                raise FileNotFoundError(
+                    f"scene file {scene_path} does not exist; cannot create "
+                    f"version sidecar for a missing scene."
+                )
+            scene_id = _read_scene_id(scene_path)
+            meta = VersionMetadata(
+                scene_id=scene_id,
+                version=1,
+                first_generated_at=now,
+                last_modified_at=now,
+                git_commit_at_generation=git_commit,
+                git_branch_at_generation=git_branch,
+                generation_method=method,
+                previous_versions=[],
+            )
+
+        _save_sidecar(sidecar, meta)
+        return meta
 
 
 # ---------------------------------------------------------------------------
