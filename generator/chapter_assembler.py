@@ -75,8 +75,28 @@ UNASSIGNED_ACT_ID = "act_unassigned"
 _UNASSIGNED_CHAPTER_DISPLAY_NAME = "Unassigned"
 _UNASSIGNED_ACT_DISPLAY_NAME = "Unassigned"
 
-_CHAPTER_ID_PATTERN = re.compile(r"^chap_[a-z0-9_]{1,64}$")
-_ACT_ID_PATTERN = re.compile(r"^act_[a-z0-9_]{1,64}$")
+# T-3.9 PR #41 review §4.1: the chapter / act id patterns must come
+# from `/schema/chapter.schema.json` directly, not be hand-copied here.
+# CLAUDE.md 规则 6 (JSON Schema 是唯一 schema 来源) + the same drift
+# class T-3.2 C-phase just patched on `state path` patterns. Reading at
+# import time means a schema edit immediately propagates to this
+# helper's input validation; the schema-source regression test in
+# `test_chapter_assembler.py` keeps the read path honest.
+_CHAPTER_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[1] / "schema" / "chapter.schema.json"
+)
+
+
+def _load_id_patterns() -> tuple[re.Pattern[str], re.Pattern[str]]:
+    schema = json.loads(_CHAPTER_SCHEMA_PATH.read_text(encoding="utf-8"))
+    chapter_pattern = schema["properties"]["chapter_id"]["pattern"]
+    act_pattern = (
+        schema["properties"]["acts"]["items"]["properties"]["act_id"]["pattern"]
+    )
+    return re.compile(chapter_pattern), re.compile(act_pattern)
+
+
+_CHAPTER_ID_PATTERN, _ACT_ID_PATTERN = _load_id_patterns()
 
 DEFAULT_ONTOLOGY_PATH = Path("state/ontology/waystation.json")
 
@@ -289,7 +309,7 @@ def assign_scene_to_chapter(
             acts.append(target_act)
 
         included = _ensure_list(target_act, "included_scenes")
-        already_in_target = scene_anchor in included
+        target_count_before = included.count(scene_anchor)
         was_elsewhere = _remove_scene_anchor_elsewhere(
             chapters,
             scene_anchor,
@@ -297,7 +317,24 @@ def assign_scene_to_chapter(
             except_act=target_act,
         )
 
-        if already_in_target and not was_elsewhere:
+        # PR #41 review §4.2: dedup target slot too. ADR-016 says the
+        # same scene_anchor in the same act is not a legal business
+        # state, but pre-helper writes (or partially-failed retries)
+        # could have left duplicates behind. Heal those when we touch
+        # the slot — otherwise the idempotent fast path below would
+        # report success and silently keep the corruption alive.
+        target_was_duplicated = target_count_before > 1
+        if target_was_duplicated:
+            target_act["included_scenes"] = [
+                s for s in included if s != scene_anchor
+            ] + [scene_anchor]
+            included = target_act["included_scenes"]
+
+        if (
+            target_count_before == 1
+            and not was_elsewhere
+            and not target_was_duplicated
+        ):
             return ChapterAssignment(
                 success=True,
                 scene_anchor=scene_anchor,
@@ -306,7 +343,7 @@ def assign_scene_to_chapter(
                 reason="idempotent_skip",
             )
 
-        if not already_in_target:
+        if target_count_before == 0:
             included.append(scene_anchor)
 
         write_json_atomic(ontology_path, data, indent=_ONTOLOGY_INDENT)
@@ -319,6 +356,15 @@ def assign_scene_to_chapter(
                 target_chapter_id,
                 target_act_id,
                 "1+",
+            )
+        if target_was_duplicated:
+            _LOG.info(
+                "chapter_assembler: scene_anchor %r healed duplicate "
+                "references in target (%s, %s); collapsed %d → 1",
+                scene_anchor,
+                target_chapter_id,
+                target_act_id,
+                target_count_before,
             )
 
         reason: ChapterAssignmentReason = (
@@ -439,7 +485,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Target act_id within --chapter. Must already exist in that "
-            "chapter when --chapter is given; ignored without --chapter."
+            "chapter; passing --act without --chapter returns a usage "
+            "error (exit 2)."
         ),
     )
     parser.add_argument(

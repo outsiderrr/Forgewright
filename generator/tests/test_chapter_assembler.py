@@ -1,6 +1,6 @@
 """Tests for generator.chapter_assembler (T-3.9; F6 fix).
 
-Covers (per CA-1 ~ CA-5 + task §测试):
+Covers (per CA-1 ~ CA-5 + task §测试 + PR #41 review §4.1 / §4.2 / §5.1):
   * core assign path under explicit chapter / act ids
   * idempotent skip when scene_anchor already in target slot
   * fallback unassigned (both ids None) → auto-create unassigned bucket
@@ -10,6 +10,8 @@ Covers (per CA-1 ~ CA-5 + task §测试):
   * explicit act_id missing in chapter → success=False, no write
   * reassign moves scene_anchor between slots and cleans the prior one
   * data corruption healing (scene in target *and* elsewhere)
+  * **target-slot dedup healing** (scene appears twice in target slot;
+    PR #41 review §4.2)
   * ValueError on (act_id without chapter_id) and on malformed ids
   * file lock injection: a custom lock_factory is honoured (CA-2 + F6
     "inject lock 形态")
@@ -19,17 +21,24 @@ Covers (per CA-1 ~ CA-5 + task §测试):
   * ADR-006: scene.json is not touched
   * chapter schema_version stays "0.3.0" on auto-created unassigned
     bucket (ADR-016 §schema 版本号策略)
+  * **schema single-source-of-truth** for chapter / act id patterns
+    (CLAUDE.md 规则 6; PR #41 review §4.1)
   * T-3.5 integration interface signature is stable (F6 修订 — T-3.5
     will `from generator.chapter_assembler import assign_scene_to_chapter`)
-  * CLI: success exit code, failure exit code, missing-ontology exit
+  * CLI: success exit code, failure exit code, missing-ontology exit,
+    --act help text matches the actual ValueError behaviour (PR #41
+    review §5.1)
 """
 
 from __future__ import annotations
 
 import fcntl
 import inspect
+import io
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import pytest
@@ -41,6 +50,11 @@ from generator.chapter_assembler import (
     ChapterAssignment,
     assign_scene_to_chapter,
     main,
+)
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_CHAPTER_SCHEMA = json.loads(
+    (_REPO_ROOT / "schema" / "chapter.schema.json").read_text(encoding="utf-8")
 )
 
 
@@ -363,6 +377,101 @@ def test_reassign_heals_data_corruption_double_reference(
 
 
 # ---------------------------------------------------------------------------
+# PR #41 review §4.2: target-slot dedup
+# ---------------------------------------------------------------------------
+
+
+def test_target_slot_duplicate_is_healed_and_writes_back(
+    ontology: Path,
+) -> None:
+    """ADR-016: same scene_anchor appearing twice in the same act is
+    not a legal business state. Pre-helper writes (or partially-failed
+    retries) might have left a duplicate behind — assign on that act
+    must collapse to a single reference AND write the file (the v1
+    code returned idempotent_skip without writing, leaving corruption
+    alive; PR #41 review §4.2).
+    """
+    data = _read(ontology)
+    data["chapters"][0]["acts"][0]["included_scenes"] = [
+        "scene_dup",
+        "scene_dup",
+    ]
+    ontology.write_text(
+        json.dumps(data, ensure_ascii=False, indent=4) + "\n",
+        encoding="utf-8",
+    )
+    mtime_before = ontology.stat().st_mtime_ns
+
+    # Sleep-free synthetic clock bump: read mtime BEFORE call, then
+    # call. Even if the write completes inside the same nanosecond
+    # tick, asserting on included_scenes content is the real guard.
+    result = assign_scene_to_chapter(
+        "scene_dup",
+        ontology,
+        chapter_id="chap_arrival",
+        act_id="act_intro",
+    )
+    assert result.success
+    # NOT idempotent_skip — the helper had to heal corruption, which
+    # is a write, so the reason reflects the user-visible outcome.
+    assert result.reason == "assigned"
+    assert _included(ontology, "chap_arrival", "act_intro") == ["scene_dup"]
+    assert ontology.stat().st_mtime_ns >= mtime_before
+
+
+def test_target_slot_triplicate_collapses_to_single_reference(
+    ontology: Path,
+) -> None:
+    """N copies → 1 copy (the dedup branch handles arbitrary multiplicity)."""
+    data = _read(ontology)
+    data["chapters"][0]["acts"][0]["included_scenes"] = [
+        "scene_dup",
+        "scene_other",
+        "scene_dup",
+        "scene_dup",
+    ]
+    ontology.write_text(
+        json.dumps(data, ensure_ascii=False, indent=4) + "\n",
+        encoding="utf-8",
+    )
+    result = assign_scene_to_chapter(
+        "scene_dup",
+        ontology,
+        chapter_id="chap_arrival",
+        act_id="act_intro",
+    )
+    assert result.success
+    final = _included(ontology, "chap_arrival", "act_intro")
+    # `scene_other` survives untouched; `scene_dup` collapses to 1.
+    assert final.count("scene_dup") == 1
+    assert "scene_other" in final
+    assert len(final) == 2
+
+
+def test_idempotent_skip_unchanged_when_target_count_is_one(
+    ontology: Path,
+) -> None:
+    """Regression guard for PR #41 review §4.2 fix: the dedup branch
+    must NOT trigger when target_count == 1. The existing idempotent
+    fast path (no write, mtime unchanged) still applies."""
+    assign_scene_to_chapter(
+        "scene_alpha",
+        ontology,
+        chapter_id="chap_arrival",
+        act_id="act_intro",
+    )
+    mtime_before = ontology.stat().st_mtime_ns
+    result = assign_scene_to_chapter(
+        "scene_alpha",
+        ontology,
+        chapter_id="chap_arrival",
+        act_id="act_intro",
+    )
+    assert result.reason == "idempotent_skip"
+    assert ontology.stat().st_mtime_ns == mtime_before
+
+
+# ---------------------------------------------------------------------------
 # CA-1: input validation
 # ---------------------------------------------------------------------------
 
@@ -539,6 +648,45 @@ def test_existing_chapter_schema_version_is_unchanged(ontology: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# PR #41 review §4.1: chapter / act id pattern is sourced from
+# /schema/chapter.schema.json (CLAUDE.md 规则 6, JSON Schema 唯一)
+# ---------------------------------------------------------------------------
+
+
+def test_chapter_id_pattern_matches_schema_source() -> None:
+    """The compiled `_CHAPTER_ID_PATTERN` must equal the schema's
+    `chapter_id.pattern` byte-for-byte. If a schema edit changes this,
+    the helper picks it up automatically; if the helper accidentally
+    grows a hand-copied second source, this test fires.
+    """
+    schema_pattern = _CHAPTER_SCHEMA["properties"]["chapter_id"]["pattern"]
+    assert chapter_assembler._CHAPTER_ID_PATTERN.pattern == schema_pattern
+
+
+def test_act_id_pattern_matches_schema_source() -> None:
+    schema_pattern = _CHAPTER_SCHEMA["properties"]["acts"]["items"][
+        "properties"
+    ]["act_id"]["pattern"]
+    assert chapter_assembler._ACT_ID_PATTERN.pattern == schema_pattern
+
+
+def test_unassigned_sentinel_ids_pass_schema_pattern() -> None:
+    """The auto-created unassigned bucket is written into the ontology
+    using the helper's sentinel ids. They must satisfy the schema
+    patterns so a downstream schema-check pass on the ontology doesn't
+    reject the bucket the helper itself created.
+    """
+    chapter_re = re.compile(_CHAPTER_SCHEMA["properties"]["chapter_id"]["pattern"])
+    act_re = re.compile(
+        _CHAPTER_SCHEMA["properties"]["acts"]["items"]["properties"]["act_id"][
+            "pattern"
+        ]
+    )
+    assert chapter_re.fullmatch(UNASSIGNED_CHAPTER_ID)
+    assert act_re.fullmatch(UNASSIGNED_ACT_ID)
+
+
+# ---------------------------------------------------------------------------
 # CA-3: T-3.5 integration interface signature
 # ---------------------------------------------------------------------------
 
@@ -694,3 +842,20 @@ def test_module_help_is_runnable() -> None:
     with pytest.raises(SystemExit) as exc:
         chapter_assembler.main(["--help"])
     assert exc.value.code == 0
+
+
+def test_cli_help_describes_act_without_chapter_as_error() -> None:
+    """PR #41 review §5.1: the original `--act` help text said
+    "ignored without --chapter", but `assign_scene_to_chapter()` raises
+    on that combination and the CLI returns 2. Help must reflect the
+    actual behaviour so author手动 reassign 时不会误以为该 flag 静默失败.
+    """
+    buf = io.StringIO()
+    with redirect_stdout(buf), pytest.raises(SystemExit):
+        chapter_assembler.main(["--help"])
+    help_text = buf.getvalue()
+    assert "--act" in help_text
+    assert "ignored without --chapter" not in help_text
+    assert (
+        "usage error" in help_text or "exit 2" in help_text
+    ), help_text
