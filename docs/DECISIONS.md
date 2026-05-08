@@ -509,12 +509,189 @@
 
 ---
 
+## ADR-022：playtest bots 完成标志阈值
+
+**状态**：已接受（2026-05-08）
+
+**背景**：synthesis §7 + ROADMAP §阶段 3 完成标志强化项 C2——ADR-009 第三层 playtest bots 必须在阶段 3 完成标志里写入，否则"完整内容生产流水线"名不副实。GPT-5.5 critique F9 + F10 + F20 + F21 修订要点：calibration run 必做（避免 N=5×M=20 直接烧穿预算）/ critical / major / minor severity taxonomy / run_manifest.json / 双层输出（path 级 + scene 级）。
+
+**决策**：见 [STAGE_3_TASKS.md §3.1](STAGE_3_TASKS.md)（v1.0 决策核心全文）。要点：
+
+- **bot persona 数 N=5**：cautious / aggressive / completionist / speedrunner / role_player（hand-write 5 个 base + LLM augment description hook 留 null）
+- **每场景 paths M=20**：5 persona × 20 paths = 100 paths/scene；与 ADR-021 §2B 抽样 N=100 数量级一致
+- **calibration run 必做（F9）**：T-3.4 A 阶段 mandatory smoke = 1 scene × 1 persona × 5 paths 实测 avg calls/path / tokens/path / seconds/path / cost/path；实测后再锁 5×20 参数；如 1 path 平均 5+ calls（每决策节点 + judge），调整 M 上限或 worst-bucket 抽样形态
+- **三重 guard（F9）**：`--max-cost-usd <amount>` / `--max-calls <n>` / `--max-wall-clock-min <m>`；任一触发 = abort batch + log
+- **critical / major / minor severity taxonomy（F10）**：critical = validator 漏掉的非法路径 / 状态因果矛盾 / 角色或本体直接冲突 / 玩家结果透明度严重误导；major = 显著叙事质量问题；minor = 体例 / 措辞；critical 必须作者明示确认，不能只靠 LLM-as-judge 自动通过 gate
+- **双层输出（F21）**：
+  - `playtest_NNN/worst_paths.jsonl`（path 级；含 path trace + judge_score + critical_count + severity）
+  - `playtest_NNN/worst_scenes.md` + `worst_scenes.json`（scene 级；scene 分数 = path 分布 / critical count / 最低分加权）
+- **run_manifest.json（F20）**：每 playtest_NNN 写 model_id / temperature / prompt_hash / persona_hash / option_set / raw_choice / judge_rubric_version
+- **完成标志**：至少 5 场景跑过完整 playtest（5×20=100 paths/scene）；worst-10% 清单产出 + 0 critical issue 或全部修复
+
+**替代方案及否决理由**：
+
+- 完全 fixture persona / 完全 LLM 生成 persona：前者缺多样性、后者递归依赖且不可重现
+- N=10 × M=50 大体量：撞 PoloAI 余额闸门 + 单 batch 时长爆炸；calibration 后再校准更稳
+- 无 calibration（F9 否决）：5×M=20 直接跑 5 场景 = 500 paths，预算靠拍脑袋；先 calibration 再锁参数才对得起 ADR-012 budget governance
+- 无 severity rubric（F10 否决）：critical / major / minor 不分会导致 LLM judge 误判轻 / 漏报重；critical 必须作者签字
+
+**后果**：
+
+- T-3.4 落地 `/generator/playtest/`（含 personas/ + run_manifest.json + worst_paths.jsonl + worst_scenes.md/json）
+- playtest cost log 独立 `/generator/playtest_cost_log.jsonl`（与 generator 主流程 cost log 解耦；ADR-012 同款形态）
+- 阶段 3 末期实测如不足以暴露 worst-bucket，由 ADR-022 v0.2 修订倒推 M 提升 / persona 扩 / sampling strategy 改
+
+---
+
+## ADR-023：content_dependency_index sidecar 形态 + 字段集
+
+**状态**：已接受（2026-05-08）
+
+**背景**：synthesis §7 + ROADMAP §阶段 3 完成标志强化项 C6——本体变更时定向反向 propagate 而非全量重审，必须有依赖索引承载。GPT-5.5 critique F5 修订核心：dep_index 不能从 scene 反推（scene 内容已 lossy；prompt 注入的 ontology / state / clock 引用不全部能从生成产物倒推），必须在 context assembly 阶段以 over-approx trace 形式写入。F15 修订：schema 字段约束加严（state path namespace pattern + uniqueItems + scene_id pattern 与 dialogue_graph.graph_id 对齐 + optional 字段明示 missing-only）。
+
+**决策**：见 [STAGE_3_TASKS.md §3.2](STAGE_3_TASKS.md)（v1.0 决策核心全文）。要点：
+
+- **形态**：per-scene sidecar `<scene>.deps.json`（与 scene.json 同目录；与 visual manifest 哲学一致）
+- **写入语义（F5 修订）**：**context assembly over-approx trace**——不是 scene 反查。`_build_scene_context` 阶段累加 `GenerationDependencyTrace`，记录注入到 LLM prompt 的所有 ontology / state / clock / visual / prompt 引用。Conservative over-approx——宁可误报 stale 也不漏依赖
+- **schema 字段约束加严（F15）**：
+  - state_paths_read / state_paths_written 必须落入 ADR-016 五命名空间 pattern（`world.*` / `faction.*` / `relationship.*` / `flag.*` / `player.*`）
+  - 数组字段加 `uniqueItems: true`
+  - `scene_id` pattern 与 dialogue_graph `graph_id` 对齐（`^[a-z0-9_]+$`）
+  - optional 字段（chapter_id / act_id / visual_asset_ids_referenced / clock_ids_referenced / scene_history_referenced）明示 missing-only（不允许 null）
+- **scene_history_referenced 字段** = ADR-024 长对话一致性 A/B hook：阶段 3 末期撞墙可基于此字段升级 RAG (B) 或 memory stream (A)，不需重做 schema
+- **新建 `/schema/content_dependency_index.schema.json`** 首版 const `0.3.0`（与 character / location / clock / chapter schema 同源演进；ADR-016 §schema 版本号策略一致）
+- **写入时机（与 ADR-026 联动）**：T-3.5 批量调度器写入顺序 = "write scene → assign chapter → write deps → record version"；T-3.7 一致性维护按 sidecar 反向 propagate
+
+**替代方案及否决理由**：
+
+- scene 反查（F5 critique 否决）：scene JSON 不含 prompt 注入 trace；从产物反推丢失"哪些 ontology 引用其实进了 prompt 但没显形在最终 scene"
+- 全局索引 `/content/index/dependencies.json`：单文件并发写竞争；不利分布式生成
+- SQLite：read-heavy 场景标准选择，但增加运行时依赖；与 ADR-003 JSON-native + 极简精神冲突
+- schema 约束太松（F15 critique 否决）：state_paths_read 不限五命名空间会让 dep_index 自身可能引非法 path，让 propagate 工具语义紊乱
+
+**后果**：
+
+- T-3.2 落地 `/schema/content_dependency_index.schema.json`（schema_version = `0.3.0`）+ schema test
+- T-3.3 SceneGraphContext 实例化时启动 `GenerationDependencyTrace` 累加（与 ADR-024 联动）
+- T-3.5 generate_scene hook 写 sidecar（context trace 形态；与 scene.json 平行落盘）
+- T-3.7 一致性维护按 sidecar 反向 propagate（本体变更时定向 mark stale）
+
+---
+
+## ADR-024：长对话一致性 C 起步 + A/B hook
+
+**状态**：已接受（2026-05-08）
+
+**背景**：DEBATE §9.2 长对话一致性列为未解问题（Generative Agents 2023 / RAG-based memory 2024 / Westworld 类项目 / CK 系列均部分缓解，无根治）。ROADMAP §阶段 3 完成标志强化项 U-CL-5。PZ §5 + §7：作者对 AI 进化能力有信心；50–100 场景规模可能不撞 §9.2 真墙；状态文件抽象层"真遇到再说"不预防性设计——但 L2 必须保留 hook 避免阶段 3 中段才发现要重做。GPT-5.5 critique F3 修订：必须改 SceneGraphContext 不是 GraphContext——节点级 GraphContext 阶段 3 不动，scene 级生成根本拿不到节点级 context。
+
+**决策**：见 [STAGE_3_TASKS.md §3.3](STAGE_3_TASKS.md)（v1.0 决策核心全文）。要点：
+
+- **C 起步全套**：
+  - prompt 模板 **SceneGraphContext** 注入 `prior_scene_summaries: list[{scene_id, summary, key_state_paths}]` 字段（F3 修订；不是 GraphContext）
+  - 摘要来源：作者人工填 OR 半自动 LLM 摘要 + 作者校准（v0.1 起手两条路并存）
+  - 上限：每场景 prompt 注入 ≤ 5 条 prior_scene_summaries（避免 prompt 膨胀）
+- **token / prompt metrics hook（v1.0 新增）**：每 scene 生成时记录到 dep_index sidecar：
+  - `prompt_token_estimate`（注入 prompt 总 token 估算）
+  - `summaries_injected_count`（实际注入条数 0-5）
+  - `summary_source_hashes`（每条 summary 的 SHA256；溯源用）
+  - `truncation_reason`（如超 5 条上限被裁的 reason）
+- **A/B hook 留**：content_dependency_index sidecar `scene_history_referenced` 字段（ADR-023 字段集）；阶段 3 末期撞墙可升级
+- **不在阶段 3 落地的 A/B**：
+  - A. Generative Agents memory stream（Park 2023 风格 episodic / semantic / reflective 多层级）
+  - B. RAG over event log（所有过往场景 embed + 按相关性 retrieve）
+
+**替代方案及否决理由**：
+
+- 完整 D hybrid (A + C)：超阶段 3 投资范围；Park 2023 memory stream 实操开放问题（多层 memory 提炼漂移；维护成本高）
+- 不立 ADR：阶段 3 实测撞墙时无 schema hook 可升级；属"出问题再做整改"的反式
+- 改 GraphContext（F3 critique 否决）：GraphContext 是节点级（`/generator/context_assembler.py:_build_node_context`），scene 级生成根本拿不到；必须改 SceneGraphContext（`_build_scene_context`）
+
+**后果**：
+
+- T-3.3 落地 SceneGraphContext + prompt 模板（skeleton/fill 渲染段加 prior_scene_summaries 字段）+ scene_summary_writer 工具（半自动 LLM 摘要 + 作者校准）
+- T-3.5 批量调度器在 SceneSpec.prior_summary_paths 字段（ADR-026）指向预先写好的 summary 文件
+- 阶段 3 实测 token 累积曲线 + 接受率回归是否撞墙作 ADR-024 v0.2 修订依据；如撞墙基于 ADR-023 scene_history_referenced 字段升级 RAG (B) 或 memory stream (A)
+
+---
+
+## ADR-025：审阅 UI 架构
+
+**状态**：已接受（2026-05-08）
+
+**背景**：synthesis §7 + ROADMAP §阶段 3 完成标志强化项 U-GPT-7——审阅 UI 第一版必须含图视图（mermaid/dot），避免后期重做审阅心智模型。GPT-5.5 critique F2 + F16 + F17 修订要点：模块边界必须含 pyproject.toml（FastAPI + uvicorn deps + tools package 注册——执行会话否则无法合法落地，CLAUDE.md 规则 2 模块边界严管）/ 拆 a (MVP) + b (integrations)（单任务范围过宽；MVP 浏览器 smoke / 截图 / mermaid 渲染检查也变 mandatory）/ mermaid CDN fallback（ASCII / DOT 文件展示或 vendor 固定版本 bundle，不依赖 CDN 可用性）。
+
+**决策**：见 [STAGE_3_TASKS.md §3.4](STAGE_3_TASKS.md)（v1.0 决策核心全文）。要点：
+
+- **形态**：Web 单页（local file server + 前端 vanilla HTML/JS）
+- **工具栈（F2）**：FastAPI 静态 server + uvicorn（**新增 deps**）+ 前端 vanilla HTML/JS（不引入 React / Vue / Svelte，开源门槛低）+ mermaid.js（**vendor bundle 或 CDN with fallback；F17**）
+- **`pyproject.toml` 修订（F2）**：T-3.6a / T-3.6b / T-3.7 模块边界**允许修改 pyproject.toml**——加 `fastapi` + `uvicorn` deps + `tools` package 注册
+- **拆分（F16）**：
+  - **T-3.6a MVP**：scene list + graph 视图（mermaid 渲染）+ validator issues 面板（schema / topology / sampling / mechanical 四 tab）+ 审美层 [A]/[R]/[S] 标注 + reason 文本框
+  - **T-3.6b integrations**：visual asset thumbnail（manifest 读取）+ playtest worst paths/scenes 视图（**产物存在则展示，否则隐藏 / 提示未跑**；F13）+ stale list（dep_propagate 集成）+ chapter list 分组
+- **mermaid CDN fallback（F17）**：T-3.6a 必须自带 fallback：可切换 ASCII/DOT 文件展示（T-2.8 已有 graph_views 三件套）OR vendor 固定版本 mermaid bundle（推荐 `mermaid@10.x`）；不依赖 CDN 可用性
+- **浏览器 smoke / 截图 / mermaid 渲染检查（F16）**：T-3.6a + T-3.6b A 阶段完成标志改 mandatory（不是 optional）
+- **read-only**：不做编辑功能；编辑由作者直接改 JSON + git workflow（ADR-008 LLM 不能直接修改状态精神延伸到 UI）
+- **运行时部署**：仅生产期；env `FORGEWRIGHT_REVIEW_UI_PORT`（默认 `8765`）；本地 localhost 访问
+
+**替代方案及否决理由**：
+
+- CLI 升级（基于 T-2.8 scene_review_cli 加图视图）：投资低；但 graph 可视化效果差；阶段 3 是产出阶段，审阅效率是关键瓶颈
+- 桌面应用（electron / tauri）：投资最高；开源用户额外打包负担
+- 不动 pyproject（F2 critique 否决）：执行会话无法合法落地——FastAPI / uvicorn 不在 pyproject deps 即引入失败
+- React / Vue / Svelte：开源门槛上升（构建链 + node_modules）；与 ADR-003 JSON-native + 开源极简精神冲突
+- 单 T-3.6 任务范围过宽（F16 critique 否决）：浏览器 smoke 也变 mandatory，单任务难做；拆 a / b 后 MVP 先稳，integrations 后跟
+- 仅 CDN 不带 fallback（F17 critique 否决）：CDN 不可用时审阅 UI 全瘫；review_ui 是阶段 3 关键瓶颈，可用性优先
+
+**后果**：
+
+- T-3.6a + T-3.6b 落地 `/tools/review_ui/`（含 server.py + api.py + static/ + tests/）
+- 复用 T-2.8 graph_views 三件套（mermaid / dot / ascii）作 graph 视图数据源
+- pyproject.toml 修订加 fastapi / uvicorn deps + tools package 注册（T-3.6a 或 T-3.7 先到先做）
+
+---
+
+## ADR-026：批量调度器并发模型
+
+**状态**：已接受（2026-05-08）
+
+**背景**：ROADMAP §阶段 3 完成标志要求批量生成调度器（异步跑多场景）。阶段 2 baseline_011 单 iter mean 268s 实测——串行 N=1 跑 10 场景 ≈ 45 分钟，作者无法离开；并发 N=3 ≈ 15 分钟。GPT-5.5 critique F4 + F13 + F14 修订要点：N=3 并发与 prior_scene_summaries 顺序冲突（场景间因果依赖 → 必须 SceneSpec DAG）/ T-3.5 不应依赖 T-3.4（调度器和 playtest 解耦）/ RateLimitedProvider wrapper 必须明示（不在 scene worker 外层限速；同步 generate_structured 内线程安全 bucket 阻塞等待）。
+
+**决策**：见 [STAGE_3_TASKS.md §3.5](STAGE_3_TASKS.md)（v1.0 决策核心全文）。要点：
+
+- **并发模型**：asyncio + N=3 concurrent worker（基础数据：baseline_011 单 iter mean 268s）
+- **SceneSpec DAG（F4）**：SceneSpec 加 `depends_on_scene_ids: list[str]` / `sequence_group: str` / `prior_summary_paths: list[Path]` 字段；调度器**拓扑分层**——同层并发（N=3 max），不同层串行；T-3.10 实测场景集声明依赖图，不是 flat specs
+- **RateLimitedProvider wrapper（F14）**：实现 `class RateLimitedProvider(LLMProvider)`——同步 `generate_structured` 内线程安全 bucket 阻塞等待；包住所有 LLMProvider 调用（不在 scene worker 外层限速）；解决 token bucket 与 sync provider API 设计边界
+- **速率限制**：每 provider token bucket 默认 60 RPM（env `FORGEWRIGHT_PROVIDER_RPM`）
+- **ontology 写入**：file lock（fcntl on `/state/ontology/<world>.json`）；scene 文件各自独立 path 不冲突
+- **写入顺序（与 ADR-023 联动）**：write scene → assign chapter（T-3.9 helper 调用）→ write deps（T-3.5 含 dep_index trace）→ record version（T-3.8a 调用）
+- **依赖关系（F13）**：T-3.5 仅依赖 T-3.2 + T-3.3，**不依赖 T-3.4 playtest**；T-3.4 与 T-3.5 并行
+- **失败传播**：单 worker scene 失败不阻塞其他并发场景；每 worker 独立 ProviderError 仪表化（沿用 R2.9）
+- **配置**：`FORGEWRIGHT_BATCH_CONCURRENT_N`（默认 `3`） / `FORGEWRIGHT_PROVIDER_RPM`（默认 `60`）
+
+**替代方案及否决理由**：
+
+- 串行 N=1：作者无法离开 45 分钟；不达 ROADMAP "一周 ≥ 10 场景"目标
+- N=10 大并发：撞 PoloAI 速率限制 + 余额闸门；token bucket 撑不住
+- subprocess fan-out：进程间共享 ontology lock + cost log 复杂度高
+- flat queue 无 DAG（F4 critique 否决）：无法处理 prior_scene_summaries 顺序约束（场景 B 依赖场景 A 的 summary，必须 A 先完）；T-3.10 实测场景集会撞这个
+- T-3.5 hard depend T-3.4（F13 critique 否决）：调度器和 playtest 解耦更清晰；T-3.4 + T-3.5 并行可加速 Wave 3-4
+- 仅外层限速（F14 critique 否决）：内部 provider call 不受限；多 worker 同时 burst 调用会触发 PoloAI 限流；wrapper 内同步阻塞才稳
+
+**后果**：
+
+- T-3.5 落地 `/generator/batch_scheduler.py`（asyncio 拓扑分层）+ `/generator/dep_index_writer.py` + `/generator/_rate_limit.py`（RateLimitedProvider）
+- generate_scene 扩展 GenerationDependencyTrace 注入 + dep_index sidecar 写入 hook（T-3.5 范围）
+- 阶段 3 实测如撞 PoloAI 余额闸门，作者降 N=1/2 应急；阶段 3 末期 ADR-026 v0.2 修订倒推真实最优 N
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
 - 2026-04-30：作者明确授权新增 ADR-014（视觉资产双模生成策略），属 CLAUDE.md 规则 10 的明示例外（阶段 1.5 路径 C 例外）。
 - 2026-04-30：作者授权新增 ADR-015（Round 5 综合后第一条已锁结论），属 CLAUDE.md 规则 10 的明示例外。
 - 2026-05-03：作者明确授权新增 ADR-016 / 017 / 018 / 019 / 020 / 021（阶段 2 六条架构决策一次性立），属 CLAUDE.md 规则 10 的明示例外。整合自 STAGE_2_TASKS_v1.0_draft（含 GPT-5.5 critique 校准）。L2 整合规划师会话（claude/musing-fermi-f6bfd3）2026-05-03 L1-L2 校准产物。
+- 2026-05-08：作者明确授权新增 ADR-022 / 023 / 024 / 025 / 026（阶段 3 五条架构决策一次性立），属 CLAUDE.md 规则 10 的明示例外。整合自 STAGE_3_TASKS.md v1.0（含 GPT-5.5 cross-LLM critique 22 finding + Claude round 2 response + 作者 2026-05-08 三议题拍板 F1/F2/F8）。L2 整合规划师会话（claude/sweet-bardeen-863720）2026-05-08 L1-L2 校准产物。
 
 ## 版本
 
