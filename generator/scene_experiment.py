@@ -48,6 +48,7 @@ from dotenv import load_dotenv
 
 from generator import budget, graph_view
 from generator.budget import BudgetExceeded
+from generator.generate_node import _is_request_not_sent
 from generator.generate_scene import SceneResult, generate_scene
 from generator.llm_provider import LLMProvider, ProviderError
 from generator.scene_strategies import SceneSetting
@@ -151,15 +152,26 @@ def probe_provider_health(
             )
         return False, f"BudgetExceeded: {exc}"
     except ProviderError as exc:
-        if record_id is not None:
+        # B-review 4.2 (T-3.0 C): align probe refund policy with
+        # generate_node's three-state contract — only refund when the
+        # request never reached the upstream (connect failure / DNS / etc).
+        # HTTP 4xx/5xx and decode failures mean the request was sent and
+        # likely consumed quota; keep the estimate on the row so cost_log
+        # doesn't under-report. ADR-012 + R2.9 alignment; mirrors
+        # scene_strategies.py:355.
+        if record_id is not None and _is_request_not_sent(exc):
             budget.refund_estimated(
-                record_id, reason=f"probe ProviderError: {exc}"
+                record_id, reason=f"probe request_not_sent: {exc}"
             )
         return False, f"ProviderError: {exc}"
     except Exception as exc:  # noqa: BLE001 — wide net for probe diagnostics
-        if record_id is not None:
+        # Same three-state policy: refund only when the wrapper exception
+        # chain proves the request never went out. Most non-Provider
+        # errors here will be schema-decode / assertion bugs after a
+        # successful call — those keep their charge.
+        if record_id is not None and _is_request_not_sent(exc):
             budget.refund_estimated(
-                record_id, reason=f"probe {type(exc).__name__}: {exc}"
+                record_id, reason=f"probe request_not_sent: {exc}"
             )
         return False, f"{type(exc).__name__}: {exc}"
 
@@ -295,6 +307,96 @@ def _summarise_sampling(graph: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Judge context (B-review 4.1; T-3.0 C)
+# ---------------------------------------------------------------------------
+
+
+def _build_judge_context(
+    *,
+    fixture: SceneFixture,
+    ontology: dict,
+) -> dict:
+    """Extract the ontology subset the AI judge needs for S7-S9 scoring.
+
+    The CLI judge prompt's §A "输入" block lists what the judge expects
+    to see beyond the DialogueGraph itself: character cards (features /
+    dramatic_triggers / relations), the location card, active clocks,
+    and system_time. Without these, S7 (context / dramatic_triggers) /
+    S8 (relations / narrative_weight) / S9 (clocks) become guesses —
+    that's the failure mode B-review 4.1 flagged after R3.0 unblocked
+    dimension reporting (the dimensions are no longer ``{}``, but the
+    rubric for S7-S9 has no input to ground itself in).
+
+    The helper writes a snapshot into the envelope at experiment time
+    so a later judge / calibration run replays the *same* ontology
+    state the scene was generated against; running the judge after a
+    later ontology mutation would otherwise compare against drift.
+    """
+    entities = ontology.get("entities") or []
+    by_id = {ent.get("id"): ent for ent in entities if ent.get("id")}
+
+    character_cards: list[dict] = []
+    for npc_id in fixture.participating_npcs:
+        ent = by_id.get(npc_id)
+        if ent is None or ent.get("type") != "character":
+            continue
+        character_cards.append({
+            "id": ent.get("id"),
+            "display_name": ent.get("display_name"),
+            "state_path_slug": ent.get("state_path_slug"),
+            "character_features": list(ent.get("character_features") or []),
+            "dramatic_triggers": list(ent.get("dramatic_triggers") or []),
+            "relations": list(ent.get("relations") or []),
+        })
+
+    location_card: dict | None = None
+    primary_loc = fixture.scene_setting.primary_location_ref
+    if primary_loc:
+        loc_ent = by_id.get(primary_loc)
+        if loc_ent is not None and loc_ent.get("type") == "location":
+            location_card = {
+                "id": loc_ent.get("id"),
+                "display_name": loc_ent.get("display_name"),
+                "description": loc_ent.get("description"),
+                "location_type": loc_ent.get("location_type"),
+                "parent_location_ref": loc_ent.get("parent_location_ref"),
+            }
+
+    # Active clocks = ticks_filled > 0 (per ADR-017 active = has progress).
+    # Empty list when the ontology hasn't seeded any clocks yet (current
+    # state of waystation.json) — the judge gets an empty array and
+    # scores S9 "no active clocks to reflect" rather than guessing.
+    active_clocks: list[dict] = []
+    for clk in ontology.get("clocks") or []:
+        try:
+            ticks_filled = int(clk.get("ticks_filled", 0) or 0)
+        except (TypeError, ValueError):
+            ticks_filled = 0
+        if ticks_filled <= 0:
+            continue
+        active_clocks.append({
+            "id": clk.get("id"),
+            "scope": clk.get("scope"),
+            "ticks_filled": clk.get("ticks_filled"),
+            "ticks_total": clk.get("ticks_total"),
+            "advance_rule": clk.get("advance_rule"),
+        })
+
+    system_time_raw = ontology.get("system_time") or {}
+    system_time = {
+        "scene_count": system_time_raw.get("scene_count", 0),
+        "long_rest_count": system_time_raw.get("long_rest_count", 0),
+    }
+
+    return {
+        "character_cards": character_cards,
+        "location_card": location_card,
+        "active_clocks": active_clocks,
+        "system_time": system_time,
+    }
+
+
 def _summarise_mechanical(graph: dict, ontology: dict) -> dict:
     """Re-run T-2.4 over the assembled graph for the per-iteration record.
 
@@ -380,6 +482,7 @@ def _serialise_envelope(
             "inner_attempt_count": len(result.inner_results),
         },
         "validator_summaries": None,
+        "judge_context": None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     if result.success and isinstance(result.graph, dict):
@@ -388,6 +491,14 @@ def _serialise_envelope(
             "topology": _summarise_topology(result.graph, ontology),
             "sampling": _summarise_sampling(result.graph),
         }
+        # B-review 4.1 (T-3.0 C): freeze the ontology snapshot the
+        # judge needs for S7-S9 alongside the graph so a later
+        # scene_ai_judge / judge_calibration replay scores against the
+        # same state the scene was generated under. Failure rows skip
+        # this — judge can't score them anyway.
+        env["judge_context"] = _build_judge_context(
+            fixture=fixture, ontology=ontology
+        )
     return env
 
 

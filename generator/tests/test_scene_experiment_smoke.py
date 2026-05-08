@@ -496,6 +496,168 @@ def test_scene_metrics_computes_gross_and_topology_rates(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# B-review 4.1 (T-3.0 C) — judge_context envelope payload
+# ---------------------------------------------------------------------------
+
+
+def test_build_judge_context_extracts_character_cards_and_location():
+    """``_build_judge_context`` must lift character cards (features /
+    dramatic_triggers / relations) for every participating NPC and the
+    primary location card so the AI judge has S7-S9 inputs."""
+    fixture = scene_experiment.SceneFixture(
+        fixture_id="ctx_smoke",
+        scene_setting=SceneSetting(
+            scene_anchor="scene_waystation_of_iron_oath",
+            primary_location_ref="scene_waystation_of_iron_oath",
+            chapter_ref=None,
+            expected_node_count_min=5,
+            expected_node_count_max=12,
+        ),
+        target_beats=("抵达",),
+        participating_npcs=("char_vellin", "char_corvan"),
+    )
+    ontology = {
+        "system_time": {"scene_count": 3, "long_rest_count": 1},
+        "clocks": [
+            # Active: ticks_filled > 0
+            {
+                "id": "iron_oath_pressure",
+                "scope": "scene",
+                "ticks_filled": 4,
+                "ticks_total": 6,
+                "advance_rule": "on_scene",
+            },
+            # Inactive: skipped by extractor
+            {
+                "id": "long_chase",
+                "scope": "world",
+                "ticks_filled": 0,
+                "ticks_total": 8,
+                "advance_rule": "on_long_rest",
+            },
+        ],
+        "entities": [
+            {
+                "id": "char_vellin",
+                "type": "character",
+                "display_name": "Vellin",
+                "state_path_slug": "vellin",
+                "character_features": ["stoic mercenary"],
+                "dramatic_triggers": [
+                    {"trait": "stoic mercenary", "when": "X", "how": "Y", "priority": 1}
+                ],
+                "relations": [
+                    {"target_character_ref": "char_corvan",
+                     "relation_type": "former", "narrative_weight": "core"},
+                ],
+            },
+            {
+                "id": "char_corvan",
+                "type": "character",
+                "display_name": "Corvan",
+                "state_path_slug": "corvan",
+                "character_features": ["铁誓巡逻官"],
+                "dramatic_triggers": [],
+                "relations": [],
+            },
+            {
+                "id": "scene_waystation_of_iron_oath",
+                "type": "location",
+                "display_name": "Iron Oath Waystation",
+                "description": "stone tower …",
+                "location_type": "scene",
+                "parent_location_ref": None,
+            },
+            # Should NOT be included — not a participating NPC
+            {"id": "char_aelwin", "type": "character", "display_name": "Aelwin"},
+        ],
+    }
+    ctx = scene_experiment._build_judge_context(
+        fixture=fixture, ontology=ontology
+    )
+    # Character cards: 2 entries, in fixture order, full fields lifted.
+    assert [c["id"] for c in ctx["character_cards"]] == [
+        "char_vellin", "char_corvan",
+    ]
+    vellin = ctx["character_cards"][0]
+    assert vellin["state_path_slug"] == "vellin"
+    assert vellin["character_features"] == ["stoic mercenary"]
+    assert vellin["dramatic_triggers"][0]["trait"] == "stoic mercenary"
+    assert vellin["relations"][0]["narrative_weight"] == "core"
+    # Location card with the four documented fields.
+    loc = ctx["location_card"]
+    assert loc["id"] == "scene_waystation_of_iron_oath"
+    assert loc["description"].startswith("stone tower")
+    assert loc["location_type"] == "scene"
+    # Active clocks filtered to ticks_filled > 0.
+    assert len(ctx["active_clocks"]) == 1
+    assert ctx["active_clocks"][0]["id"] == "iron_oath_pressure"
+    # System time mirrors ontology.
+    assert ctx["system_time"] == {"scene_count": 3, "long_rest_count": 1}
+
+
+def test_build_judge_context_handles_minimal_ontology():
+    """No clocks / no NPCs / no location — every field empty but the
+    schema shape must stay intact so judge_context.json is always
+    parseable downstream."""
+    fixture = scene_experiment.SceneFixture(
+        fixture_id="ctx_min",
+        scene_setting=SceneSetting(
+            scene_anchor="scene_x",
+            primary_location_ref="scene_missing",
+            chapter_ref=None,
+            expected_node_count_min=3,
+            expected_node_count_max=8,
+        ),
+        target_beats=("一",),
+        participating_npcs=(),
+    )
+    ctx = scene_experiment._build_judge_context(
+        fixture=fixture, ontology={"entities": [], "clocks": []}
+    )
+    assert ctx == {
+        "character_cards": [],
+        "location_card": None,
+        "active_clocks": [],
+        "system_time": {"scene_count": 0, "long_rest_count": 0},
+    }
+
+
+def test_run_scene_experiment_writes_judge_context_into_envelope(tmp_path):
+    """End-to-end: a success row's envelope carries ``judge_context``
+    so a later scene_ai_judge / judge_calibration replay can score
+    S7-S9 against the snapshot of the ontology the scene was generated
+    under (B-review 4.1)."""
+    provider = _ScriptedProvider(_one_scene_script())
+    batch_dir = scene_experiment.run_scene_experiment(
+        batch_name="judge_context_smoke",
+        count=1,
+        provider=provider,
+        out_root=tmp_path,
+        fixtures=[_tiny_fixture()],
+        ontology=_tiny_ontology(),
+        timestamp="20260508T000000Z",
+        progress=False,
+    )
+    rows = [
+        json.loads(line)
+        for line in (
+            batch_dir / "scene_results.jsonl"
+        ).read_text(encoding="utf-8").splitlines()
+    ]
+    env = rows[0]
+    ctx = env.get("judge_context")
+    assert isinstance(ctx, dict)
+    # Two participating NPCs in _tiny_fixture → 2 character cards.
+    assert len(ctx["character_cards"]) == 2
+    assert {c["id"] for c in ctx["character_cards"]} == {
+        "char_vellin", "char_corvan",
+    }
+    assert ctx["location_card"]["id"] == "scene_waystation_of_iron_oath"
+    assert "system_time" in ctx
+
+
+# ---------------------------------------------------------------------------
 # R3.2 — pre-flight provider health probe (T-3.0)
 # ---------------------------------------------------------------------------
 
@@ -543,18 +705,60 @@ def test_probe_provider_health_ok_on_well_formed_response(tmp_path, capsys):
 def test_probe_provider_health_fails_on_provider_error(tmp_path):
     """ProviderError surfaces as ``(False, "ProviderError: …")`` —
     baseline_008 mode: PoloAI quota gate raises a 403 wrapped as
-    ProviderError before any tokens are spent."""
+    ProviderError before any tokens are spent.
+
+    B-review 4.2 (T-3.0 C): a 403 is a request-sent failure (the
+    upstream relay billed it), so the cost_log row stays charged —
+    no refund. This pins the three-state contract (refund only when
+    request_not_sent)."""
+    from generator import budget
+    from generator import cost_log
     from generator.llm_provider import ProviderError as PE
 
     provider = _ProbeOnlyProvider(
         None,
         raise_exc=PE("upstream_error: insufficient_user_quota"),
     )
+    pre_total = budget.today_total_usd()
     ok, err = scene_experiment.probe_provider_health(provider)
     assert ok is False
     assert err is not None
     assert "ProviderError" in err
     assert "insufficient_user_quota" in err
+    # B-review 4.2 pin: charge stays on the row (request was sent).
+    post_total = budget.today_total_usd()
+    assert post_total > pre_total, (
+        "request-sent ProviderError must keep the estimate on cost_log "
+        "to match generate_node's three-state policy (B-review 4.2)."
+    )
+
+
+def test_probe_provider_health_refunds_only_when_request_not_sent(tmp_path):
+    """B-review 4.2 (T-3.0 C): a connect-level failure (DNS / refused)
+    that bubbles through ``ProviderError`` must release the estimate.
+    Mirrors ``generate_node._is_request_not_sent`` semantics: refund
+    iff the request never reached the upstream."""
+    from generator import budget
+    from generator.llm_provider import ProviderError as PE
+
+    # Synthesise a request-not-sent ProviderError by chaining a
+    # ConnectionRefusedError as __cause__ — that's the marker
+    # ``_is_request_not_sent`` looks for.
+    cause = ConnectionRefusedError("connect refused")
+    err_exc = PE("transport: connect refused")
+    err_exc.__cause__ = cause
+    provider = _ProbeOnlyProvider(None, raise_exc=err_exc)
+
+    pre_total = budget.today_total_usd()
+    ok, err = scene_experiment.probe_provider_health(provider)
+    assert ok is False
+    assert err is not None
+    post_total = budget.today_total_usd()
+    # Refund applied → today's total returns to pre-call baseline.
+    assert post_total == pre_total, (
+        "request-not-sent ProviderError must refund the estimate so "
+        "cost_log doesn't double-count a call that never went out."
+    )
 
 
 def test_probe_provider_health_fails_on_budget_exceeded(monkeypatch, tmp_path):

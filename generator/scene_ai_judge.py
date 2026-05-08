@@ -185,10 +185,18 @@ def _render_user_prompt(
       * {{TARGET_BEATS}}        — comma-joined fixture beats
       * {{PARTICIPATING_NPCS}}  — comma-joined fixture NPCs
       * {{SCENE_ANCHOR}}        — fixture scene_anchor
+      * {{JUDGE_CONTEXT}}       — pretty-printed ontology snapshot
+                                  (B-review 4.1; T-3.0 C): character
+                                  cards, location card, active_clocks,
+                                  system_time. Empty ``{}`` for legacy
+                                  envelopes that pre-date the field —
+                                  the rubric still works, it just
+                                  means S7-S9 fall back to "no info".
     """
     fixture = env.get("fixture", {}) or {}
     setting = fixture.get("scene_setting", {}) or {}
     graph = (env.get("result") or {}).get("graph") or {}
+    judge_context = env.get("judge_context") or {}
     substitutions = {
         "{{SCENE_ID}}": scene_id,
         "{{PASS_MODE}}": pass_mode,
@@ -196,6 +204,9 @@ def _render_user_prompt(
         "{{TARGET_BEATS}}": ", ".join(fixture.get("target_beats") or []),
         "{{PARTICIPATING_NPCS}}": ", ".join(fixture.get("participating_npcs") or []),
         "{{SCENE_ANCHOR}}": setting.get("scene_anchor", ""),
+        "{{JUDGE_CONTEXT}}": json.dumps(
+            judge_context, ensure_ascii=False, indent=2
+        ),
     }
     rendered = template
     for key, value in substitutions.items():

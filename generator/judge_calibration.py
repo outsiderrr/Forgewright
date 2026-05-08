@@ -220,6 +220,27 @@ def run_judge_calibration(
             ))
             continue
 
+        # B-review 5.1 (T-3.0 C): if the author hasn't decided on this
+        # scene yet (skipped or no review row), there's nothing to
+        # calibrate against — the judge call would just burn ~$0.04
+        # and the report would still bucket as ``no_author_label``.
+        # Short-circuit so the runner is cheap to re-run as the author
+        # accumulates labels in scene_review_log.jsonl.
+        if author_decision in ("S", "missing"):
+            if progress:
+                print("  [skip] no author label yet; not calling judge.")
+            rows.append(CalibrationRow(
+                scene_id=scene_id,
+                author_decision=author_decision,
+                author_reason=author_reason,
+                ai_advisory=None,
+                ai_total=None,
+                ai_dims={},
+                judge_rationale=None,
+                agreement="no_author_label",
+            ))
+            continue
+
         try:
             content, _cost = scene_ai_judge.judge_scene_envelope(
                 env,

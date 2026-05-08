@@ -309,17 +309,21 @@ def test_runner_produces_report_with_three_scene_buckets(tmp_path):
     assert "disagree_judge_strict" in md
 
 
-def test_runner_records_no_author_label_when_review_log_missing(tmp_path):
-    """Author hasn't run scene_review_cli yet — runner should record
-    every scene as ``no_author_label`` and not crash."""
+def test_runner_skips_judge_call_when_no_author_label(tmp_path):
+    """B-review 5.1 (T-3.0 C): if the author hasn't reviewed the scene
+    yet (or skipped it), the runner must short-circuit before the
+    judge call — there's nothing to calibrate against, and re-running
+    the runner once labels accumulate is the intended workflow.
+
+    Provider must not be called; the row records ``no_author_label``
+    with ``ai_advisory=None``.
+    """
     batch_dir = _seed_baseline(
         tmp_path / "20260506T010000Z_baseline_test",
         envelopes=[_envelope("scene_x")],
         review_records=None,  # no scene_review_log.jsonl
     )
-    provider = _ScriptedJudgeProvider([
-        _judge_response("scene_x", advisory="accept"),
-    ])
+    provider = _ScriptedJudgeProvider([])  # zero calls expected
     md, rows = judge_calibration.run_judge_calibration(
         baseline_dir=batch_dir,
         scene_ids=["scene_x"],
@@ -328,10 +332,41 @@ def test_runner_records_no_author_label_when_review_log_missing(tmp_path):
         report_path=batch_dir / "report.md",
         progress=False,
     )
+    assert provider.call_count == 0
     assert rows[0].agreement == "no_author_label"
     assert rows[0].author_decision == "missing"
-    assert rows[0].ai_advisory == "accept"
+    assert rows[0].ai_advisory is None
     assert "no_author_label" in md
+
+
+def test_runner_skips_judge_call_when_author_skipped_scene(tmp_path):
+    """An ``accepted=null`` row in scene_review_log.jsonl is the author's
+    explicit ``S`` (skip) — same skip behavior as the missing-row case."""
+    batch_dir = _seed_baseline(
+        tmp_path / "20260506T015000Z_baseline_test",
+        envelopes=[_envelope("scene_y")],
+        review_records=[
+            {
+                "iter_id": 0,
+                "scene_id": "scene_y",
+                "accepted": None,
+                "reason": None,
+                "reviewed_at": "2026-05-04T00:00:00+00:00",
+            },
+        ],
+    )
+    provider = _ScriptedJudgeProvider([])  # zero calls expected
+    _, rows = judge_calibration.run_judge_calibration(
+        baseline_dir=batch_dir,
+        scene_ids=["scene_y"],
+        provider=provider,
+        template_text=_TEMPLATE_TEXT,
+        report_path=batch_dir / "report.md",
+        progress=False,
+    )
+    assert provider.call_count == 0
+    assert rows[0].agreement == "no_author_label"
+    assert rows[0].author_decision == "S"
 
 
 def test_runner_records_scene_not_found_for_unknown_scene_id(tmp_path):
@@ -408,14 +443,33 @@ def test_runner_continues_after_provider_error_on_one_scene(tmp_path):
 def test_runner_stops_on_budget_exceeded_mid_run(tmp_path, monkeypatch):
     """BudgetExceeded must short-circuit the loop and still flush the
     report with a ``stopped early`` marker — same convention as
-    scene_ai_judge."""
+    scene_ai_judge.
+
+    Both scenes need an author label so the runner actually attempts a
+    judge call (the 5.1 short-circuit would otherwise skip them and
+    BudgetExceeded would never trigger)."""
     batch_dir = _seed_baseline(
         tmp_path / "20260506T040000Z_baseline_test",
         envelopes=[
             _envelope("scene_first", iter_id=0),
             _envelope("scene_second", iter_id=1),
         ],
-        review_records=[],
+        review_records=[
+            {
+                "iter_id": 0,
+                "scene_id": "scene_first",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-04T00:00:00+00:00",
+            },
+            {
+                "iter_id": 1,
+                "scene_id": "scene_second",
+                "accepted": True,
+                "reason": None,
+                "reviewed_at": "2026-05-04T00:01:00+00:00",
+            },
+        ],
     )
     # Drop per-call cap so the very first judge call trips BudgetExceeded.
     monkeypatch.setenv("PER_CALL_BUDGET_USD", "0.0001")

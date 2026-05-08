@@ -17,6 +17,12 @@ This file serves two consumers:
 {{SCENE_JSON}}
 ```
 
+- `judge_context`（本体快照；T-3.0 C / B-review 4.1）—— 评 S7（dramatic_triggers 编织）/ S8（relations.narrative_weight）/ S9（active_clocks）必读。结构：`character_cards: [{id, display_name, state_path_slug, character_features, dramatic_triggers, relations}]` + `location_card: {id, display_name, description, location_type, parent_location_ref}` + `active_clocks: [{id, scope, ticks_filled, ticks_total, advance_rule}]` + `system_time: {scene_count, long_rest_count}`。该字段缺失（旧 batch envelope）时为空 `{}`——S7-S9 按"无信息"评（多半给 0/1，不要硬猜）：
+
+```json
+{{JUDGE_CONTEXT}}
+```
+
 ## §CLI-OUTPUT (single JSON object, matching `scene_ai_judge.py` `_JUDGE_RESPONSE_SCHEMA`)
 
 In CLI mode, score **only the 10 scene-level dimensions S1–S10** defined in §B.2 below. Per-node 21-dim breakdown is reserved for manual-paste mode and is NOT requested here. Respond with exactly:

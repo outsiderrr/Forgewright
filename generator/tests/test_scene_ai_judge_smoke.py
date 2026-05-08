@@ -369,6 +369,55 @@ def test_record_pass_logs_warning_on_partial_dimensions(tmp_path, caplog):
     assert "S10_naming" in sample  # one of the 8 missing keys
 
 
+def test_render_user_prompt_substitutes_judge_context(tmp_path):
+    """B-review 4.1 (T-3.0 C): the rendered prompt must carry the
+    envelope's ``judge_context`` JSON so the model can ground S7-S9
+    against the ontology snapshot. Pin both the placeholder name and
+    the JSON shape so a refactor can't quietly drop the field."""
+    env = _envelope(0, "s_ctx")
+    env["judge_context"] = {
+        "character_cards": [
+            {
+                "id": "char_vellin",
+                "display_name": "Vellin",
+                "dramatic_triggers": [{"trait": "stoic", "when": "X", "how": "Y"}],
+            }
+        ],
+        "location_card": {"id": "scene_x", "display_name": "Iron Oath"},
+        "active_clocks": [{"id": "pressure", "ticks_filled": 4, "ticks_total": 6}],
+        "system_time": {"scene_count": 3, "long_rest_count": 1},
+    }
+    template = (
+        "scene: {{SCENE_ID}}\npass: {{PASS_MODE}}\n\n"
+        "context:\n{{JUDGE_CONTEXT}}\n"
+    )
+    rendered = scene_ai_judge._render_user_prompt(
+        template, scene_id="s_ctx", pass_mode="strict", env=env
+    )
+    # Placeholder consumed.
+    assert "{{JUDGE_CONTEXT}}" not in rendered
+    # Character / location / clocks / system_time all present in payload.
+    assert "char_vellin" in rendered
+    assert "Iron Oath" in rendered
+    assert "ticks_filled" in rendered
+    assert '"scene_count": 3' in rendered
+
+
+def test_render_user_prompt_judge_context_falls_back_to_empty_object(tmp_path):
+    """Legacy envelopes (pre-judge_context) — substitution must still
+    fire with ``{}`` so the prompt template doesn't end up with a
+    literal ``{{JUDGE_CONTEXT}}`` token reaching the LLM."""
+    env = _envelope(0, "s_legacy")
+    # No judge_context key at all — older baseline_NNN envelopes.
+    assert "judge_context" not in env
+    template = "ctx: {{JUDGE_CONTEXT}}"
+    rendered = scene_ai_judge._render_user_prompt(
+        template, scene_id="s_legacy", pass_mode="strict", env=env
+    )
+    assert "{{JUDGE_CONTEXT}}" not in rendered
+    assert "ctx: {}" in rendered
+
+
 def test_judge_scene_envelope_returns_parsed_content_and_cost(tmp_path):
     """The new public wrapper for one-shot judging is what
     `judge_calibration` uses to score a hand-picked scene set without
