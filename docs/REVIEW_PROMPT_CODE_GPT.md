@@ -4,7 +4,7 @@
 >
 > **使用方法**：开一个新 Codex 会话（在 codex.openai.com 或 Codex CLI），把下方代码块全文复制粘贴作为首条消息。把模板里 `{{REVIEW_TARGET}}` 替换成你想审的对象（commit hash / 分支 / 文件清单）。
 
-**版本**：v0.1 · **创建**：2026-04-30 · **场景**：作者订阅 ChatGPT Plus 后，希望由 GPT-5.5 给 Claude 的代码产出做第二意见交叉评审
+**版本**：v0.2 · **创建**：2026-04-30 · **场景**：作者订阅 ChatGPT Plus 后，希望由 GPT-5.5 给 Claude 的代码产出做第二意见交叉评审
 
 ---
 
@@ -52,6 +52,8 @@
 > - 「分支 stage-1.5-image-provider」
 > - 「文件清单 generator/generate_node.py + generator/context_assembler.py」
 > - 「最近 7 天的所有 commit」
+
+作者填 {{REVIEW_TARGET}} 时**可附 L2 视角补充上下文**（来自 L2 整合规划师 / 阶段验收会话的 audit checklist）—— 用 "L2 视角补充上下文（不替 finding；仅作 review 关注方向）：" 起头，列 4-5 条 audit 方向。如有 → review 时作重点关注方向（不强制变成 finding）；如无 → 按通用 review 流程跑。
 
 如果 {{REVIEW_TARGET}} 没填，停下来问作者，**不要自己猜要审什么**。
 
@@ -179,6 +181,24 @@ top1: {{file:line — 一句话}}
 ```
 
 不要在对话里复述全部 finding——报告文件里就是。
+
+# 报告 push 到 main 独立 commit（B 阶段闭环要求）
+
+报告写完 + 在对话里给作者三行摘要后，commit + push 到 main 独立 commit（不是 PR 分支）：
+
+git checkout main && git pull origin main
+git add docs/reviews/<报告文件名>
+git commit -m "docs(review): T-X.X cross-LLM review report (B-phase output for PR #N)"
+git push origin main
+
+T-X.X 和 PR #N 从本次评审上下文推断（你刚审的 PR 编号 + 任务编号在 REVIEW_TARGET 里）。
+
+约束：
+- push 到 main，不是 PR 分支（避免污染 A 阶段 PR）
+- 当前分支若非 main 且有除报告外的 untracked / staged 变更 → 停下问作者，不要自动 stash
+- 完成后回一行：commit hash + push 状态
+
+为什么：L2 验收 first step = `gh api repos/.../contents/docs/reviews?ref=main` 查报告物理位置；只在 PR 分支 / 本地 / Codex 工作目录会让 L2 0 命中。
 
 # 不要做的事（再强调一遍）
 

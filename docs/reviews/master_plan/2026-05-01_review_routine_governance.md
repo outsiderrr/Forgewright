@@ -4,7 +4,7 @@
 >
 > **本备忘不修改 L1 文档**（CLAUDE.md / DECISIONS.md / DEBATE_NOTES.md / ROADMAP.md / SCHEMA_v0*.md / HANDOFF_*.md / STAGE_*_ACCEPTANCE.md），只是把讨论共识落盘，作为下游会话的工作前提。如未来要把任何条目升格为 ADR / ROADMAP 修订，需作者明示授权 + 走专门执行会话。
 
-**日期**：2026-05-01（v0.1）/ 2026-05-01 v0.2 同日修订 / 2026-05-03 v0.3 修订 · **版本**：v0.3 · **产出方**：L1 规划讨论会话（master plan 续接）
+**日期**：2026-05-01（v0.1）/ 2026-05-01 v0.2 同日修订 / 2026-05-03 v0.3 修订 / 2026-05-08 v0.4 修订 / 2026-05-08 v0.4.1 修订 · **版本**：v0.4.1 · **产出方**：L1 规划讨论会话（master plan 续接）
 **触发问题**：作者询问能否用 Claude Code 桌面端 routines（定时任务）自动驱动 L1 → L2 → L3 整条链路
 
 ---
@@ -156,6 +156,7 @@
 
 ## 9. 修订记录
 
+- **2026-05-08 v0.4.1**：作者拍板 gap #2 + gap #3 修补 patch（v0.5 完整 B/C prompt 文件化升级暂缓决策的 interim solution）。修订点：`/docs/REVIEW_PROMPT_CODE_GPT.md` v0.1 → v0.2（末尾加 "报告 push 到 main 独立 commit" 段 + `{{REVIEW_TARGET}}` 段加 "可附 L2 视角补充上下文"）+ governance §10 加第 7 条 + 新增 §12 v0.4.1 patch 段。**默认行为**：B 阶段 Codex 自动 commit + push；作者填 REVIEW_TARGET 时可附 L2 视角补充上下文。详 §12。
 - **2026-05-08 v0.4**：作者拍板把 L3 paste-ready prompt 从 `STAGE_X_TASKS.md` §8 内嵌的 ` ```text` 代码块拆出，每个 L3 任务单独存为 `/docs/prompts/stage_N/T-N.X.md` 文件。L3 会话起步标准格式从"复制粘贴 paste-ready prompt 块"改为"读 prompt 文件"。触发：阶段 3 起手期（PR #33 merge 后）作者发现复制粘贴 14 长 prompt 块辛苦 + 复盘困难。修订点：**新增 §11 L3 prompt 文件化工作流（v0.4 新增）**；§3 / §5 引用文件路径形态调整；§10 ABC 流程图 A 阶段首条消息形态改"读 prompt 文件 OR 直接说执行 T-N.X"。**默认行为**：阶段 3 起手新规范——所有 L3 prompt 单独文件；阶段 0/1/1.5/2 历史 prompts 不回填；阶段 4+ 复用同款规范（modifier `/docs/prompts/stage_N/`）。Meta task 落地：`claude/meta-prompt-extract` 分支整合（含 14 个 stage_3 prompt 文件 + STAGE_3_TASKS.md §8 改表格引用 + governance v0.4 修订；详见 PR）。
 - **2026-05-03 v0.3**：作者拍板（1）任务分类制度保留作为概念参考，但实操不依赖分类——routines 不再尝试串行跑 L3 任务；（2）所有 L3 一律跑统一 §10 ABC 三阶段流程，不按 [A-execute] / [B-author-gate] 差异化。触发：阶段 1.5 实操（commit `33611cd` 9 份 codex review backfill）确认 9 个 L3 都跑了同一 ABC 流程，与 v0.2 "A 类省 cross-LLM" 矛盾；作者认为按分类调度 routine 是结构复杂化没带来效率提升。修订点：§1 核心结论 / §2 状态 / §3 review tier 表格 / §4 routines 边界明示 / §5 L2 规划师约束 / §6 待办时机 / §7 决策表 3b/4 + 新增项 / **新增 §10 L3 ABC 三阶段流程**。**默认行为**：所有 L3 PR 都必须跑完 ABC 三阶段才算闭环。
 - **2026-05-01 v0.2**：作者拍板把 §2 任务分类制度从"硬性必须"降级为"软建议"。触发：阶段 1.5 已在执行中（T-1.5.1 commit `77a5f54` 已完成 / T-1.5.1a 已完成 / 后续 L2 规划层在路上），实际推进观察到 L3 大半涉及 schema / image / ADR / provider 接口，B 类居多，强制分类边际收益低。修订点：§2 引言语气 + §5 第 1 条 + §7 3b。**默认行为不变**：未分类的 L3 走 `[B-author-gate]`（作者每个 commit 看一眼），保持安全。其余条款（§3 review tier / §4 routines 启用清单 / §6 待办 / §8 与 L1 兼容性）未变。
@@ -244,6 +245,7 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 4. **B 阶段红黄绿可拒收**——不是所有 finding 都必须接受；C 阶段修不修由作者 + L2 共同拍板
 5. **L3 包含 schema commit / ADR 立项** 等仍走相同 ABC 流程——A 阶段 commit 后 B 阶段 review 看一致性 / 设计；不需要因为是"架构级"就走不同流程
 6. **反向回退（隐藏第三类）**：如某 L3 跑完 ABC 才发现前面 L3 有 bug，开新 L3 修复，新 L3 同样走 ABC
+7. **B 阶段 review 报告必须 commit + push 到 main 独立 commit**（不是 PR 分支；不是仅在 Codex 工作目录）—— L2 验收 first step = `gh api repos/.../contents/docs/reviews?ref=main` 验证报告物理位置；commit message 模板：`docs(review): T-X.X cross-LLM review report (B-phase output for PR #N)`。`/docs/REVIEW_PROMPT_CODE_GPT.md` v0.2 已在末尾加 explicit 段；Codex 评审完成后自动执行。
 
 ---
 
@@ -326,7 +328,39 @@ prompt 文件 commit message 模板：
 
 ---
 
+## 12. v0.4.1 patch（gap #2 + gap #3 修补；2026-05-08）
+
+v0.5 完整 B/C prompt 文件化升级暂缓决策的 interim solution。
+
+### gap #2 闭合（B 报告 push 到 main）
+
+B 阶段 review 报告必须 commit + push 到 main 独立 commit（详 §10 第 7 条）；[/docs/REVIEW_PROMPT_CODE_GPT.md](../../REVIEW_PROMPT_CODE_GPT.md) v0.2 末尾"报告 push 到 main 独立 commit"段。
+
+### gap #3 闭合（L2 视角拼进 B prompt 系统化）
+
+L2 视角补 B prompt 上下文成为默认操作；[/docs/REVIEW_PROMPT_CODE_GPT.md](../../REVIEW_PROMPT_CODE_GPT.md) v0.2 `{{REVIEW_TARGET}}` 段加 explicit 提示。
+
+### gap #1 不动（B/C prompt 文件化）
+
+B/C 阶段 prompt 文件化 + L2 验收自动化仍属 v0.5 完整范围；暂缓决策保持。
+
+### 触发
+
+T-3.11 L2 验收（2026-05-08）第一次踩到 gap #2（B 报告全网 0 命中）+ gap #3（L2 视角拼进 prompt 非默认）。详 [2026-05-08_T-3.11_L2_acceptance.md](2026-05-08_T-3.11_L2_acceptance.md)。
+
+### 不动
+
+- §10 ABC 三阶段流程图 / §11 v0.4 prompt 文件化工作流（不动）
+- /docs/STAGE_3_TASKS.md §1.5.1 → X8 留作者另起 L1 会话
+
+### 默认行为（v0.4.1 起）
+
+- B 阶段 Codex 评审完成后**自动执行** commit + push（REVIEW_PROMPT v0.2 末尾段已含命令）
+- 作者填 `{{REVIEW_TARGET}}` 时**可附 L2 视角补充上下文**（如 L2 会话已起 + 给了 audit checklist）
+
+---
+
 ## 版本
 
-本文件版本：v0.4
+本文件版本：v0.4.1
 最后更新：2026-05-08
