@@ -46,7 +46,11 @@ from typing import Any
 
 from generator import budget
 from generator.budget import BudgetExceeded
-from generator.context_assembler import SceneGraphContext
+from generator.context_assembler import (
+    PriorSceneSummary,
+    SceneGraphContext,
+    compute_prior_summary_token_metrics,
+)
 from generator.llm_provider import LLMProvider, ProviderError
 from generator.scene_strategies import (
     SceneGenerationResult,
@@ -136,6 +140,7 @@ def generate_scene(
     ontology: dict,
     provider: LLMProvider,
     max_retries: int = 2,
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> SceneResult:
     """Produce a full DialogueGraph for one scene.
 
@@ -223,6 +228,7 @@ def generate_scene(
             target_beats=target_beats,
             participating_npcs=participating_npcs,
             ontology=ontology,
+            prior_scene_summaries=prior_scene_summaries,
         )
     except Exception as exc:  # noqa: BLE001
         _LOG.exception("scene context assembly raised unexpectedly")
@@ -264,6 +270,7 @@ def generate_scene(
                 active_clocks=scene_ctx.active_clocks,
                 system_time=scene_ctx.system_time,
                 location_candidates=scene_ctx.location_candidates,
+                prior_scene_summaries=scene_ctx.prior_scene_summaries,
             )
         except Exception as exc:  # noqa: BLE001
             _LOG.exception("scene strategy raised unexpectedly on attempt %d", attempt_idx)
@@ -462,6 +469,7 @@ def build_scene_graph_context(
     target_beats: list[str],
     participating_npcs: list[str],
     ontology: dict,
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> SceneGraphContext:
     """Resolve ontology entries into a SceneGraphContext.
 
@@ -476,6 +484,13 @@ def build_scene_graph_context(
     ontology become a stub `{"id": "<id>"}` so the strategy can still
     render *something*; absent `system_time` falls back to the Stage-0
     `{scene_count: 0, long_rest_count: 0}` zero state.
+
+    T-3.3 (ADR-024): `prior_scene_summaries` is the optional caller-
+    supplied list (pre-truncation). The instantiated SceneGraphContext
+    carries it verbatim plus a `token_metrics` snapshot computed via
+    `compute_prior_summary_token_metrics`. Pre-T-3.3 callers leave it
+    `None` and see empty / zero defaults — F5 wiring (dep_index sidecar
+    write) is T-3.5's job, not T-3.3's.
     """
     entities = _entities(ontology)
     char_index = {
@@ -530,6 +545,9 @@ def build_scene_graph_context(
     else:
         system_time = {"scene_count": 0, "long_rest_count": 0}
 
+    summaries_in = list(prior_scene_summaries or [])
+    token_metrics = compute_prior_summary_token_metrics(summaries_in)
+
     return SceneGraphContext(
         scene_anchor=scene_setting.scene_anchor,
         chapter_ref=scene_setting.chapter_ref,
@@ -540,6 +558,8 @@ def build_scene_graph_context(
         active_clocks=active_clocks,
         system_time=system_time,
         target_beats=list(target_beats),
+        prior_scene_summaries=summaries_in,
+        token_metrics=token_metrics,
     )
 
 

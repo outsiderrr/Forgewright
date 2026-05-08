@@ -699,6 +699,86 @@ def test_build_scene_graph_context_falls_back_when_system_time_missing():
 
 
 # ---------------------------------------------------------------------------
+# T-3.3 (ADR-024) — long-conversation-consistency C-tier on SceneGraphContext
+# ---------------------------------------------------------------------------
+
+
+def test_t_3_3_build_scene_graph_context_populates_summaries_and_metrics():
+    """build_scene_graph_context fills `prior_scene_summaries` verbatim
+    and computes a matching `token_metrics` snapshot."""
+    from generator.context_assembler import PriorSceneSummary
+
+    summaries = [
+        PriorSceneSummary(
+            scene_id=f"scene_h{i}",
+            summary=f"history-{i}",
+            key_state_paths=[],
+        )
+        for i in range(3)
+    ]
+    scene_ctx = build_scene_graph_context(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        prior_scene_summaries=summaries,
+    )
+    assert scene_ctx.prior_scene_summaries == summaries
+    metrics = scene_ctx.token_metrics
+    assert metrics.summaries_injected_count == 3
+    assert metrics.truncation_reason == "no_truncation"
+    assert metrics.prompt_token_estimate > 0
+    assert len(metrics.summary_source_hashes) == 3
+
+
+def test_t_3_3_build_scene_graph_context_default_metrics_when_summaries_omitted():
+    """Pre-T-3.3 callers passing no summaries get empty defaults — no
+    spurious truncation_reason / hashes."""
+    scene_ctx = build_scene_graph_context(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+    )
+    assert scene_ctx.prior_scene_summaries == []
+    metrics = scene_ctx.token_metrics
+    assert metrics.summaries_injected_count == 0
+    assert metrics.summary_source_hashes == []
+    assert metrics.prompt_token_estimate == 0
+    assert metrics.truncation_reason is None
+
+
+def test_t_3_3_build_scene_graph_context_records_truncation_reason_over_cap():
+    """Eight summaries → metrics record post-truncation count = 5 +
+    `kept_recent_only` reason (no chapter/act boundaries supplied)."""
+    from generator.context_assembler import (
+        PRIOR_SCENE_SUMMARY_CAP,
+        PriorSceneSummary,
+    )
+
+    summaries = [
+        PriorSceneSummary(
+            scene_id=f"scene_h{i}",
+            summary=f"history-{i}",
+            key_state_paths=[],
+        )
+        for i in range(8)
+    ]
+    scene_ctx = build_scene_graph_context(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        prior_scene_summaries=summaries,
+    )
+    assert scene_ctx.token_metrics.summaries_injected_count == PRIOR_SCENE_SUMMARY_CAP
+    assert scene_ctx.token_metrics.truncation_reason == "kept_recent_only"
+    # Caller-side list is preserved verbatim (pre-truncation) so audit
+    # tooling can still see the full input.
+    assert len(scene_ctx.prior_scene_summaries) == 8
+
+
+# ---------------------------------------------------------------------------
 # estimate_scene_cost smoke test
 # ---------------------------------------------------------------------------
 

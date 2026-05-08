@@ -48,7 +48,13 @@ from typing import Any, Literal
 
 from generator import budget
 from generator.budget import BudgetExceeded
-from generator.context_assembler import GraphContext, NodeRequirement
+from generator.context_assembler import (
+    GraphContext,
+    NodeRequirement,
+    PriorSceneSummary,
+    render_prior_scene_summaries_block,
+    truncate_prior_scene_summaries,
+)
 from generator.generate_node import (
     AttemptRecord,
     GenerationResult,
@@ -284,6 +290,7 @@ def generate_skeleton(
     active_clocks: list[dict] | None = None,
     system_time: dict | None = None,
     location_candidates: list[dict] | None = None,
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> SkeletonResult:
     """Phase 1: ask LLM for a structural-only skeleton.
 
@@ -296,6 +303,13 @@ def generate_skeleton(
       * Skeleton structural failures (parse / closure / etc.) are
         validator_errors that get re-fed on the next attempt.
       * Three structural failures → failure_reason="skeleton_invalid".
+
+    `prior_scene_summaries` (T-3.3 / ADR-024) is optional; when supplied
+    it gets truncated to ``PRIOR_SCENE_SUMMARY_CAP`` entries via
+    `truncate_prior_scene_summaries` and rendered as a top-level
+    ``## 前置场景概要`` block ahead of ``## 当前任务``. T-1.6 / T-2.5
+    callers leave it ``None`` and see no change to their prompt
+    structure.
     """
     base_user_prompt = _build_skeleton_user_prompt(
         scene_setting=scene_setting,
@@ -304,6 +318,7 @@ def generate_skeleton(
         active_clocks=active_clocks or [],
         system_time=system_time or {"scene_count": 0, "long_rest_count": 0},
         location_candidates=location_candidates or [],
+        prior_scene_summaries=prior_scene_summaries or [],
     )
 
     attempts: list[AttemptRecord] = []
@@ -477,6 +492,12 @@ def fill_skeleton(
     # v3 reject rationale (S2=0 重复 beat) traced directly to this gap.
     filled_so_far: list[tuple[str, str]] = []
     total_nodes = len(skeleton.nodes)
+    # T-3.3 (ADR-024): caller-supplied pre-truncation list. fill phase
+    # re-runs `truncate_prior_scene_summaries` inside `render_fill_extras`
+    # so the kept set matches what the skeleton phase saw.
+    prior_summaries_in: list[PriorSceneSummary] = list(
+        scene_context.get("prior_scene_summaries") or []
+    )
 
     # Iterate in skeleton.nodes order (entry first if the skeleton is
     # well-formed — the assembled DialogueGraph respects entry_node_id
@@ -487,6 +508,7 @@ def fill_skeleton(
             beat=skel_node.beat,
             index=index,
             total=total_nodes,
+            prior_scene_summaries=prior_summaries_in,
         )
         node_req = NodeRequirement(
             node_type=skel_node.type,
@@ -567,6 +589,7 @@ def generate_scene_skeleton_first(
     active_clocks: list[dict] | None = None,
     system_time: dict | None = None,
     location_candidates: list[dict] | None = None,
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> SceneGenerationResult:
     """End-to-end skeleton-first scene generation.
 
@@ -575,6 +598,12 @@ def generate_scene_skeleton_first(
     again with budget pre-charge, ontology assembly, and mechanical
     pre-check (T-2.4) integration — those are explicitly out-of-scope
     for T-2.5.
+
+    `prior_scene_summaries` (T-3.3 / ADR-024) flows verbatim into both
+    phases — skeleton renders it as a top-level section before the
+    scene brief, fill prepends it to each node's `extra_user_context`
+    via `render_fill_extras`. Truncation runs once per render so both
+    phases see the same kept set.
     """
     skel_res = generate_skeleton(
         scene_setting=scene_setting,
@@ -585,6 +614,7 @@ def generate_scene_skeleton_first(
         active_clocks=active_clocks,
         system_time=system_time,
         location_candidates=location_candidates,
+        prior_scene_summaries=prior_scene_summaries,
     )
     if not skel_res.success:
         return SceneGenerationResult(
@@ -612,6 +642,11 @@ def generate_scene_skeleton_first(
         "character_refs": [
             npc["id"] for npc in participating_npcs if isinstance(npc, dict) and "id" in npc
         ],
+        # T-3.3 (ADR-024): fill phase reads this back out via
+        # `_graph_context_from_scene_context` → render_fill_extras.
+        # Forwarded verbatim (pre-truncation) so the renderer can re-run
+        # the same heuristic the skeleton phase applied.
+        "prior_scene_summaries": list(prior_scene_summaries or []),
     }
 
     fill_res = fill_skeleton(
@@ -647,14 +682,26 @@ def _build_skeleton_user_prompt(
     active_clocks: list[dict],
     system_time: dict,
     location_candidates: list[dict],
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> str:
     """Render the skeleton-phase user prompt.
 
     Includes the same scene-level context as fill phase (so the model
     sees consistent ontology) plus a clear instruction that this call
     only wants the structural skeleton — no narration, no option text.
+
+    T-3.3: when `prior_scene_summaries` is non-empty the truncated block
+    sits between the few-shot block and the ``## 当前任务`` header so
+    the LLM treats it as longer-running context, not as part of this
+    scene's brief. Empty list (the default for back-compat callers)
+    skips the section silently.
     """
-    parts: list[str] = [_scene_few_shot_block(), "", "## 当前任务", "### 场景设定"]
+    parts: list[str] = [_scene_few_shot_block(), ""]
+    kept_prior, _ = truncate_prior_scene_summaries(prior_scene_summaries or [])
+    if kept_prior:
+        parts.append(render_prior_scene_summaries_block(kept_prior))
+        parts.append("")
+    parts.extend(["## 当前任务", "### 场景设定"])
     parts.append(f"- `scene_anchor`: `{scene_setting.scene_anchor}`")
     parts.append(f"- 主地点 (`primary_location_ref`): `{scene_setting.primary_location_ref}`")
     if scene_setting.chapter_ref:

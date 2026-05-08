@@ -16,6 +16,12 @@ filled node's narration kept rewriting the opening "推开沉重的橡木门"):
   3. ``【硬约束 — context bleed-through 防御】`` — explicit do-not list
      for what each node's narration must avoid.
 
+T-3.3 (ADR-024) prepends an optional ``## 前置场景概要`` block when the
+caller supplied any `PriorSceneSummary` entries — long-conversation-
+consistency C-tier on `SceneGraphContext`. The block is rendered via
+`context_assembler.render_prior_scene_summaries_block` so the skeleton
+and fill phases produce identical text for the same input.
+
 The helpers render plain markdown strings; placement (between the
 SceneGraphContext block and the requirement block) is owned by
 ``context_assembler.assemble_context_block``'s ``extra_user_context``
@@ -26,6 +32,12 @@ a static fixture; this module assembles per-call dynamic strings. Living
 under ``prompts/scene/`` keeps the prompt-text family co-located.
 """
 from __future__ import annotations
+
+from generator.context_assembler import (
+    PriorSceneSummary,
+    render_prior_scene_summaries_block,
+    truncate_prior_scene_summaries,
+)
 
 # Per-node narration preview cap. Long enough to identify which beat the
 # node already wrote, short enough that 10–15 entries still fit
@@ -168,20 +180,33 @@ def render_fill_extras(
     beat: str,
     index: int,
     total: int,
+    prior_scene_summaries: list[PriorSceneSummary] | None = None,
 ) -> str:
-    """Compose previously_filled + beat_position + bleed-through guard
-    + json-only guard (R3.1).
+    """Compose prior_scene_summaries + previously_filled + beat_position +
+    bleed-through guard + json-only guard (R3.1).
 
     First-node case (``index == 0`` ⇒ ``filled_so_far == []``) emits only
     beat_position + guards — the previously-filled summary is intentionally
     skipped because there's nothing yet, and rendering an empty section
     would just be visual noise the LLM has to step over (R2.6 §3).
 
+    T-3.3 (ADR-024): when `prior_scene_summaries` is non-empty the
+    truncated block prepends to the rendered output so the LLM sees
+    long-conversation-consistency context before scene-local hints. The
+    same `truncate_prior_scene_summaries` helper is used in both
+    skeleton and fill phases, so the kept set is consistent across one
+    scene's prompts.
+
     The json-only guard is appended last so it sits closest to the
     response in the rendered prompt, where instruction-following is
     statistically strongest (T-3.0 R3.1).
     """
     sections: list[str] = []
+    if prior_scene_summaries:
+        kept_prior, _ = truncate_prior_scene_summaries(prior_scene_summaries)
+        prior_block = render_prior_scene_summaries_block(kept_prior)
+        if prior_block:
+            sections.append(prior_block)
     summary = render_previously_filled_summary(filled_so_far)
     if summary:
         sections.append(summary)
