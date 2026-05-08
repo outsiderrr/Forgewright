@@ -285,16 +285,16 @@ ADR-019 明示 slot_assignments **节点级**字段；dialogue_graph 根对象**
 | 字段 | 类型 | 必填 | 约束 | 一句话语义 |
 |---|---|---|---|---|
 | `schema_version` | string (const) | ✓ | `"0.3.0"` | 本对象 schema 版本；与 ontology 模块同 epoch（首版 0.3.0）。**不同于 character / location / clock / chapter，本字段是 required**——sidecar 由 batch_scheduler 自动写入，不存在迁移期省略场景。 |
-| `scene_id` | string | ✓ | `^[a-z][a-z0-9_]*$` | 本 sidecar 所属场景 id；与同目录 scene.json `graph_id` 一致性（dep_propagate 兜底）。pattern 比 dialogue_graph.graph_id `^[a-z0-9_-]+$` 更紧：首字母强约 `[a-z]` 且禁连字符——避免 sidecar 文件名与目录解析歧义。 |
+| `scene_id` | string | ✓ | `^[a-z0-9_]+$` | 本 sidecar 所属场景 id；与同目录 scene.json `graph_id` 严格同源（ADR-023 决策核心；GPT-5.5 review 3.2 修订）。pattern 与 dialogue_graph.graph_id `^[a-z0-9_-]+$` 仅去掉连字符——避免 sidecar 文件名与目录解析歧义。一致性由 dep_propagate / batch_scheduler 兜底。 |
 | `generated_at` | string | ✓ | format date-time | sidecar 生成 ISO 8601 时间戳；format 校验为 annotation-only（默认 jsonschema validator 不强校），写入器与 dep_propagate 工具按字面格式约定。 |
 | `ontology_ids_read` | array of string | ✓ | uniqueItems | context assembly 阶段所有被引用的本体实体 id（char_* / scene_* / loc_* / clk_* / chap_*）；**来自 prompt 注入轨迹，非 scene 产物反推**（F5 修订）。可空数组。 |
-| `state_paths_read` | array of string | ✓ | items pattern + uniqueItems | context assembly 阶段读取的 state path 全集；**ADR-016 五命名空间 pattern 强约**（F15 修订）。 |
-| `state_paths_written` | array of string | ✓ | items pattern + uniqueItems | scene effect 写入的 state path 全集（scene.json `on_enter_effects` + `option.effects` 内 path 字段并集；写入侧从产物可精确反推）；同 read 侧 F15 严约。 |
+| `state_paths_read` | array of string | ✓ | items pattern + uniqueItems | context assembly 阶段读取的 state path 全集；**ADR-016 五命名空间 pattern 强约 + 至少一个段（裸 namespace 拒收）**（F15 修订 + GPT-5.5 review 3.1 修订）。 |
+| `state_paths_written` | array of string | ✓ | items pattern + uniqueItems | scene effect 写入的 state path 全集（scene.json `on_enter_effects` + `option.effects` 内 path 字段并集；写入侧从产物可精确反推）；同 read 侧 F15 严约（**裸 namespace 拒收；relationship.* 至少 slug + field 两段**）。 |
 | `prompt_template_hash` | string | ✓ | `^sha256:[a-f0-9]{64}$` | 本 scene 生成时 prompt 模板的 SHA256；dep_propagate 反向 propagate 时按 hash 比对（hash 漂移 → mark scene stale）。 |
 | `visual_asset_ids_referenced` | array of string | ✗ | uniqueItems | 阶段 1.5 ImageAsset.asset_id 全集；F15 missing-only。 |
 | `clock_ids_referenced` | array of string | ✗ | uniqueItems | active clocks 注入 prompt 时的 clk_* 全集（ADR-017）；F15 missing-only。 |
 | `chapter_id` | string | ✗ | `^chap_[a-z0-9_]+$` | 本 scene 所属 chapter id；T-3.9 chapter_assembler 写入。F15 missing-only（缺失 = scene 尚未指派；不允许 null）。 |
-| `act_id` | string | ✗ | `^act[a-z0-9_]*$` | 本 scene 所属 act id；与 chapter.schema.json `act_id` 形态同源；F15 missing-only。 |
+| `act_id` | string | ✗ | `^act_[a-z0-9_]{1,64}$` | 本 scene 所属 act id；与 chapter.schema.json `act_id` 严格同源（GPT-5.5 review 4.1 修订）；F15 missing-only。 |
 | `scene_history_referenced` | array of string | ✗ | items pattern + uniqueItems | **ADR-024 长对话一致性 A/B hook**：注入 prompt 的 prior_scene_summaries 对应 scene id；items pattern 与 scene_id 同源。F15 missing-only。 |
 | `prompt_token_estimate` | integer | ✗ | minimum 0 | **ADR-024 token metrics**：注入 LLM prompt 的总 token 估算；用于阶段 3 实测 token 累积曲线。F15 missing-only。 |
 | `summaries_injected_count` | integer | ✗ | 0 ≤ x ≤ 5 | **ADR-024 token metrics**：实际注入 prior_scene_summaries 条数；schema 上限 5（与 ADR-024 prompt 上限一致）。F15 missing-only。 |
@@ -315,23 +315,26 @@ ADR-019 明示 slot_assignments **节点级**字段；dialogue_graph 根对象**
 
 **反向用途**：T-3.7 一致性维护工具（`/tools/dep_propagate.py`，T-3.7 落地）按 sidecar 反向 propagate——当本体某 character / location / clock 被改动，扫所有 sidecar 找出 `ontology_ids_read` 包含该 id 的 scene → mark stale，作者 review UI 上看到 stale 列表。
 
-### 9.3 字段约束加严（F15 修订）
+### 9.3 字段约束加严（F15 修订；GPT-5.5 review 3.1/3.2/4.1 C 阶段细化）
 
-v0.1 草稿到 v1.0 的关键收紧：
+v0.1 草稿到 v1.0 的关键收紧（含 PR #40 B 阶段反馈整合）：
 
-1. **state_paths_read / state_paths_written items pattern 强约**：必须落入 ADR-016 五命名空间（`world.*` / `faction.<id>.*` / `relationship.<slug>.*` / `flag.*` / `player.*`）。否则 sidecar 自身可能引非法 path，让 dep_propagate 工具语义紊乱。pattern 与 ontology 模块（character.state_path_slug 反查 + clock.tick_effects[].path 五命名空间合法性）回归同源。
+1. **state_paths_read / state_paths_written items pattern 强约 + 至少一个段（GPT-5.5 review 3.1 修订）**：必须落入 ADR-016 五命名空间（`world.*` / `faction.<id>.*` / `relationship.<slug>.<field>` / `flag.*` / `player.*`）且**至少一个段**——裸 namespace（如 `"world"` / `"flag"` / `"player"` / `"relationship.vellin"`）拒收；`relationship.*` 至少需 slug + field 两段（与 gold scene `relationship.vellin.trust` 形态对齐）。理由：dep_propagate 反向 propagate 时若把裸 `world` 命名空间整体 stale-mark，会与具体 `world.scene_count` 路径混淆，让 propagate 语义紊乱。pattern 与 ontology 模块（character.state_path_slug 反查 + clock.tick_effects[].path 五命名空间合法性）回归同源。
 2. **数组字段 uniqueItems**：ontology_ids_read / state_paths_read / state_paths_written / visual_asset_ids_referenced / clock_ids_referenced / scene_history_referenced / summary_source_hashes 全部 uniqueItems—— 重复入会让 dep_propagate 误算依赖密度。
-3. **scene_id pattern 与 dialogue_graph.graph_id 同源**：本字段 pattern `^[a-z][a-z0-9_]*$` 比 graph_id `^[a-z0-9_-]+$` 更紧（首字母强约 `[a-z]` + 禁连字符）。理由：sidecar 文件名 `<scene_id>.deps.json` 与目录解析需避免连字符歧义（os.path 部分实现对 hyphenated 文件名分词不一致），首字母数字会让 import-style 解析（如 Python module）受限。`scene_history_referenced` items 同源 pattern。
-4. **optional 字段 missing-only**：`chapter_id` / `act_id` / `visual_asset_ids_referenced` / `clock_ids_referenced` / `scene_history_referenced` / `prompt_token_estimate` / `summaries_injected_count` / `summary_source_hashes` / `truncation_reason` 全部走 missing-only 兼容路径——key 缺失代表"本 scene 未引用 / 未触发该 hook"，**不允许 null**（schema 层未声明 null 类型即拒收）。
+3. **scene_id pattern 与 dialogue_graph.graph_id 同源（GPT-5.5 review 3.2 修订）**：本字段 pattern `^[a-z0-9_]+$` 与 ADR-023 决策核心明示对齐——比 graph_id `^[a-z0-9_-]+$` 仅去掉连字符（避免 sidecar 文件名与目录解析歧义；os.path 部分实现对 hyphenated 文件名分词不一致），数字起首合法（与 graph_id 同源）。`scene_history_referenced` items 同源 pattern。
+4. **act_id pattern 与 chapter.schema.json 严格同源（GPT-5.5 review 4.1 修订）**：本字段 pattern `^act_[a-z0-9_]{1,64}$` 与 chapter.schema.json `acts[].act_id` 字段完全一致——避免 sidecar 引用侧记录 chapter 不可解析的 id（T-3.9 chapter_assembler / T-3.7 dep_propagate 跨文件闭合一致性硬约）。
+5. **optional 字段 missing-only**：`chapter_id` / `act_id` / `visual_asset_ids_referenced` / `clock_ids_referenced` / `scene_history_referenced` / `prompt_token_estimate` / `summaries_injected_count` / `summary_source_hashes` / `truncation_reason` 全部走 missing-only 兼容路径——key 缺失代表"本 scene 未引用 / 未触发该 hook"，**不允许 null**（schema 层未声明 null 类型即拒收）。
 
 ### 9.4 与 ontology / dialogue_graph schema 的关系
 
 - **不内嵌入 dialogue_graph schema**：sidecar 是**独立 schema 文件**，与 `<scene>.json` 平行落盘；不作为 dialogue_graph schema 的 nested 字段。理由：dialogue_graph schema const 保持 `0.1.1` 不动（v0.3.0 复合版本号策略；详 §1）；sidecar 是阶段 3 新增，独立演进首版 `0.3.0`，与 ontology 模块同 epoch。
 - **跨 schema 一致性约束（不在 schema 层表达；写入器兜底）**：
-  1. `scene_id` 与同目录 scene.json `graph_id` 一致（**注意 pattern 不同**：sidecar `scene_id` 比 graph_id 更紧；写入器选择 graph_id 作为 scene_id 时，作者命名 graph_id 需符合 sidecar pattern——T-3.5 批量调度器写入前预检）。
-  2. `ontology_ids_read[]` 内每个 id 在 `/state/ontology/<world>.json` 可解析（dep_propagate 兜底）。
-  3. `state_paths_written` 应与 scene.json `on_enter_effects[].path` ∪ `option.effects[].path` 一致（写入器兜底）。
-  4. `summary_source_hashes` 长度等于 `summaries_injected_count`（写入器兜底；schema 跨字段表达困难）。
+  1. `scene_id` 与同目录 scene.json `graph_id` 一致（**pattern 仅去掉连字符**：sidecar `scene_id` 与 graph_id 同字符类，仅多约束 `_` 与 `-` 互斥；作者若用连字符命名 graph_id，T-3.5 批量调度器写入前需 normalize 或预检报错；GPT-5.5 review 3.2 修订对齐 ADR-023 决策核心）。
+  2. `act_id` 与 chapter.schema.json `acts[].act_id` 严格 pattern 同源（GPT-5.5 review 4.1）；sidecar 引用侧不能记录 chapter 不可解析的 id。
+  3. `chapter_id` 与 chapter.schema.json `chapter_id` 严格 pattern 同源（本字段不卡 maxLength 而 chapter.schema.json 卡 64；引用侧宽松、定义侧由 chapter.schema.json 兜底）。
+  4. `ontology_ids_read[]` 内每个 id 在 `/state/ontology/<world>.json` 可解析（dep_propagate 兜底）。
+  5. `state_paths_written` 应与 scene.json `on_enter_effects[].path` ∪ `option.effects[].path` 一致（写入器兜底）。
+  6. `summary_source_hashes` 长度等于 `summaries_injected_count`（写入器兜底；schema 跨字段表达困难）。
 
 ### 9.5 ADR-024 token metrics hook 字段（v1.0 新增）
 
@@ -348,11 +351,12 @@ v0.1 草稿到 v1.0 的关键收紧：
 
 下列约束 schema 层无法表达（跨字段或跨文件），由 T-3.5 batch_scheduler 写入兜底 + T-3.7 dep_propagate 反向 propagate 时校验：
 
-1. `scene_id` 与同目录 scene.json `graph_id` 一致（**含 pattern 收紧约束**：作者命名 graph_id 时需符合 sidecar `scene_id` pattern 才能成功写入 sidecar；T-3.5 写入前预检）。
+1. `scene_id` 与同目录 scene.json `graph_id` 一致（**pattern 字符类同源仅去连字符**：作者命名 graph_id 含连字符时需 normalize 或预检报错；T-3.5 写入前预检）。
 2. `ontology_ids_read[]` 内每个 id 在 `/state/ontology/<world>.json` 可解析。
-3. `state_paths_read` / `state_paths_written` 跨字段一致性（写入路径自然也属于读取路径——常见但非必然，validator 不强约）。
-4. `summary_source_hashes` 长度与 `summaries_injected_count` 一致。
-5. Conservative over-approx 哲学（详 §9.2）：写入时**宁可误报 stale 也不漏依赖**。
+3. `act_id` / `chapter_id` 在 chapter.schema.json 内可解析（pattern 已 schema 层同源严约，但跨文件闭合性仍需 dep_propagate 兜底）。
+4. `state_paths_read` / `state_paths_written` 跨字段一致性（写入路径自然也属于读取路径——常见但非必然，validator 不强约）。
+5. `summary_source_hashes` 长度与 `summaries_injected_count` 一致。
+6. Conservative over-approx 哲学（详 §9.2）：写入时**宁可误报 stale 也不漏依赖**。
 
 ### 9.7 完整示例 JSON（含 ADR-024 token metrics）
 
@@ -409,4 +413,4 @@ v0.1 草稿到 v1.0 的关键收紧：
 ## 版本
 
 本文件版本：v0.3.0
-最后更新：2026-05-08（T-3.2 §9 ContentDependencyIndex sidecar 增量）
+最后更新：2026-05-08（T-3.2 §9 ContentDependencyIndex sidecar 增量；含 PR #40 GPT-5.5 review C 阶段修订 — state path 拒裸 namespace + scene_id 与 graph_id 严格同源 + act_id 与 chapter.schema.json 严格同源 + $schema/$id 与既有 schema 同源）

@@ -1,4 +1,4 @@
-"""T-3.2 schema 关键卡口测试（ADR-023 + F15 字段约束加严）。
+"""T-3.2 schema 关键卡口测试（ADR-023 + F15 字段约束加严；GPT-5.5 review C 阶段修订）。
 
 覆盖目标（v1.0 ≥ 8 case）：
 - 有效 sidecar（全字段填）→ pass
@@ -10,13 +10,28 @@
 - **scene_id pattern 错（大写字母 "MyScene"）→ fail**（F15 新增）
 - **summaries_injected_count = 6（超 ≤ 5 上限）→ fail**（v1.0 新增 token metrics 字段）
 
+GPT-5.5 review C 阶段修订（PR #40 B 阶段反馈整合）：
+- **review 3.1 🔴**：state path pattern 加严——裸 namespace（world / flag /
+  player / relationship.<slug>）全部拒收（详 test_state_paths_read_bare_
+  namespace_rejected + test_state_paths_written_invalid_namespace_rejected
+  扩展 case）。
+- **review 3.2 🔴**：scene_id pattern 与 ADR-023 决策核心明示对齐
+  `^[a-z0-9_]+$`——数字起首改为合法（详 test_scene_id_starts_with_digit_
+  accepted；scene_history_referenced.items.pattern 同步）。
+- **review 4.1 🟡**：act_id pattern 与 chapter.schema.json `^act_[a-z0-9_]
+  {1,64}$` 严格同源（详 test_act_id_with_underscore_accepted +
+  test_act_id_invalid_patterns_rejected）。
+- **review 5.1 🟢**：$schema 改 draft/2020-12 + $id 改 forgewright.local
+  与既有 schema 同源（schema 层硬约 + 不影响测试逻辑）。
+
 附加卡口（schema 层防御）：
 - additionalProperties: false（未声明字段被拒）
 - required 字段缺失（如缺 prompt_template_hash）
 - optional 字段不允许 null（chapter_id null）
 - chapter_id pattern 错（缺 chap_ 前缀）
 - truncation_reason enum 越界
-- state_paths_read 命名空间正样本（world / flag / player 单段；faction.x / relationship.x.x 嵌套）
+- state_paths_read 命名空间正样本（world.x / faction.x / relationship.x.x
+  / flag.x / player.x 全部至少 namespace + 一段）
 
 **不在本测试覆盖范围**：scene_id 与 sidecar 所在目录 scene.json graph_id 一致性
 （dep_propagate / batch_scheduler 兜底）；ontology_ids_read 内 id 在本体可解析
@@ -212,18 +227,23 @@ def test_state_paths_read_invalid_namespace_rejected() -> None:
 
 
 def test_state_paths_read_accepts_all_five_namespaces() -> None:
-    """F15 正样本：五命名空间全部 + 嵌套深度通过。"""
+    """F15 正样本：五命名空间全部 + 嵌套深度通过。GPT-5.5 review 3.1 修订：
+    五命名空间至少需要一个段（裸 namespace 拒收，详
+    test_state_paths_read_bare_namespace_rejected）。relationship.* 至少需 slug
+    + field 两段（与 gold scene `relationship.vellin.trust` 形态对齐）。"""
     v = _validator()
     sidecar = make_minimal_sidecar()
     sidecar["state_paths_read"] = [
         "world.scene_count",
+        "world.long_rest_count.deep_nested",  # 嵌套深度
         "faction.iron_oath.reputation",
+        "faction.iron_oath",  # faction.<id> 一段也合法
         "relationship.vellin.trust",
+        "relationship.vellin.trust.sub_field",  # relationship 嵌套
         "flag.player_knows_letter",
+        "flag.deep.nested.flag",  # flag 嵌套深度
         "player.gold",
-        "world",  # 单段也合法（仅 namespace 本身）
-        "flag",
-        "player",
+        "player.inventory.weapons",
     ]
     errors = sorted(v.iter_errors(sidecar), key=lambda e: list(e.path))
     assert errors == [], (
@@ -232,13 +252,23 @@ def test_state_paths_read_accepts_all_five_namespaces() -> None:
     )
 
 
-def test_state_paths_read_faction_requires_faction_id_segment() -> None:
-    """faction.* 命名空间 pattern 要求 faction.<id> 形态；裸 'faction' 拒收
-    （与 ADR-016 §state path 命名空间表"faction.<faction_id>.*"形态一致）。"""
+@pytest.mark.parametrize("bare_path", [
+    "world",  # 裸 world 拒收（GPT-5.5 review 3.1）
+    "flag",   # 裸 flag 拒收
+    "player",  # 裸 player 拒收
+    "faction",  # 裸 faction（缺 id）拒收
+    "relationship",  # 裸 relationship（缺 slug）拒收
+    "relationship.vellin",  # 仅 slug 段拒收（缺 field 段；ADR-016 形态 relationship.<slug>.<field>）
+])
+def test_state_paths_read_bare_namespace_rejected(bare_path: str) -> None:
+    """GPT-5.5 review 3.1 修订：F15 加严要求 sidecar state_paths_read 必须落入
+    完整 ADR-016 命名空间路径，**裸 namespace（world / flag / player /
+    relationship.<slug>）拒收**——避免 dep_propagate 反向 propagate 时把
+    'world' 整个命名空间的 stale-mark 与具体 'world.scene_count' 混淆。"""
     v = _validator()
     bad = make_minimal_sidecar()
-    bad["state_paths_read"] = ["faction"]  # 裸 faction，缺 faction_id
-    assert not v.is_valid(bad)
+    bad["state_paths_read"] = [bare_path]
+    assert not v.is_valid(bad), f"bare namespace {bare_path!r} should be rejected"
 
 
 # ---------------------------------------------------------------------------
@@ -269,28 +299,39 @@ def test_ontology_ids_read_uniqueItems_enforced() -> None:
 # ---------------------------------------------------------------------------
 
 def test_scene_id_uppercase_rejected() -> None:
-    """F15 新增：scene_id pattern ^[a-z][a-z0-9_]*$ 严约：大写字母拒收。"""
+    """F15 新增：scene_id pattern `^[a-z0-9_]+$` 严约：大写字母拒收。"""
     v = _validator()
     bad = make_minimal_sidecar()
     bad["scene_id"] = "MyScene"
     assert not v.is_valid(bad)
 
 
-def test_scene_id_starts_with_digit_rejected() -> None:
-    """scene_id pattern 首字母 [a-z]：数字起首拒收（pattern ^[a-z]）。"""
+def test_scene_id_starts_with_digit_accepted() -> None:
+    """GPT-5.5 review 3.2 修订：scene_id pattern `^[a-z0-9_]+$` 与 ADR-023
+    决策核心明示对齐——数字起首合法（与 dialogue_graph.graph_id 形态对齐，仅
+    去掉连字符）。本测试是 review 3.2 反向锁——防止未来错回 `^[a-z]...$` 收紧。"""
     v = _validator()
-    bad = make_minimal_sidecar()
-    bad["scene_id"] = "1scene"
-    assert not v.is_valid(bad)
+    sidecar = make_minimal_sidecar()
+    sidecar["scene_id"] = "1scene"
+    assert v.is_valid(sidecar)
 
 
 def test_scene_id_with_hyphen_rejected() -> None:
     """scene_id pattern 字符集 [a-z0-9_]：连字符拒收（与 dialogue_graph.graph_id
-    pattern 比更紧——避免 sidecar 文件名与目录解析歧义）。"""
+    pattern 比仅去掉连字符——避免 sidecar 文件名与目录解析歧义）。"""
     v = _validator()
     bad = make_minimal_sidecar()
     bad["scene_id"] = "my-scene"
     assert not v.is_valid(bad)
+
+
+def test_scene_id_underscore_only_accepted() -> None:
+    """scene_id pattern 仅约下划线 + 字母数字；典型 `glades_ironoath_waystation`
+    （gold scene graph_id 形态）合法。"""
+    v = _validator()
+    sidecar = make_minimal_sidecar()
+    sidecar["scene_id"] = "glades_ironoath_waystation"
+    assert v.is_valid(sidecar)
 
 
 # ---------------------------------------------------------------------------
@@ -360,6 +401,31 @@ def test_chapter_id_missing_chap_prefix_rejected() -> None:
     assert not v.is_valid(bad)
 
 
+def test_act_id_with_underscore_accepted() -> None:
+    """GPT-5.5 review 4.1 修订：act_id pattern 与 chapter.schema.json
+    `^act_[a-z0-9_]{1,64}$` 严格同源——典型 'act_arrival' 合法。"""
+    v = _validator()
+    sidecar = make_full_sidecar()
+    sidecar["act_id"] = "act_arrival"
+    assert v.is_valid(sidecar)
+
+
+@pytest.mark.parametrize("bad_act_id", [
+    "act",  # GPT-5.5 review 4.1：缺下划线 + 后缀拒收
+    "actarrival",  # GPT-5.5 review 4.1：缺下划线分隔拒收
+    "ACT_arrival",  # 大写拒收
+    "act-arrival",  # 连字符拒收
+    "act_",  # 缺后缀字符拒收（pattern 后缀至少 1 字符）
+])
+def test_act_id_invalid_patterns_rejected(bad_act_id: str) -> None:
+    """GPT-5.5 review 4.1 修订：act_id 与 chapter.schema.json 严格同源——
+    避免 sidecar 引用侧记录 chapter 不可解析的 id。本组反例锁严约边界。"""
+    v = _validator()
+    bad = make_full_sidecar()
+    bad["act_id"] = bad_act_id
+    assert not v.is_valid(bad), f"act_id={bad_act_id!r} should be rejected"
+
+
 def test_truncation_reason_invalid_enum_rejected() -> None:
     """truncation_reason enum 越界拒收。"""
     v = _validator()
@@ -382,11 +448,20 @@ def test_truncation_reason_all_four_enums_accepted() -> None:
 # ---------------------------------------------------------------------------
 
 def test_scene_history_referenced_pattern_aligned_with_scene_id() -> None:
-    """scene_history_referenced items pattern 与 scene_id 同源 ^[a-z][a-z0-9_]*$。"""
+    """scene_history_referenced items pattern 与 scene_id 同源 `^[a-z0-9_]+$`
+    （GPT-5.5 review 3.2 修订）：大写 / 连字符拒收；数字起首合法。"""
     v = _validator()
     bad = make_full_sidecar()
     bad["scene_history_referenced"] = ["MyPriorScene"]  # 大写拒收
     assert not v.is_valid(bad)
+
+
+def test_scene_history_referenced_digit_lead_accepted() -> None:
+    """GPT-5.5 review 3.2 反向锁：与 scene_id 同源——数字起首合法。"""
+    v = _validator()
+    sidecar = make_full_sidecar()
+    sidecar["scene_history_referenced"] = ["1prior_scene"]
+    assert v.is_valid(sidecar)
 
 
 def test_scene_history_referenced_uniqueItems() -> None:
@@ -439,10 +514,17 @@ def test_schema_additionalProperties_is_false() -> None:
     "FACTION.iron_oath.reputation",  # 大写命名空间名拒收
     "faction",  # 裸 faction，缺 id 段
     "relationship",  # 裸 relationship，缺 slug 段
+    "relationship.vellin",  # GPT-5.5 review 3.1：仅 slug，缺 field 段
+    "world",  # GPT-5.5 review 3.1：裸 world 拒收
+    "flag",  # GPT-5.5 review 3.1：裸 flag 拒收
+    "player",  # GPT-5.5 review 3.1：裸 player 拒收
     ".world",  # 起始 . 拒收
 ])
 def test_state_paths_written_invalid_namespace_rejected(bad_path: str) -> None:
-    """F15 加严：write 侧命名空间 pattern 与 read 侧同源严约。"""
+    """F15 加严：write 侧命名空间 pattern 与 read 侧同源严约。GPT-5.5 review 3.1
+    修订：裸 namespace（world / flag / player / faction / relationship.<slug>）
+    全部拒收，避免 dep_propagate 反向 propagate 时把命名空间整体 stale-mark
+    与具体 path 混淆。"""
     v = _validator()
     bad = make_minimal_sidecar()
     bad["state_paths_written"] = [bad_path]
