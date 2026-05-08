@@ -261,6 +261,7 @@ ADR-019 明示 slot_assignments **节点级**字段；dialogue_graph 根对象**
 - v0.2.0 数据加载：image_asset.schema.json 不动；waystation.json character entity 内 visual_assets 嵌入完整 ImageAsset 对象的形态保持；character.schema.json 在自己的 visual_assets 字段层不约束 ImageAsset shape（详 §2.3 设计权衡），strict 校验仍由 image_validator 做。
 - envelope 迁移（详 §3.2）：scene_waystation_of_iron_oath 的 `type` 字段语义升级（"scene" → "location" + location_type "scene"）；运行时 ImageAsset.target_type=="scene" 路径不受影响（详 §3.2 影响面分析）。
 - 引用 SCHEMA_v0.2 commit `c47c9cf` "非结构性变更不联动 schema_version" 先例：optional 字段（slot_assignments）走兼容路径，不联动 const。
+- **content_dependency_index sidecar（详 §9）**：T-3.2 阶段 3 起手新建独立 schema 文件，首版 const `0.3.0`，与 ontology 模块同 epoch；不动既有 dialogue_graph / node / option 等 schema；不内嵌入 dialogue_graph 字段（避免双重 trace 路径）。
 
 ## 8. 留给 image_validator / graph_validator / 机械预检器的语义约束（**不在 schema 层表达**）
 
@@ -275,7 +276,137 @@ ADR-019 明示 slot_assignments **节点级**字段；dialogue_graph 根对象**
 7. **clock.ticks_filled <= ticks_total**（schema 跨字段表达困难，validator 兜底）。
 8. **ImageAsset shape**（image_validator；character/location.schema.json 在 visual_assets 字段层不重复表达，详 §2.3）。
 
+## 9. ContentDependencyIndex sidecar Schema 定义（`/schema/content_dependency_index.schema.json`）
+
+> 阶段 3 T-3.2 落地（ADR-023 + ADR-024）。**形态**：per-scene sidecar 文件 `<scene>.deps.json`，与 scene.json 同目录、平行落盘（与阶段 1.5 visual manifest 同哲学）。**写入语义**：context assembly over-approx trace（不是 scene 反查；详 §9.2 + ADR-023 / F5 修订）。**字段约束加严**：F15 修订要点（详 §9.3）。**T-3.2 不写入数据**——本任务仅交付 schema + 文档；sidecar 实际写入流水线由 T-3.5 批量调度器落地。
+
+### 9.1 字段总览
+
+| 字段 | 类型 | 必填 | 约束 | 一句话语义 |
+|---|---|---|---|---|
+| `schema_version` | string (const) | ✓ | `"0.3.0"` | 本对象 schema 版本；与 ontology 模块同 epoch（首版 0.3.0）。**不同于 character / location / clock / chapter，本字段是 required**——sidecar 由 batch_scheduler 自动写入，不存在迁移期省略场景。 |
+| `scene_id` | string | ✓ | `^[a-z][a-z0-9_]*$` | 本 sidecar 所属场景 id；与同目录 scene.json `graph_id` 一致性（dep_propagate 兜底）。pattern 比 dialogue_graph.graph_id `^[a-z0-9_-]+$` 更紧：首字母强约 `[a-z]` 且禁连字符——避免 sidecar 文件名与目录解析歧义。 |
+| `generated_at` | string | ✓ | format date-time | sidecar 生成 ISO 8601 时间戳；format 校验为 annotation-only（默认 jsonschema validator 不强校），写入器与 dep_propagate 工具按字面格式约定。 |
+| `ontology_ids_read` | array of string | ✓ | uniqueItems | context assembly 阶段所有被引用的本体实体 id（char_* / scene_* / loc_* / clk_* / chap_*）；**来自 prompt 注入轨迹，非 scene 产物反推**（F5 修订）。可空数组。 |
+| `state_paths_read` | array of string | ✓ | items pattern + uniqueItems | context assembly 阶段读取的 state path 全集；**ADR-016 五命名空间 pattern 强约**（F15 修订）。 |
+| `state_paths_written` | array of string | ✓ | items pattern + uniqueItems | scene effect 写入的 state path 全集（scene.json `on_enter_effects` + `option.effects` 内 path 字段并集；写入侧从产物可精确反推）；同 read 侧 F15 严约。 |
+| `prompt_template_hash` | string | ✓ | `^sha256:[a-f0-9]{64}$` | 本 scene 生成时 prompt 模板的 SHA256；dep_propagate 反向 propagate 时按 hash 比对（hash 漂移 → mark scene stale）。 |
+| `visual_asset_ids_referenced` | array of string | ✗ | uniqueItems | 阶段 1.5 ImageAsset.asset_id 全集；F15 missing-only。 |
+| `clock_ids_referenced` | array of string | ✗ | uniqueItems | active clocks 注入 prompt 时的 clk_* 全集（ADR-017）；F15 missing-only。 |
+| `chapter_id` | string | ✗ | `^chap_[a-z0-9_]+$` | 本 scene 所属 chapter id；T-3.9 chapter_assembler 写入。F15 missing-only（缺失 = scene 尚未指派；不允许 null）。 |
+| `act_id` | string | ✗ | `^act[a-z0-9_]*$` | 本 scene 所属 act id；与 chapter.schema.json `act_id` 形态同源；F15 missing-only。 |
+| `scene_history_referenced` | array of string | ✗ | items pattern + uniqueItems | **ADR-024 长对话一致性 A/B hook**：注入 prompt 的 prior_scene_summaries 对应 scene id；items pattern 与 scene_id 同源。F15 missing-only。 |
+| `prompt_token_estimate` | integer | ✗ | minimum 0 | **ADR-024 token metrics**：注入 LLM prompt 的总 token 估算；用于阶段 3 实测 token 累积曲线。F15 missing-only。 |
+| `summaries_injected_count` | integer | ✗ | 0 ≤ x ≤ 5 | **ADR-024 token metrics**：实际注入 prior_scene_summaries 条数；schema 上限 5（与 ADR-024 prompt 上限一致）。F15 missing-only。 |
+| `summary_source_hashes` | array of string | ✗ | items pattern `^sha256:[a-f0-9]{64}$` + uniqueItems | **ADR-024 token metrics**：每条注入 summary 的 SHA256（溯源用）。长度应与 summaries_injected_count 一致；schema 跨字段表达困难，写入器兜底。F15 missing-only。 |
+| `truncation_reason` | string (enum) | ✗ | `["none", "summaries_over_5", "token_budget", "manual_override"]` | **ADR-024 token metrics**：summaries 被裁剪原因；none = 未触发裁剪。F15 missing-only。 |
+
+`additionalProperties: false`（顶层未声明字段被 schema 拒收 —— F15 严约的核心防御）。
+
+### 9.2 写入语义：context assembly over-approx trace（ADR-023 / F5 修订核心）
+
+**关键决策（与 v0.1 草稿对照）**：sidecar **不是 scene 反查**——`<scene>.deps.json` 不能从 scene.json 内容反推。理由：
+
+1. **scene 内容已 lossy**：prompt 注入的 ontology / state / clock 引用不全部能从生成产物倒推。例如 prompt 给 LLM 注入了 `char_aelwin` 的 character_features 但 LLM 在最终 scene 里没让 aelwin 出场——scene 反查会丢失这条依赖；后续 aelwin entity 改动时 dep_propagate 不会 mark 此 scene stale，导致漂移。
+2. **Conservative over-approx 是正确策略**：sidecar 写入时**宁可误报 stale 也不漏依赖**——dep_propagate 多 review 一个本可不动的 scene，远好过漏掉应该 review 的 scene。
+3. **写入时机**：T-3.5 批量调度器在 `_build_scene_context` 阶段累加 `GenerationDependencyTrace`（含 character_ids / location_ids / clock_ids / relation_ids / state_paths_read / prompt_template_hash / visual_asset_ids），生成 scene 完毕后落盘 sidecar。
+
+**写入顺序约定（ADR-026 联动；F6 修订）**：write scene → assign chapter（T-3.9 helper 调用）→ write deps（T-3.5 含 dep_index trace）→ record version（T-3.8a 调用）。
+
+**反向用途**：T-3.7 一致性维护工具（`/tools/dep_propagate.py`，T-3.7 落地）按 sidecar 反向 propagate——当本体某 character / location / clock 被改动，扫所有 sidecar 找出 `ontology_ids_read` 包含该 id 的 scene → mark stale，作者 review UI 上看到 stale 列表。
+
+### 9.3 字段约束加严（F15 修订）
+
+v0.1 草稿到 v1.0 的关键收紧：
+
+1. **state_paths_read / state_paths_written items pattern 强约**：必须落入 ADR-016 五命名空间（`world.*` / `faction.<id>.*` / `relationship.<slug>.*` / `flag.*` / `player.*`）。否则 sidecar 自身可能引非法 path，让 dep_propagate 工具语义紊乱。pattern 与 ontology 模块（character.state_path_slug 反查 + clock.tick_effects[].path 五命名空间合法性）回归同源。
+2. **数组字段 uniqueItems**：ontology_ids_read / state_paths_read / state_paths_written / visual_asset_ids_referenced / clock_ids_referenced / scene_history_referenced / summary_source_hashes 全部 uniqueItems—— 重复入会让 dep_propagate 误算依赖密度。
+3. **scene_id pattern 与 dialogue_graph.graph_id 同源**：本字段 pattern `^[a-z][a-z0-9_]*$` 比 graph_id `^[a-z0-9_-]+$` 更紧（首字母强约 `[a-z]` + 禁连字符）。理由：sidecar 文件名 `<scene_id>.deps.json` 与目录解析需避免连字符歧义（os.path 部分实现对 hyphenated 文件名分词不一致），首字母数字会让 import-style 解析（如 Python module）受限。`scene_history_referenced` items 同源 pattern。
+4. **optional 字段 missing-only**：`chapter_id` / `act_id` / `visual_asset_ids_referenced` / `clock_ids_referenced` / `scene_history_referenced` / `prompt_token_estimate` / `summaries_injected_count` / `summary_source_hashes` / `truncation_reason` 全部走 missing-only 兼容路径——key 缺失代表"本 scene 未引用 / 未触发该 hook"，**不允许 null**（schema 层未声明 null 类型即拒收）。
+
+### 9.4 与 ontology / dialogue_graph schema 的关系
+
+- **不内嵌入 dialogue_graph schema**：sidecar 是**独立 schema 文件**，与 `<scene>.json` 平行落盘；不作为 dialogue_graph schema 的 nested 字段。理由：dialogue_graph schema const 保持 `0.1.1` 不动（v0.3.0 复合版本号策略；详 §1）；sidecar 是阶段 3 新增，独立演进首版 `0.3.0`，与 ontology 模块同 epoch。
+- **跨 schema 一致性约束（不在 schema 层表达；写入器兜底）**：
+  1. `scene_id` 与同目录 scene.json `graph_id` 一致（**注意 pattern 不同**：sidecar `scene_id` 比 graph_id 更紧；写入器选择 graph_id 作为 scene_id 时，作者命名 graph_id 需符合 sidecar pattern——T-3.5 批量调度器写入前预检）。
+  2. `ontology_ids_read[]` 内每个 id 在 `/state/ontology/<world>.json` 可解析（dep_propagate 兜底）。
+  3. `state_paths_written` 应与 scene.json `on_enter_effects[].path` ∪ `option.effects[].path` 一致（写入器兜底）。
+  4. `summary_source_hashes` 长度等于 `summaries_injected_count`（写入器兜底；schema 跨字段表达困难）。
+
+### 9.5 ADR-024 token metrics hook 字段（v1.0 新增）
+
+阶段 3 实测期会跑一周 ≥ 10 场景；token 累积曲线 + 接受率回归是判断长对话一致性是否撞墙的关键依据（ADR-024 v0.2 修订倒推依据）。本 schema 落地四个 token metrics 字段：
+
+- `prompt_token_estimate` — 全 prompt token 估算（含 SceneGraphContext + prior_scene_summaries + skeleton/fill 模板渲染段）。
+- `summaries_injected_count` — 实际注入 prior_scene_summaries 条数（0–5）。
+- `summary_source_hashes` — 每条 summary 的 SHA256，溯源用。
+- `truncation_reason` — `none` / `summaries_over_5`（超 5 上限被裁）/ `token_budget`（token 预算被裁）/ `manual_override`（作者手动覆盖）。
+
+**与 ADR-024 长对话一致性 A/B hook 联动**：阶段 3 末期如撞墙（token 曲线发散 / 接受率回归），可基于 `scene_history_referenced` + `summary_source_hashes` 升级为 RAG (B) 或 memory stream (A)，**不需重做 schema**。
+
+### 9.6 留给 dep_propagate / batch_scheduler 的语义约束（**不在 schema 层表达**）
+
+下列约束 schema 层无法表达（跨字段或跨文件），由 T-3.5 batch_scheduler 写入兜底 + T-3.7 dep_propagate 反向 propagate 时校验：
+
+1. `scene_id` 与同目录 scene.json `graph_id` 一致（**含 pattern 收紧约束**：作者命名 graph_id 时需符合 sidecar `scene_id` pattern 才能成功写入 sidecar；T-3.5 写入前预检）。
+2. `ontology_ids_read[]` 内每个 id 在 `/state/ontology/<world>.json` 可解析。
+3. `state_paths_read` / `state_paths_written` 跨字段一致性（写入路径自然也属于读取路径——常见但非必然，validator 不强约）。
+4. `summary_source_hashes` 长度与 `summaries_injected_count` 一致。
+5. Conservative over-approx 哲学（详 §9.2）：写入时**宁可误报 stale 也不漏依赖**。
+
+### 9.7 完整示例 JSON（含 ADR-024 token metrics）
+
+```json
+{
+  "schema_version": "0.3.0",
+  "scene_id": "ironoath_chapter2_pursuit",
+  "generated_at": "2026-05-08T12:00:00Z",
+  "ontology_ids_read": [
+    "char_vellin",
+    "char_corvan",
+    "scene_waystation_of_iron_oath",
+    "loc_vellin_office",
+    "clk_iron_oath_pursuit",
+    "chap_iron_oath_betrayal"
+  ],
+  "state_paths_read": [
+    "world.scene_count",
+    "faction.iron_oath.reputation",
+    "relationship.vellin.trust",
+    "flag.player_knows_letter",
+    "player.gold"
+  ],
+  "state_paths_written": [
+    "relationship.vellin.trust",
+    "flag.iron_oath_full_pursuit"
+  ],
+  "prompt_template_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "visual_asset_ids_referenced": ["img_vellin_neutral"],
+  "clock_ids_referenced": ["clk_iron_oath_pursuit"],
+  "chapter_id": "chap_iron_oath_betrayal",
+  "act_id": "act_arrival",
+  "scene_history_referenced": [
+    "glades_ironoath_waystation",
+    "ironoath_chapter2_intro"
+  ],
+  "prompt_token_estimate": 4200,
+  "summaries_injected_count": 2,
+  "summary_source_hashes": [
+    "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  ],
+  "truncation_reason": "none"
+}
+```
+
+### 9.8 关联 ADR
+
+- **ADR-023**：本 schema 形态 + 字段集 + 写入语义（context assembly over-approx trace）+ F15 字段约束加严。
+- **ADR-024**：长对话一致性 C 起步；token metrics hook 字段（prompt_token_estimate / summaries_injected_count / summary_source_hashes / truncation_reason）+ A/B hook（scene_history_referenced）。
+- **ADR-016**：五命名空间表（state_paths_read / state_paths_written items pattern 同源）+ schema 版本号策略（首版 0.3.0）。
+- **ADR-026**：批量调度器写入顺序（write scene → assign chapter → write deps → record version）。
+
 ## 版本
 
 本文件版本：v0.3.0
-最后更新：2026-05-03
+最后更新：2026-05-08（T-3.2 §9 ContentDependencyIndex sidecar 增量）
