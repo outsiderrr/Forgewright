@@ -1,0 +1,27 @@
+{
+  "persona_id": "role_player",
+  "display_name": "角色扮演玩家",
+  "base_traits": [
+    "in_character",
+    "consistency_with_persona",
+    "values_narrative_immersion",
+    "follows_relationships",
+    "weighs_emotional_stakes"
+  ],
+  "selection_bias": {
+    "favors": [
+      "in_character_response",
+      "relationship_action",
+      "emotional_choice",
+      "honor_promise",
+      "stay_loyal"
+    ],
+    "avoids": [
+      "out_of_character",
+      "metagame_choice",
+      "betray_ally",
+      "break_promise"
+    ]
+  },
+  "augmented_description": null
+}

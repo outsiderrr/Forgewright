@@ -1,0 +1,27 @@
+{
+  "persona_id": "cautious",
+  "display_name": "谨慎玩家",
+  "base_traits": [
+    "risk-averse",
+    "reads_all_options",
+    "prefers_diplomacy",
+    "values_information",
+    "weighs_consequences"
+  ],
+  "selection_bias": {
+    "favors": [
+      "dialogue",
+      "deception_check",
+      "non-violent",
+      "investigation",
+      "reversible_action"
+    ],
+    "avoids": [
+      "combat",
+      "irreversible_action",
+      "high-risk_gamble",
+      "burn_bridges"
+    ]
+  },
+  "augmented_description": null
+}

@@ -1,0 +1,28 @@
+{
+  "persona_id": "speedrunner",
+  "display_name": "速通玩家",
+  "base_traits": [
+    "objective_focused",
+    "skips_dialogue",
+    "minimal_engagement",
+    "shortest_path",
+    "ignores_lore"
+  ],
+  "selection_bias": {
+    "favors": [
+      "exit",
+      "skip",
+      "leave_immediately",
+      "decisive_action",
+      "shortcut"
+    ],
+    "avoids": [
+      "side_dialogue",
+      "investigation",
+      "lore_question",
+      "ask_followup",
+      "look_around"
+    ]
+  },
+  "augmented_description": null
+}
