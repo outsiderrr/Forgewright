@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/content_dependency_index.schema.json",
+  "title": "ContentDependencyIndex",
+  "description": "SCHEMA_v0.3.md §9 的 ContentDependencyIndex sidecar 元数据。验证对象 = per-scene sidecar 文件 `<scene>.deps.json`（与 scene.json 同目录；与 visual manifest 哲学一致）。**写入语义（ADR-023 / F5 修订）**：context assembly over-approx trace —— 不是 scene 反查。`_build_scene_context` 阶段累加 `GenerationDependencyTrace`，记录注入到 LLM prompt 的所有 ontology / state / clock / visual / prompt 引用。Conservative over-approx：宁可误报 stale 也不漏依赖。**字段约束加严（F15）**：state_paths_read / state_paths_written 落入 ADR-016 五命名空间 pattern；数组字段加 uniqueItems；scene_id pattern 与 dialogue_graph.graph_id 同源（小写下划线风格）。Optional 字段（chapter_id / act_id / visual_asset_ids_referenced / clock_ids_referenced / scene_history_referenced / prompt_token_estimate / summaries_injected_count / summary_source_hashes / truncation_reason）走 missing-only 兼容路径，**不允许 null**（schema 层未声明 null 类型即拒收）。`scene_history_referenced` + token metrics 字段（prompt_token_estimate / summaries_injected_count / summary_source_hashes / truncation_reason）= ADR-024 长对话一致性 hook，阶段 3 末期撞墙可基于此字段升级 RAG (B) 或 memory stream (A) 不需重做 schema。__留给 dep_propagate / batch_scheduler 的语义约束__：(1) `scene_id` 与 sidecar 所在目录的 scene.json `graph_id` 一致性（dep_propagate / batch_scheduler 兜底；schema 跨文件无法表达）；(2) `ontology_ids_read` 内每个 id 在 /state/ontology/<world>.json 可解析（dep_propagate 兜底）；(3) `state_paths_read` / `state_paths_written` 跨字段一致性（写入路径自然也属于读取路径——常见但非必然，validator 不强约）；(4) `summary_source_hashes` 长度与 `summaries_injected_count` 一致性（schema 跨字段表达困难，写入器兜底）。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "scene_id",
+    "generated_at",
+    "ontology_ids_read",
+    "state_paths_read",
+    "state_paths_written",
+    "prompt_template_hash"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "本 ContentDependencyIndex 对象的 schema 版本（SCHEMA_v0.3.md §1 复合版本号语义）。新建 schema 文件首版 `0.3.0`，与 character / location / clock / chapter schema 同源演进。本字段为 sidecar 必填（与 ontology entity schema 不同——sidecar 由 batch_scheduler 自动写入，不存在迁移期省略场景）。",
+      "type": "string",
+      "const": "0.3.0"
+    },
+    "scene_id": {
+      "description": "本 sidecar 所属场景的 id；与 sidecar 同目录 scene.json 的 `graph_id` 字段对齐（ADR-023 / STAGE_3_TASKS §3.2 / F15 修订）。pattern `^[a-z0-9_]+$` 与 ADR-023 决策核心明示对齐——比 dialogue_graph.graph_id `^[a-z0-9_-]+$` 仅去掉连字符（避免 sidecar 文件名与目录解析歧义），其他字符类完全同源。跨字段一致性（与 scene.json graph_id 一致）由 batch_scheduler / dep_propagate 兜底。",
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "generated_at": {
+      "description": "sidecar 生成时间戳（ISO 8601 date-time）。由 batch_scheduler 在写入时填入。format 校验为 annotation-only（默认 jsonschema validator 不强校 format）；写入器与 dep_propagate 工具按字面格式约定。",
+      "type": "string",
+      "format": "date-time"
+    },
+    "ontology_ids_read": {
+      "description": "context assembly 阶段所有被引用的本体实体 id（ADR-023 / F5）。来源 = `_build_scene_context` 注入到 LLM prompt 的 character / location / clock / chapter 全集；不是 scene 产物反推。覆盖所有 ADR-016 envelope 前缀（char_* / scene_* / loc_* / clk_* / chap_*）。Conservative over-approx：哪怕某 entity 进了 prompt 但最终没显形在 scene 输出，也仍记录——方便 dep_propagate 反向 propagate 时无遗漏。可空数组（极端场景：某 scene 完全独立于本体）。",
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "state_paths_read": {
+      "description": "context assembly 阶段读取的 state path 全集（ADR-016 五命名空间 pattern：world.* / faction.<id>.* / relationship.<slug>.<field> / flag.* / player.*）。pattern 与 ontology 模块（character.state_path_slug + clock.tick_effects[].path）的命名空间合法性回归同源（schema/tests/test_stage2_ontology_schema.py:test_gold_scene_paths_all_within_state_namespace_whitelist）。F15 加严：sidecar 自身 path 也必须落入合法命名空间且**至少一个段**，**裸 namespace（如 'world' / 'flag' / 'relationship.vellin'）拒收**——避免 propagate 工具语义紊乱（GPT-5.5 review 3.1 修订）。relationship.* 至少需 slug + field 两段，与 gold scene `relationship.vellin.trust` 形态对齐。",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
+      },
+      "uniqueItems": true
+    },
+    "state_paths_written": {
+      "description": "scene effect 写入的 state path 全集（ADR-016 五命名空间 pattern）。来源 = scene.json `on_enter_effects` + `option.effects` 内 path 字段的并集（写入侧反推；与 read 侧 over-approx 不同，write 侧从产物可精确反推）。F15 加严同 state_paths_read（裸 namespace 拒收；relationship.* 至少需 slug + field 两段）。",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
+      },
+      "uniqueItems": true
+    },
+    "prompt_template_hash": {
+      "description": "本 scene 生成时所用 prompt 模板的 SHA256（pattern `^sha256:[a-f0-9]{64}$`）。dep_propagate 反向 propagate 时按 hash 判断 prompt 模板是否变化——若 hash 漂移 → mark scene stale。",
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "visual_asset_ids_referenced": {
+      "description": "🟡 阶段 1.5 ImageAsset.asset_id 全集（visual context 注入到 prompt 的资产）。F15 missing-only：可省，省略 = 本 scene 未引用任何 visual asset；若填则 uniqueItems 强约。",
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "clock_ids_referenced": {
+      "description": "🟡 active clocks 注入 prompt context 时的 clock id 全集（ADR-017）。F15 missing-only。",
+      "type": "array",
+      "items": {"type": "string"},
+      "uniqueItems": true
+    },
+    "chapter_id": {
+      "description": "🟡 本 scene 所属 chapter id（ADR-016；T-3.9 chapter_assembler 写入）。F15 optional missing-only：key 缺失 = 本 scene 尚未指派到 chapter；不允许 null（schema 层未声明 null 类型即拒收）。pattern `^chap_[a-z0-9_]+$` 与 chapter.schema.json `chapter_id` 同源（chapter.schema.json 用 `^chap_[a-z0-9_]{1,64}$`；本字段不卡 maxLength —— sidecar 引用侧宽松，定义侧由 chapter.schema.json 兜底）。",
+      "type": "string",
+      "pattern": "^chap_[a-z0-9_]+$"
+    },
+    "act_id": {
+      "description": "🟡 本 scene 所属 act id（chapter 内的 sub-section）。F15 optional missing-only。pattern `^act_[a-z0-9_]{1,64}$` 与 chapter.schema.json `act_id` 严格同源——避免 sidecar 引用侧记录 chapter 不可解析的 id（GPT-5.5 review 4.1 修订；T-3.9 chapter_assembler / T-3.7 dep_propagate 跨文件闭合一致性硬约）。",
+      "type": "string",
+      "pattern": "^act_[a-z0-9_]{1,64}$"
+    },
+    "scene_history_referenced": {
+      "description": "🟡 ADR-024 长对话一致性 A/B hook：注入 prompt 的 prior_scene_summaries 对应的 scene id 全集（scene_history_referenced[i] = prior_scene_summaries[i].scene_id）。`SceneGraphContext.prior_scene_summaries` 上限 5 条（ADR-024）；本字段长度同样不超 5（与 summaries_injected_count 一致；schema 层不强约长度，写入器兜底）。F15 optional missing-only。pattern `^[a-z0-9_]+$` 与 scene_id 严格同源（ADR-023 决策核心；GPT-5.5 review 3.2 修订）。阶段 3 末期撞墙可基于此字段升级 RAG (B) 或 memory stream (A)，不需重做 schema。",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_]+$"
+      },
+      "uniqueItems": true
+    },
+    "prompt_token_estimate": {
+      "description": "🟡 ADR-024 token metrics hook（v1.0 新增）：注入 LLM prompt 的总 token 估算（含 SceneGraphContext + prior_scene_summaries + skeleton/fill 模板渲染段）。用于阶段 3 实测 token 累积曲线 + 接受率回归是否撞墙的判断依据（ADR-024 v0.2 修订倒推）。F15 optional missing-only。",
+      "type": "integer",
+      "minimum": 0
+    },
+    "summaries_injected_count": {
+      "description": "🟡 ADR-024 token metrics：实际注入 prompt 的 prior_scene_summaries 条数。上限 5（ADR-024 上限；超 5 由 SceneGraphContext 裁剪并填 truncation_reason）。F15 optional missing-only。",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 5
+    },
+    "summary_source_hashes": {
+      "description": "🟡 ADR-024 token metrics：每条注入 summary 的 SHA256（溯源用；pattern `^sha256:[a-f0-9]{64}$`）。长度应与 summaries_injected_count 一致；schema 层不跨字段强约，写入器兜底。F15 optional missing-only。",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^sha256:[a-f0-9]{64}$"
+      },
+      "uniqueItems": true
+    },
+    "truncation_reason": {
+      "description": "🟡 ADR-024 token metrics：summaries 被裁剪原因（none = 未触发裁剪；其他三档对应 ADR-024 触发场景）。F15 optional missing-only。",
+      "enum": ["none", "summaries_over_5", "token_budget", "manual_override"]
+    }
+  }
+}
