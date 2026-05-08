@@ -519,10 +519,12 @@
 
 - **bot persona 数 N=5**：cautious / aggressive / completionist / speedrunner / role_player（hand-write 5 个 base + LLM augment description hook 留 null）
 - **每场景 paths M=20**：5 persona × 20 paths = 100 paths/scene；与 ADR-021 §2B 抽样 N=100 数量级一致
-- **calibration run 必做（F9）**：T-3.4 A 阶段 mandatory smoke = 1 scene × 1 persona × 5 paths 实测 avg calls/path / tokens/path / seconds/path / cost/path；实测后再锁 5×20 参数
+- **calibration run 必做（F9）**：T-3.4 A 阶段 mandatory smoke = 1 scene × 1 persona × 5 paths 实测 avg calls/path / tokens/path / seconds/path / cost/path；实测后再锁 5×20 参数；如 1 path 平均 5+ calls（每决策节点 + judge），调整 M 上限或 worst-bucket 抽样形态
 - **三重 guard（F9）**：`--max-cost-usd <amount>` / `--max-calls <n>` / `--max-wall-clock-min <m>`；任一触发 = abort batch + log
 - **critical / major / minor severity taxonomy（F10）**：critical = validator 漏掉的非法路径 / 状态因果矛盾 / 角色或本体直接冲突 / 玩家结果透明度严重误导；major = 显著叙事质量问题；minor = 体例 / 措辞；critical 必须作者明示确认，不能只靠 LLM-as-judge 自动通过 gate
-- **双层输出（F21）**：`playtest_NNN/worst_paths.jsonl`（path 级）+ `playtest_NNN/worst_scenes.md` + `worst_scenes.json`（scene 级；scene 分数 = path 分布 / critical count / 最低分加权）
+- **双层输出（F21）**：
+  - `playtest_NNN/worst_paths.jsonl`（path 级；含 path trace + judge_score + critical_count + severity）
+  - `playtest_NNN/worst_scenes.md` + `worst_scenes.json`（scene 级；scene 分数 = path 分布 / critical count / 最低分加权）
 - **run_manifest.json（F20）**：每 playtest_NNN 写 model_id / temperature / prompt_hash / persona_hash / option_set / raw_choice / judge_rubric_version
 - **完成标志**：至少 5 场景跑过完整 playtest（5×20=100 paths/scene）；worst-10% 清单产出 + 0 critical issue 或全部修复
 
