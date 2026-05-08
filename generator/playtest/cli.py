@@ -28,7 +28,6 @@ budget module.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import dataclasses
 import hashlib
 import json
@@ -65,7 +64,7 @@ from generator.playtest.personas import (
 from generator.playtest.runner import (
     PlaytestPath,
     path_to_jsonl_dict,
-    run_paths_async,
+    run_path,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -253,7 +252,7 @@ def _ensure_cost_log_env(cost_log_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_persona_batch(
+def _run_persona_paths_sequential(
     *,
     scene: dict,
     persona: Persona,
@@ -262,32 +261,43 @@ def _run_persona_batch(
     initial_state: dict | None,
     guard: GuardState,
     progress_label: str,
-) -> list[PlaytestPath]:
-    """Run ``n_paths`` for one persona; surface per-path errors as
-    fields on the path rather than aborting the batch.
+    paths_out: list[PlaytestPath],
+) -> None:
+    """Run ``n_paths`` for one persona one at a time, checking the
+    three-way guard between each path.
 
-    :class:`BudgetExceeded` and :class:`GuardTripped` propagate so the
-    outer loop can flush partial output. The runner already emits a
-    :class:`PlaytestPath` with ``error=...`` on :class:`ProviderError`,
-    so a transient transport failure costs one path, not the batch.
+    Sequential by design (B-review 3.2): per-path ``guard.check()``
+    means abort fires within ~1 path of crossing a cap. Paths are
+    appended to ``paths_out`` AS THEY COMPLETE so the caller can
+    inspect what made it through after a guard / budget trip
+    re-raises out of this function. Per-path :class:`ProviderError`
+    is captured by the runner as ``path.error`` so a single bad
+    transport does not abort the batch.
+
+    Concurrent execution via ``run_paths_async`` is still available
+    in the runner module for T-3.5's RateLimitedProvider integration;
+    the CLI explicitly opts for sequential here so the guard signal
+    can land between paths.
     """
 
     def _observer(cost: float, input_tokens: int, output_tokens: int) -> None:
         guard.observe(cost, input_tokens, output_tokens)
 
     print(f"  [paths] {progress_label} running {n_paths} paths …", flush=True)
-    paths = asyncio.run(
-        run_paths_async(
+    for path_idx in range(n_paths):
+        guard.check()  # before each path — bound abort lag at ≤ 1 path
+        path = run_path(
             scene,
             persona,
-            n_paths=n_paths,
             provider=provider,
             initial_state=initial_state,
             observer=_observer,
-            concurrency=1,
+            path_id=f"{persona.persona_id}-{path_idx:03d}-{uuid.uuid4().hex[:6]}",
         )
-    )
-    return paths
+        paths_out.append(path)
+        # Re-check after the path's calls landed so the next path
+        # never starts past a cap.
+        guard.check()
 
 
 def _judge_paths(
@@ -398,34 +408,57 @@ def run_calibration(
         started_monotonic=time.monotonic(),
     )
 
-    # Snapshot the guard's input/output token totals before the
-    # calibration batch so we can derive per-path averages from the
-    # delta even when the same guard later observes the full batch.
+    # Snapshot guard counters before the calibration so per-path
+    # averages cover BOTH the persona-decision calls and the judge
+    # calls (B-review 3.1 fix; F9 spec: "每决策节点 + judge"). Using
+    # the delta also lets the same guard be reused for the full batch
+    # without aliasing the calibration averages.
+    before_calls = g.total_calls
+    before_cost = g.total_cost
     before_input_tokens = g.total_input_tokens
     before_output_tokens = g.total_output_tokens
 
-    paths = _run_persona_batch(
-        scene=scene,
-        persona=persona,
-        n_paths=CALIBRATION_PATHS,
-        provider=provider,
-        initial_state=initial_state,
-        guard=g,
-        progress_label=f"calibration[{persona.persona_id}]",
-    )
+    paths: list[PlaytestPath] = []
+    try:
+        _run_persona_paths_sequential(
+            scene=scene,
+            persona=persona,
+            n_paths=CALIBRATION_PATHS,
+            provider=provider,
+            initial_state=initial_state,
+            guard=g,
+            progress_label=f"calibration[{persona.persona_id}]",
+            paths_out=paths,
+        )
+    except (BudgetExceeded, GuardTripped) as exc:
+        _LOG.warning("calibration aborted mid-runner: %s", exc)
 
-    # Don't judge during calibration — the spec wants calls/path data,
-    # and the judge call doubles cost. The full batch will judge.
+    # Judge whatever paths the runner produced — F9 demands judge
+    # calls land in the calibration accounting (B-review 3.1).
+    if paths:
+        try:
+            _judge_paths(
+                scene=scene,
+                persona_lookup={persona.persona_id: persona},
+                paths=paths,
+                provider=provider,
+                guard=g,
+            )
+        except (BudgetExceeded, GuardTripped) as exc:
+            _LOG.warning("calibration aborted mid-judge: %s", exc)
+
     completed_at = _utc_now_iso()
 
     n = len(paths)
     if n == 0:
         avg_calls = avg_in = avg_out = avg_cost = avg_sec = 0.0
     else:
-        avg_calls = sum(p.llm_calls for p in paths) / n
+        # Derive averages from the guard delta so judge calls land in
+        # the per-path numbers (B-review 3.1).
+        avg_calls = (g.total_calls - before_calls) / n
+        avg_cost = (g.total_cost - before_cost) / n
         avg_in = (g.total_input_tokens - before_input_tokens) / n
         avg_out = (g.total_output_tokens - before_output_tokens) / n
-        avg_cost = sum(p.cost_usd for p in paths) / n
         avg_sec = sum(p.duration_seconds for p in paths) / n
 
     cal = CalibrationData(
@@ -565,6 +598,17 @@ def write_run_manifest(
         "personas": [p.to_canonical_dict() for p in personas],
         "n_paths_per_persona": n_paths_per_persona,
         "scenes_played": list(scenes_played),
+        # F20 single-path replay (B-review 4.1): worst_paths.jsonl is
+        # the choice trace — every PathStep carries option_set +
+        # raw_choice + reasoning. Pointing at the file rather than
+        # inlining keeps the manifest small and stable.
+        "choice_trace_file": "worst_paths.jsonl",
+        "choice_trace_format": (
+            "PathStep.option_set lists the option_id/text/target_node_id "
+            "set the LLM saw; PathStep.raw_choice is the provider's raw "
+            "JSON response. Together they let a future replay re-issue "
+            "the call without requiring the live persona prompt."
+        ),
         "guard": {
             "max_cost_usd": guard.max_cost_usd,
             "max_calls": guard.max_calls,
@@ -651,7 +695,9 @@ def run_full_batch(
     Returns ``(all_paths, scene_aggregates, aborted, abort_reason)``.
     Aborts cleanly on :class:`BudgetExceeded` or any guard trip; in
     that case ``aborted=True`` and the partial output is still
-    flushed to ``output_dir``.
+    flushed to ``output_dir``. Already-completed paths are persisted
+    to ``all_paths`` / ``scene_paths`` BEFORE the judge phase so a
+    judge-stage trip can never lose them (B-review 3.2).
     """
     persona_lookup = {p.persona_id: p for p in personas}
     all_paths: list[PlaytestPath] = []
@@ -662,9 +708,11 @@ def run_full_batch(
     for scene_id, scene in scenes:
         scene_paths: list[PlaytestPath] = []
         for persona in personas:
+            persona_paths: list[PlaytestPath] = []
+            persisted = False
             try:
                 guard.check()
-                persona_paths = _run_persona_batch(
+                _run_persona_paths_sequential(
                     scene=scene,
                     persona=persona,
                     n_paths=n_paths_per_persona,
@@ -672,8 +720,14 @@ def run_full_batch(
                     initial_state=initial_state,
                     guard=guard,
                     progress_label=f"{scene_id}/{persona.persona_id}",
+                    paths_out=persona_paths,
                 )
-                guard.check()
+                # Persist runner output BEFORE the judge phase so a
+                # judge-stage trip can't lose paths the runner already
+                # paid for (B-review 3.2).
+                scene_paths.extend(persona_paths)
+                all_paths.extend(persona_paths)
+                persisted = True
                 _judge_paths(
                     scene=scene,
                     persona_lookup=persona_lookup,
@@ -681,18 +735,19 @@ def run_full_batch(
                     provider=provider,
                     guard=guard,
                 )
-            except BudgetExceeded as exc:
+            except (BudgetExceeded, GuardTripped) as exc:
+                # Persist whatever the runner appended to persona_paths
+                # before the trip if we hadn't already (mid-runner trip).
+                if not persisted and persona_paths:
+                    scene_paths.extend(persona_paths)
+                    all_paths.extend(persona_paths)
                 aborted = True
-                abort_reason = f"BudgetExceeded: {exc}"
+                if isinstance(exc, GuardTripped):
+                    abort_reason = f"guard tripped ({exc.which}): {exc}"
+                else:
+                    abort_reason = f"BudgetExceeded: {exc}"
                 _LOG.warning(abort_reason)
                 break
-            except GuardTripped as exc:
-                aborted = True
-                abort_reason = f"guard tripped ({exc.which}): {exc}"
-                _LOG.warning(abort_reason)
-                break
-            scene_paths.extend(persona_paths)
-            all_paths.extend(persona_paths)
         scene_aggregates.append(
             aggregate_scene_summary(scene_id, scene_paths)
         )

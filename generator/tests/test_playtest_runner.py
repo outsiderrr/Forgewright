@@ -168,11 +168,60 @@ def test_run_path_single_step_reaches_end():
     assert result.cost_usd > 0
     assert result.duration_seconds >= 0
     assert len(result.steps) == 2  # entry + end
+    # B-review 4.2: option_id belongs to the step the persona is
+    # LEAVING, not the target node. End step's option_id is None.
     assert result.steps[0].node_id == "n_start"
+    assert result.steps[0].option_id == "go_a"
+    assert result.steps[0].reasoning == "I prefer the eastern road."
     assert result.steps[1].node_id == "n_end_a"
-    assert result.steps[1].option_id == "go_a"
+    assert result.steps[1].option_id is None
     # state_after on the second step should reflect the option's effect
     assert result.steps[1].state_after.get("flag", {}).get("went_east") is True
+
+
+def test_run_path_step_records_option_set_and_raw_choice():
+    """F20 replay metadata: option_set + raw_choice land on the step
+    the persona left (B-review 4.1)."""
+    persona = load_persona("cautious")
+    provider = _ScriptedProvider([("go_b", "western chosen")])
+    result = run_path(_two_branch_scene(), persona, provider=provider)
+    leaving_step = result.steps[0]
+    # option_set spans every valid option the LLM saw
+    ids = sorted(opt["option_id"] for opt in leaving_step.option_set)
+    assert ids == ["go_a", "go_b"]
+    for opt in leaving_step.option_set:
+        # texts truncated to ≤ 240 chars but non-empty for the fixture
+        assert isinstance(opt["text"], str)
+        assert opt["text"]
+        assert "target_node_id" in opt
+    # raw_choice is the provider's raw_text (JSON-shaped)
+    assert leaving_step.raw_choice
+    assert "go_b" in leaving_step.raw_choice
+    # End step has no option set or raw_choice — pure arrival snapshot
+    end_step = result.steps[1]
+    assert end_step.option_set == []
+    assert end_step.raw_choice is None
+
+
+def test_run_path_end_node_state_after_includes_on_enter_effects():
+    """B-review 4.2 second concern: when the end node has
+    ``on_enter_effects``, those land in the final step's
+    ``state_after`` (not the prior step's snapshot)."""
+    persona = load_persona("cautious")
+    provider = _ScriptedProvider([("go_a", "ok")])
+    scene = _two_branch_scene()
+    scene["nodes"]["n_end_a"]["on_enter_effects"] = [
+        {"op": "set", "path": "flag.end_marker_seen", "value": True}
+    ]
+    result = run_path(scene, persona, provider=provider)
+    assert result.reached_end is True
+    final = result.steps[-1]
+    assert final.node_id == "n_end_a"
+    assert final.option_id is None
+    assert final.state_after.get("flag", {}).get("end_marker_seen") is True
+    # Entry step's snapshot should NOT carry the end's on_enter
+    entry = result.steps[0]
+    assert entry.state_after.get("flag", {}).get("end_marker_seen") is None
 
 
 def test_run_path_records_persona_id_and_scene_id():

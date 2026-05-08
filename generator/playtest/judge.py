@@ -294,11 +294,12 @@ def judge_path(
     )
 
     _apply_judge_content_to_path(path, response.content or {})
+    # Notify observer after the path is mutated. Letting observer-driven
+    # exceptions (BudgetExceeded / GuardTripped from a future per-call
+    # guard) propagate is intentional — silent swallow would defeat the
+    # safety net (B-review 3.2).
     if observer is not None:
-        try:
-            observer(actual_cost, response.input_tokens, response.output_tokens)
-        except Exception:  # pragma: no cover — observer must not crash judge
-            _LOG.exception("judge call observer raised; ignoring")
+        observer(actual_cost, response.input_tokens, response.output_tokens)
     return path, actual_cost
 
 

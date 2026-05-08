@@ -254,9 +254,48 @@ def test_cli_calibration_mode_writes_report_and_manifest(tmp_path):
     assert manifest["calibration_data"]["n_paths"] == CALIBRATION_PATHS
     assert manifest["calibration_data"]["avg_calls_per_path"] >= 1
     assert "cautious" in manifest["persona_hashes"]
+    # B-review 4.1: manifest carries the choice trace pointer.
+    assert manifest["choice_trace_file"] == "worst_paths.jsonl"
+    assert "choice_trace_format" in manifest
 
     # Cost log redirected to tmp path
     assert cost_log.exists()
+
+
+def test_cli_calibration_includes_judge_calls_in_averages(tmp_path):
+    """B-review 3.1 fix: calibration must count both decision AND
+    judge calls so the per-path averages don't underestimate cost."""
+    scene_path = _write_scene(tmp_path)
+    cost_log = tmp_path / "playtest_cost_log.jsonl"
+    experiments_root = tmp_path / "experiments"
+    provider = _DispatchProvider()
+    rc = cli_mod.main(
+        [
+            str(scene_path),
+            "--calibration",
+            "--personas",
+            "speedrunner",
+            "--cost-log",
+            str(cost_log),
+        ],
+        provider=provider,
+        experiments_root=experiments_root,
+    )
+    assert rc == 0
+    # Each path = 1 decision call + 1 judge call → avg ≥ 2.
+    manifest = json.loads(
+        (experiments_root / "playtest_001" / "run_manifest.json").read_text(
+            "utf-8"
+        )
+    )
+    assert manifest["calibration_data"]["avg_calls_per_path"] >= 2
+    # Both decision (200 in / 80 out) and judge (300 in / 200 out)
+    # tokens land in the per-path averages.
+    assert manifest["calibration_data"]["avg_input_tokens_per_path"] >= 250
+    assert manifest["calibration_data"]["avg_output_tokens_per_path"] >= 100
+    # provider's call counters reflect both kinds.
+    assert provider.decision_calls >= CALIBRATION_PATHS  # ≥ 5 decision calls
+    assert provider.judge_calls == CALIBRATION_PATHS  # 5 judge calls (1 per path)
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +430,94 @@ def test_cli_aborts_when_calls_guard_trips(tmp_path):
     )
     assert manifest["aborted"] is True
     assert "calls" in (manifest["abort_reason"] or "")
+
+
+def test_cli_partial_paths_persisted_when_guard_trips_mid_batch(tmp_path):
+    """B-review 3.2 fix: paths that completed before the guard trip
+    must land in worst_paths.jsonl. We size --max-calls to allow ≥ 2
+    full paths (decision + judge) before the trip and assert the
+    JSONL row count matches what the guard let through."""
+    scene_path = _write_scene(tmp_path)
+    cost_log = tmp_path / "playtest_cost_log.jsonl"
+    experiments_root = tmp_path / "experiments"
+    provider = _DispatchProvider()
+    # 1 decision + 1 judge = 2 calls per path → cap at 2 lets exactly
+    # one full path through before tripping.
+    rc = cli_mod.main(
+        [
+            str(scene_path),
+            "--n-paths",
+            "5",
+            "--personas",
+            "cautious",
+            "--skip-calibration",
+            "--max-calls",
+            "2",
+            "--cost-log",
+            str(cost_log),
+        ],
+        provider=provider,
+        experiments_root=experiments_root,
+    )
+    assert rc == 3
+    out_dir = experiments_root / "playtest_001"
+    rows = [
+        json.loads(line)
+        for line in (out_dir / "worst_paths.jsonl")
+        .read_text("utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    # At least one path should have made it through before abort.
+    assert len(rows) >= 1
+    # Manifest should reflect the abort + the actual call count.
+    manifest = json.loads((out_dir / "run_manifest.json").read_text("utf-8"))
+    assert manifest["aborted"] is True
+    assert manifest["guard"]["total_calls"] >= 1
+
+
+def test_cli_full_batch_manifest_has_replay_pointer(tmp_path):
+    """F20 manifest must reference choice_trace file so a replay can
+    re-issue any single path (B-review 4.1)."""
+    scene_path = _write_scene(tmp_path)
+    cost_log = tmp_path / "playtest_cost_log.jsonl"
+    experiments_root = tmp_path / "experiments"
+    provider = _DispatchProvider()
+    rc = cli_mod.main(
+        [
+            str(scene_path),
+            "--n-paths",
+            "1",
+            "--personas",
+            "cautious",
+            "--skip-calibration",
+            "--cost-log",
+            str(cost_log),
+        ],
+        provider=provider,
+        experiments_root=experiments_root,
+    )
+    assert rc == 0
+    out_dir = experiments_root / "playtest_001"
+    manifest = json.loads((out_dir / "run_manifest.json").read_text("utf-8"))
+    assert manifest["choice_trace_file"] == "worst_paths.jsonl"
+    # And the file actually has option_set + raw_choice on each step.
+    rows = [
+        json.loads(line)
+        for line in (out_dir / "worst_paths.jsonl")
+        .read_text("utf-8")
+        .splitlines()
+        if line.strip()
+    ]
+    assert rows
+    first_path = rows[0]
+    assert first_path["steps"]
+    leaving_step = first_path["steps"][0]
+    assert leaving_step["option_set"]
+    assert {"option_id", "text", "target_node_id"} <= set(
+        leaving_step["option_set"][0].keys()
+    )
+    assert leaving_step["raw_choice"]
 
 
 # ---------------------------------------------------------------------------

@@ -79,10 +79,19 @@ DEFAULT_MAX_PATH_STEPS = 50
 class PathStep:
     """One node visit + the option chosen leaving it.
 
-    ``option_id`` is None for the final ``end`` step (end nodes have no
-    options). ``state_after`` is a snapshot of the world state right
-    after the step's effects apply — kept verbose so the worst-paths
-    JSONL surfaces enough trace for the author to replay manually.
+    ``option_id`` records the option the persona chose to LEAVE this
+    node. It is ``None`` for the entry node before the persona has
+    decided, and ``None`` for the final ``end`` node (which has no
+    outgoing options). ``state_after`` is a snapshot of the world
+    state right after this node's ``on_enter_effects`` apply, so the
+    final step (end node) carries the post-end-on-enter state.
+
+    F20 replay fields (B-review 4.1):
+      * ``option_set`` — the full set of valid options the LLM saw at
+        this decision (option_id + text + target_node_id).
+      * ``raw_choice`` — the provider's raw_text response (the JSON
+        the model emitted) so a future replay can compare against the
+        canonical schema-parsed ``option_id``.
     """
 
     node_id: str
@@ -90,6 +99,8 @@ class PathStep:
     state_after: dict
     valid_option_ids: list[str] = field(default_factory=list)
     reasoning: str | None = None
+    option_set: list[dict] = field(default_factory=list)
+    raw_choice: str | None = None
 
 
 @dataclass
@@ -319,14 +330,19 @@ def _call_persona_decision(
     current_node: dict,
     valid_options: list[dict],
     path_so_far: list[PathStep],
-    observer: CallObserver | None,
-) -> tuple[str, str, float]:
+) -> tuple[str, str, float, int, int, str]:
     """Make one budget-gated decision call.
 
-    Returns ``(chosen_option_id, reasoning, actual_cost_usd)``.
+    Returns ``(chosen_option_id, reasoning, actual_cost_usd,
+    input_tokens, output_tokens, raw_text)``.
     Raises :class:`BudgetExceeded` so the CLI can stop the batch
     cleanly. Raises :class:`ProviderError` so the caller can decide
     whether to fail the path or skip the step.
+
+    Observer notification was moved out of this function (B-review 3.2):
+    the caller (:func:`run_path`) updates path-level counters AND the
+    PathStep trace before calling observer, so observer-driven aborts
+    leave both consistent.
     """
     user_prompt = _persona_decision_user_prompt(
         persona=persona,
@@ -381,12 +397,14 @@ def _call_persona_decision(
             f"persona decision returned invalid option_id={chosen!r}; "
             f"valid={valid_ids}"
         )
-    if observer is not None:
-        try:
-            observer(actual_cost, response.input_tokens, response.output_tokens)
-        except Exception:  # pragma: no cover — observer must not crash runner
-            _LOG.exception("call observer raised; ignoring")
-    return chosen, reasoning if isinstance(reasoning, str) else "", actual_cost
+    return (
+        chosen,
+        reasoning if isinstance(reasoning, str) else "",
+        actual_cost,
+        response.input_tokens,
+        response.output_tokens,
+        response.raw_text,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +454,9 @@ def run_path(
     node_id = entry
     steps: list[PathStep] = []
     _apply_on_enter(state, nodes[entry])
+    # Entry step: state_after captures the post-on_enter snapshot.
+    # option_id stays None until the persona picks an option to leave
+    # this node, at which point we mutate this same step in place.
     steps.append(
         PathStep(
             node_id=entry,
@@ -457,8 +478,9 @@ def run_path(
         if node.get("type") == "end":
             success = True
             end_node_id = node_id
-            # Update last step's option_id (still None since end has
-            # no outgoing options) — leave as is. Recorded above.
+            # End node was appended at the end of the previous
+            # iteration with on_enter already applied; option_id stays
+            # None because end nodes have no outgoing options.
             break
         options = node.get("options") or []
         valid: list[dict] = []
@@ -472,15 +494,32 @@ def run_path(
             break
 
         valid_ids = [str(opt.get("option_id", "?")) for opt in valid]
+        # F20 replay metadata (B-review 4.1): freeze the option set the
+        # LLM saw at this node, in render order. Truncate text to keep
+        # worst_paths.jsonl rows bounded but still meaningful.
+        option_set = [
+            {
+                "option_id": str(opt.get("option_id", "")),
+                "text": (opt.get("text") or "")[:240],
+                "target_node_id": opt.get("target_node_id"),
+            }
+            for opt in valid
+        ]
         try:
-            chosen_id, reasoning, call_cost = _call_persona_decision(
+            (
+                chosen_id,
+                reasoning,
+                call_cost,
+                in_tok,
+                out_tok,
+                raw_text,
+            ) = _call_persona_decision(
                 provider=provider,
                 persona=persona,
                 scene_id=scene_id,
                 current_node={**node, "node_id": node_id},
                 valid_options=valid,
                 path_so_far=steps,
-                observer=observer,
             )
         except BudgetExceeded:
             # Re-raise: the CLI batch loop catches this and writes
@@ -493,6 +532,23 @@ def run_path(
 
         llm_calls += 1
         cost_usd += call_cost
+        # Update the step we are LEAVING with the persona's choice
+        # (B-review 4.2: option_id belongs to the step the persona is
+        # leaving, not the target). This also persists the F20 replay
+        # fields before we hand off to the observer / move on.
+        steps[-1].option_id = chosen_id
+        steps[-1].valid_option_ids = valid_ids
+        steps[-1].reasoning = reasoning
+        steps[-1].option_set = option_set
+        steps[-1].raw_choice = raw_text
+
+        # Notify observer AFTER path-level counters and the leaving
+        # step have been updated. If the observer raises (e.g. a
+        # future per-call guard), the path's recorded state is
+        # internally consistent.
+        if observer is not None:
+            observer(call_cost, in_tok, out_tok)
+
         chosen_opt = next((o for o in valid if o.get("option_id") == chosen_id), None)
         if chosen_opt is None:  # pragma: no cover — schema should prevent
             error = f"chosen option_id {chosen_id!r} not in valid set"
@@ -506,17 +562,19 @@ def run_path(
                 f"option {chosen_id!r}.target_node_id {target!r} missing or invalid"
             )
             break
+        node_id = target
+        # Apply on_enter BEFORE snapshotting state — this fixes B-review
+        # 4.2's second concern: the end node's on_enter_effects now
+        # land in final state_after.
+        _apply_on_enter(state, nodes[node_id])
         steps.append(
             PathStep(
-                node_id=target,
-                option_id=chosen_id,
+                node_id=node_id,
+                option_id=None,
                 state_after=deepcopy(state.as_dict()),
-                valid_option_ids=valid_ids,
-                reasoning=reasoning,
+                valid_option_ids=[],
             )
         )
-        node_id = target
-        _apply_on_enter(state, nodes[node_id])
     else:
         failure_reason = f"exceeded max_path_steps={max_steps}"
 
