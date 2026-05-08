@@ -116,16 +116,39 @@ def test_payload_includes_optional_fields_when_supplied(tmp_path):
     assert payload["truncation_reason"] == "summaries_over_5"
 
 
-def test_payload_drops_token_metric_defaults(tmp_path):
-    """Default TokenMetrics (zero counts, reason='none') stays out of
-    the payload — the schema declares those fields missing-only and
-    the convention is to emit them only when they carry signal."""
+def test_payload_emits_full_token_metrics_even_at_defaults(tmp_path):
+    """C-phase finding 4.1: as long as TokenMetrics is supplied, the
+    four metric fields ride into the sidecar verbatim — including the
+    zero / "none" defaults. Stage-3 token-curve regression analysis
+    needs every scene's metrics to land in a single comparable shape
+    so "0 summaries injected" is distinguishable from "metrics never
+    recorded"."""
     trace = _make_trace(tmp_path)
     payload = build_sidecar_payload(
         scene=_minimal_scene(),
         trace=trace,
         prior_scene_summaries=None,
         token_metrics=TokenMetrics(),
+        chapter_id=None,
+        act_id=None,
+    )
+    assert payload["prompt_token_estimate"] == 0
+    assert payload["summaries_injected_count"] == 0
+    assert payload["summary_source_hashes"] == []
+    assert payload["truncation_reason"] == "none"
+
+
+def test_payload_omits_token_metrics_when_none(tmp_path):
+    """token_metrics=None stays the explicit "no metrics hook ran"
+    signal — none of the four fields land. Lets pre-T-3.5 callers
+    (single-node tests, manual smoke runs) write sidecars without a
+    SceneGraphContext-shaped metrics object."""
+    trace = _make_trace(tmp_path)
+    payload = build_sidecar_payload(
+        scene=_minimal_scene(),
+        trace=trace,
+        prior_scene_summaries=None,
+        token_metrics=None,
         chapter_id=None,
         act_id=None,
     )

@@ -645,13 +645,24 @@ def _run_post_success_hooks(
     # Step 3 — dep_index sidecar. Schema validation happens inside
     # write_sidecar; an invalid payload raises and is caught by the
     # outer `_run_post_success_hooks` try/except.
+    #
+    # `scene_history_referenced` must reflect what the LLM actually
+    # saw, i.e. the **post-truncation** subset of prior summaries
+    # (ADR-024 cap = 5). `summary_source_hashes` and
+    # `summaries_injected_count` already track the truncated set
+    # (token_metrics is computed from the same truncation), so feeding
+    # the writer the same kept-list keeps the four fields internally
+    # consistent.
+    kept_priors, _truncation_reason = truncate_prior_scene_summaries(
+        scene_ctx.prior_scene_summaries
+    )
     from generator.dep_index_writer import write_sidecar
 
     sidecar_path = write_sidecar(
         scene_path,
         graph,
         trace,
-        scene_ctx.prior_scene_summaries,
+        kept_priors,
         scene_ctx.token_metrics,
         assignment.chapter_id if assignment is not None else chapter_id,
         assignment.act_id if assignment is not None else act_id,

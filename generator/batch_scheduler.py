@@ -177,14 +177,16 @@ def plan_layers(specs: Iterable[SceneSpec]) -> LayerPlan:
 
     Diagnostics:
       * `unknown_dependencies` — specs that name a `depends_on_scene_id`
-        that doesn't exist in the batch; we record the offending IDs
-        but **do not** fail planning (the scheduler is permissive so
-        the operator sees a layer plan and the unknown deps in the
-        same dry-run).
-      * `cycle_remaining` — IDs the planner couldn't place even after
-        all known deps cleared (i.e., participants in a dependency
-        cycle). Cycle members surface in `LayerPlan.cycle_remaining`
-        and are *not* scheduled — they'd otherwise wait forever.
+        that doesn't exist in the batch. Unknown deps are **never
+        considered satisfied**: the spec stays out of every layer and
+        ends up in `cycle_remaining` along with real cycle members.
+        That keeps the F4 contract intact ("scene cannot start before
+        its declared deps complete") — `run_batch` then materialises
+        a failure `SceneOutcome` for every unscheduled spec.
+      * `cycle_remaining` — IDs the planner couldn't place. Includes
+        both classic dependency cycles and specs blocked solely by
+        unknown deps; the scheduler distinguishes the two via
+        `unknown_dependencies` when it builds blocked outcomes.
     """
     spec_list = list(specs)
     seen_ids: set[str] = set()
@@ -197,21 +199,17 @@ def plan_layers(specs: Iterable[SceneSpec]) -> LayerPlan:
 
     declaration_index = {s.scene_id: i for i, s in enumerate(spec_list)}
 
-    # Filter out unknown deps so the layer planner only counts edges
-    # that actually point inside the batch. The unknown deps are
-    # surfaced separately for operator diagnostics.
     unknown_dependencies: dict[str, list[str]] = {}
-    effective_deps: dict[str, list[str]] = {}
     for s in spec_list:
         unknown = [d for d in s.depends_on_scene_ids if d not in seen_ids]
         if unknown:
             unknown_dependencies[s.scene_id] = unknown
-        effective_deps[s.scene_id] = [
-            d for d in s.depends_on_scene_ids if d in seen_ids
-        ]
 
+    # All declared deps stay in the remaining set — unknown deps will
+    # never be `placed`, so any spec referencing one is naturally
+    # blocked from scheduling and ends up in `cycle_remaining` below.
     remaining: dict[str, set[str]] = {
-        s.scene_id: set(effective_deps[s.scene_id]) for s in spec_list
+        s.scene_id: set(s.depends_on_scene_ids) for s in spec_list
     }
     by_id: dict[str, SceneSpec] = {s.scene_id: s for s in spec_list}
 
@@ -655,7 +653,7 @@ async def run_batch(
     plan = plan_layers(scenes)
     if plan.cycle_remaining:
         _LOG.warning(
-            "scenes_spec has %d unscheduled scenes (cycle): %s",
+            "scenes_spec has %d unscheduled scenes (cycle / unknown deps): %s",
             len(plan.cycle_remaining),
             plan.cycle_remaining,
         )
@@ -674,7 +672,38 @@ async def run_batch(
     if ontology_lock_factory is None:
         ontology_lock_factory = make_shared_ontology_lock_factory()
 
+    # Materialise failure outcomes for specs that the planner refused
+    # to schedule (unknown dep / cycle). Without this the BatchResult
+    # would silently drop them — operators reading success_rate would
+    # see a smaller denominator than the spec list they submitted, and
+    # T-3.10 acceptance audits could miss whole scenes (F4 contract:
+    # every submitted spec must have a row in the BatchResult).
+    spec_index: dict[str, SceneSpec] = {s.scene_id: s for s in scenes}
     outcomes: list[SceneOutcome] = []
+    for sid in plan.cycle_remaining:
+        spec = spec_index[sid]
+        missing = plan.unknown_dependencies.get(sid)
+        if missing:
+            failure_reason = "unknown_dependency"
+            failure_metadata = {"missing_scene_ids": list(missing)}
+        else:
+            failure_reason = "dependency_cycle"
+            failure_metadata = {
+                "declared_dependencies": list(spec.depends_on_scene_ids)
+            }
+        outcomes.append(
+            SceneOutcome(
+                scene_id=sid,
+                success=False,
+                layer_idx=-1,
+                elapsed_seconds=0.0,
+                cost_usd=0.0,
+                scene_path=spec.scene_path,
+                failure_reason=failure_reason,
+                failure_metadata=failure_metadata,
+            )
+        )
+
     layer_stats: list[LayerStats] = []
     for layer_idx, layer_specs in enumerate(plan.layers):
         layer_outcomes, stats = await _run_layer(

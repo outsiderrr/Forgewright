@@ -116,12 +116,29 @@ def test_plan_layers_orders_by_sequence_group_then_index():
     assert [s.scene_id for s in plan.layers[0]] == ["b", "c", "a"]
 
 
-def test_plan_layers_records_unknown_deps_without_failing():
+def test_plan_layers_blocks_specs_with_unknown_deps():
+    """C-phase finding 3.3: an unknown dep can never be satisfied, so
+    the spec stays out of every layer and the scheduler will surface
+    it as a failure outcome via `run_batch`. The unknown_dependencies
+    diagnostic still records the offending IDs for operator triage."""
     specs = [_spec(sid="a", deps=["nonexistent_root"])]
     plan = plan_layers(specs)
     assert plan.unknown_dependencies == {"a": ["nonexistent_root"]}
-    # Unknown dep is filtered out, so `a` still ends up in layer 0.
-    assert {s.scene_id for s in plan.layers[0]} == {"a"}
+    assert plan.layers == []
+    assert plan.cycle_remaining == ["a"]
+
+
+def test_plan_layers_partial_unknown_deps_still_blocks():
+    """A spec with one valid dep + one unknown dep is still blocked —
+    the unknown side can never resolve."""
+    specs = [
+        _spec(sid="root"),
+        _spec(sid="leaf", deps=["root", "nonexistent"]),
+    ]
+    plan = plan_layers(specs)
+    assert {s.scene_id for s in plan.layers[0]} == {"root"}
+    assert plan.cycle_remaining == ["leaf"]
+    assert plan.unknown_dependencies == {"leaf": ["nonexistent"]}
 
 
 def test_plan_layers_detects_cycle_and_skips():
@@ -550,6 +567,100 @@ def test_make_shared_ontology_lock_factory_serialises_within_process(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_post_success_hooks_pass_truncated_priors_to_dep_index(
+    tmp_path, monkeypatch
+):
+    """C-phase finding 3.2: write_sidecar must see the post-truncation
+    prior_scene_summaries, not the raw input list — otherwise
+    `scene_history_referenced` records scene IDs the LLM never saw and
+    drifts from `summary_source_hashes` / `summaries_injected_count`."""
+    from generator import generate_scene as gs_mod
+    from generator.context_assembler import (
+        PriorSceneSummary,
+        SceneGraphContext,
+        TokenMetrics,
+    )
+
+    captured_priors: list = []
+
+    def fake_assign(scene_anchor, ontology_path, chapter_id=None, act_id=None, **kwargs):
+        class _R:
+            success = True
+            scene_anchor = "scene_smoke"
+            chapter_id = "chap_arrival"
+            act_id = "act_one"
+            reason = "assigned"
+
+        return _R()
+
+    def fake_write_sidecar(scene_path, scene, trace, prior_summaries, *args, **kwargs):
+        captured_priors.append(list(prior_summaries))
+        return scene_path.with_suffix(".deps.json")
+
+    def fake_record_version(scene_path, generation_method, changed_fields=None):
+        class _M:
+            scene_id = "scene_smoke"
+            version = 1
+
+        return _M()
+
+    monkeypatch.setattr(
+        "generator.chapter_assembler.assign_scene_to_chapter", fake_assign
+    )
+    monkeypatch.setattr(
+        "generator.dep_index_writer.write_sidecar", fake_write_sidecar
+    )
+    monkeypatch.setattr(
+        "generator.version_recorder.record_version", fake_record_version
+    )
+    monkeypatch.setattr(
+        "generator.version_recorder.sidecar_path_for",
+        lambda p: p.with_suffix(".version.json"),
+    )
+
+    # 7 priors — truncation cap is 5, so the writer must see exactly 5.
+    priors = [
+        PriorSceneSummary(
+            scene_id=f"scene_n{i:02d}",
+            summary=f"summary {i}",
+            key_state_paths=[],
+        )
+        for i in range(7)
+    ]
+    scene_ctx = SceneGraphContext(
+        scene_anchor="scene_smoke",
+        chapter_ref=None,
+        location_candidates=[],
+        primary_location_ref=None,
+        participating_characters=[],
+        relations_matrix=[],
+        active_clocks=[],
+        system_time={"scene_count": 0, "long_rest_count": 0},
+        target_beats=[],
+        prior_scene_summaries=priors,
+        token_metrics=TokenMetrics(),
+    )
+    graph = {"graph_id": "scene_smoke", "scene_anchor": "scene_smoke", "nodes": {}}
+    trace = GenerationDependencyTrace()
+    scene_path = tmp_path / "scene_smoke" / "scene.json"
+    ontology_path = tmp_path / "ontology.json"
+    ontology_path.write_text("{}", encoding="utf-8")
+
+    gs_mod._run_post_success_hooks(
+        scene_path=scene_path,
+        ontology_path=ontology_path,
+        chapter_id="chap_arrival",
+        act_id="act_one",
+        graph=graph,
+        trace=trace,
+        scene_ctx=scene_ctx,
+        generation_method="batch_scheduler",
+        ontology_lock_factory=None,
+    )
+    assert len(captured_priors) == 1
+    assert len(captured_priors[0]) == 5
+
+
 def test_post_success_hooks_run_in_f6_order(tmp_path, monkeypatch):
     """End-to-end: drive `generate_scene._run_post_success_hooks` via
     monkeypatching `assign_scene_to_chapter` + `record_version` to
@@ -665,6 +776,89 @@ def test_post_success_hooks_run_in_f6_order(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 # RateLimitedProvider integration (BS-3 wiring)
 # ---------------------------------------------------------------------------
+
+
+def test_run_batch_materialises_failure_outcome_for_unknown_dep_specs(
+    tmp_path, monkeypatch
+):
+    """C-phase finding 3.3: specs blocked by unknown deps must appear
+    in BatchResult.outcomes as failures (not silently disappear), so
+    success_rate reflects every submitted spec."""
+    stub, _ = _stub_generate_scene_factory()
+    monkeypatch.setattr(batch_scheduler, "generate_scene", stub)
+
+    specs = [
+        _spec(sid="reachable", scene_path=tmp_path / "reachable" / "scene.json"),
+        _spec(
+            sid="blocked",
+            scene_path=tmp_path / "blocked" / "scene.json",
+            deps=["nonexistent"],
+        ),
+    ]
+    result = asyncio.run(
+        run_batch(
+            specs,
+            provider=_NoOpProvider(),
+            ontology={"entities": []},
+            ontology_path=None,
+            out_root=tmp_path / "batch",
+            concurrent_n=2,
+            rate_limit=False,
+            ontology_lock_factory=None,
+            progress_print=False,
+        )
+    )
+    by_id = {o.scene_id: o for o in result.outcomes}
+    assert set(by_id) == {"reachable", "blocked"}
+    assert by_id["reachable"].success is True
+    assert by_id["blocked"].success is False
+    assert by_id["blocked"].failure_reason == "unknown_dependency"
+    assert by_id["blocked"].failure_metadata == {
+        "missing_scene_ids": ["nonexistent"]
+    }
+    assert by_id["blocked"].layer_idx == -1
+    assert result.success_rate == 0.5  # 1 / 2 — blocked spec counted
+
+
+def test_run_batch_materialises_failure_outcome_for_dependency_cycle(
+    tmp_path, monkeypatch
+):
+    """Pure cycles (no unknown deps) get `failure_reason='dependency_cycle'`
+    so an operator can distinguish them from unknown-dep blocks."""
+    stub, _ = _stub_generate_scene_factory()
+    monkeypatch.setattr(batch_scheduler, "generate_scene", stub)
+
+    specs = [
+        _spec(
+            sid="a",
+            scene_path=tmp_path / "a" / "scene.json",
+            deps=["b"],
+        ),
+        _spec(
+            sid="b",
+            scene_path=tmp_path / "b" / "scene.json",
+            deps=["a"],
+        ),
+    ]
+    result = asyncio.run(
+        run_batch(
+            specs,
+            provider=_NoOpProvider(),
+            ontology={"entities": []},
+            ontology_path=None,
+            out_root=tmp_path / "batch",
+            concurrent_n=2,
+            rate_limit=False,
+            ontology_lock_factory=None,
+            progress_print=False,
+        )
+    )
+    by_id = {o.scene_id: o for o in result.outcomes}
+    assert set(by_id) == {"a", "b"}
+    for o in result.outcomes:
+        assert o.success is False
+        assert o.failure_reason == "dependency_cycle"
+        assert o.failure_metadata["declared_dependencies"]
 
 
 def test_run_batch_wraps_provider_in_rate_limiter(tmp_path, monkeypatch):

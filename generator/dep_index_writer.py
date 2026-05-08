@@ -244,30 +244,23 @@ def build_sidecar_payload(
         payload["scene_history_referenced"] = history
 
     if token_metrics is not None:
-        # Token-metrics fields are all optional / missing-only — emit
-        # only when the writer has something meaningful to record (the
-        # default zero / empty TokenMetrics would otherwise produce
-        # noise in scenes that never injected prior summaries).
-        if token_metrics.prompt_token_estimate > 0:
-            payload["prompt_token_estimate"] = (
-                token_metrics.prompt_token_estimate
-            )
-        if token_metrics.summaries_injected_count > 0:
-            payload["summaries_injected_count"] = (
-                token_metrics.summaries_injected_count
-            )
-        if token_metrics.summary_source_hashes:
-            payload["summary_source_hashes"] = list(
-                token_metrics.summary_source_hashes
-            )
-        # `truncation_reason` defaults to "none"; only emit when the
-        # caller has anything other than the default. Schema enum
-        # accepts "none" too, so emitting it would be schema-legal —
-        # but the missing-only convention drops noise from never-
-        # truncated scenes so reviewers spot the truncated cases at a
-        # glance.
-        if token_metrics.truncation_reason and token_metrics.truncation_reason != "none":
-            payload["truncation_reason"] = token_metrics.truncation_reason
+        # Token-metrics fields are schema-optional but writer-mandatory:
+        # whenever token_metrics is supplied (i.e. for every scene that
+        # went through `generate_scene` / batch_scheduler), the four
+        # fields land verbatim. ADR-024 token-curve / acceptance-rate
+        # regression analysis at end-of-Stage-3 needs every scene to
+        # carry the full metrics tuple — silently omitting "default"
+        # values (0 / "none") makes "scene with 0 summaries injected"
+        # indistinguishable from "scene whose hook never ran", which
+        # breaks the regression cohort.
+        payload["prompt_token_estimate"] = token_metrics.prompt_token_estimate
+        payload["summaries_injected_count"] = (
+            token_metrics.summaries_injected_count
+        )
+        payload["summary_source_hashes"] = list(
+            token_metrics.summary_source_hashes
+        )
+        payload["truncation_reason"] = token_metrics.truncation_reason or "none"
 
     return payload
 
