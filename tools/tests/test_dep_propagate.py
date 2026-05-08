@@ -246,6 +246,86 @@ class TestFindStaleScenesCore:
         assert [s.scene_id for s in stale] == ["scene_a"]
         assert any(r.kind == REASON_KIND_STATE_PATH and r.value == "relationship.vellin.trust" for r in stale[0].reasons)
 
+    def test_changed_state_path_with_wildcard_suffix_hits_subtree(
+        self, three_scene_fixture: dict
+    ) -> None:
+        """C-phase regression（B-review §3.1 🔴）：CLI help 和 module docstring 暗示
+        `faction.iron_oath.*` 是常见输入；归一化到字面 `faction.iron_oath` 之后
+        通过双向 prefix 匹配命中 sidecar `relationship.vellin.trust`。
+
+        本测试用 `relationship.vellin.*` 形态——验证修复后的 normalize 与既有
+        `test_state_path_subtree_match_hits_via_parent`（去尾形态）行为等价。"""
+        stale = find_stale_scenes(
+            changed_state_paths=["relationship.vellin.*"],
+            content_root=three_scene_fixture["content_root"],
+            ontology_root=three_scene_fixture["ontology_root"],
+        )
+        assert [s.scene_id for s in stale] == ["scene_a"]
+        assert any(
+            r.kind == REASON_KIND_STATE_PATH and r.value == "relationship.vellin.trust"
+            for r in stale[0].reasons
+        )
+
+    def test_sidecar_with_invalid_field_type_skipped_does_not_block_others(
+        self, three_scene_fixture: dict, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """C-phase regression（B-review §4.2 🟡）：sidecar 字段类型错（如
+        `ontology_ids_read` 是 null / object）不应抛 TypeError 中断扫描——
+        guard 应 skip + warn，仍能扫到后续正常 sidecar 的命中。"""
+        bad_path = (
+            three_scene_fixture["content_root"]
+            / "chapter_x"
+            / "scene_typebad"
+            / "scene.deps.json"
+        )
+        bad_path.parent.mkdir(parents=True, exist_ok=True)
+        bad_payload = _make_sidecar(
+            scene_id="scene_typebad",
+            ontology_ids=["char_vellin"],
+        )
+        # 故意把 array 字段写成 null（schema 拒收，但生产期 generator bug 可能写出来）
+        bad_payload["ontology_ids_read"] = None
+        bad_path.write_text(json.dumps(bad_payload, ensure_ascii=False), encoding="utf-8")
+
+        stale = find_stale_scenes(
+            changed_ontology_ids=["char_vellin"],
+            content_root=three_scene_fixture["content_root"],
+            ontology_root=three_scene_fixture["ontology_root"],
+        )
+        # 正常 sidecar（scene_a）仍能命中；坏 sidecar 被 skip
+        assert [s.scene_id for s in stale] == ["scene_a"]
+        captured = capsys.readouterr()
+        assert "expected list" in captured.err
+        assert "skipping sidecar" in captured.err
+
+    def test_sidecar_with_non_string_array_item_skipped(
+        self, three_scene_fixture: dict, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """C-phase regression（B-review §4.2 🟡）：array 字段元素非 str（如混入 int）
+        也走 skip + warn 路径——避免下游 `set(...)` 比较出意外。"""
+        bad_path = (
+            three_scene_fixture["content_root"]
+            / "chapter_x"
+            / "scene_itembad"
+            / "scene.deps.json"
+        )
+        bad_path.parent.mkdir(parents=True, exist_ok=True)
+        bad_payload = _make_sidecar(
+            scene_id="scene_itembad",
+            ontology_ids=["char_vellin"],
+        )
+        bad_payload["state_paths_read"] = ["world.scene_count", 42]  # type: ignore[list-item]
+        bad_path.write_text(json.dumps(bad_payload, ensure_ascii=False), encoding="utf-8")
+
+        stale = find_stale_scenes(
+            changed_ontology_ids=["char_vellin"],
+            content_root=three_scene_fixture["content_root"],
+            ontology_root=three_scene_fixture["ontology_root"],
+        )
+        assert [s.scene_id for s in stale] == ["scene_a"]
+        captured = capsys.readouterr()
+        assert "non-string item" in captured.err
+
     def test_visual_asset_hit(self, three_scene_fixture: dict) -> None:
         stale = find_stale_scenes(
             changed_visual_assets=["img_aelwin_01"],
@@ -691,6 +771,59 @@ class TestDiffOntology:
         assert "char_vellin" in diff.changed_ontology_ids
         assert "relationship.vellin" in diff.changed_state_paths
         assert "relationship.vellin_v2" in diff.changed_state_paths
+
+    def test_deleted_ontology_file_marks_old_entities_as_changed(
+        self, tmp_path: Path
+    ) -> None:
+        """C-phase regression（B-review §4.1 🟡）：删除整个 ontology JSON 文件后
+        `diff_ontology` 必须把旧 entity 标 changed——pre-commit hook
+        `--since HEAD` 路径在作者删除/重命名 ontology 文件时不能假阴性。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_init_repo(repo)
+        ontology = repo / "state" / "ontology"
+        _write_ontology(
+            ontology,
+            [
+                {
+                    "id": "char_vellin",
+                    "type": "character",
+                    "display_name": "V",
+                    "state_path_slug": "vellin",
+                },
+                {"id": "char_aelwin", "type": "character", "display_name": "A"},
+            ],
+        )
+        rev = _git_commit_all(repo, "init")
+
+        # 删除整个 world.json
+        (ontology / "world.json").unlink()
+
+        diff = diff_ontology(ontology, since_commit=rev, repo_root=repo)
+        assert "char_vellin" in diff.changed_ontology_ids
+        assert "char_aelwin" in diff.changed_ontology_ids
+        assert "relationship.vellin" in diff.changed_state_paths
+
+    def test_renamed_ontology_file_picks_up_old_path(self, tmp_path: Path) -> None:
+        """C-phase regression（B-review §4.1 🟡）：重命名场景 = 旧 path 删除 + 新 path
+        新增；diff_ontology 应同时看到两侧。本 case 验证旧 path 下的 entity id
+        全部进入 changed_ontology_ids。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_init_repo(repo)
+        ontology = repo / "state" / "ontology"
+        _write_ontology(
+            ontology,
+            [{"id": "char_vellin", "type": "character", "display_name": "V"}],
+        )
+        rev = _git_commit_all(repo, "init")
+
+        # 重命名 world.json → world_v2.json（新 path 内容相同）
+        (ontology / "world.json").rename(ontology / "world_v2.json")
+
+        diff = diff_ontology(ontology, since_commit=rev, repo_root=repo)
+        # entity id 出现于旧 path（删除）+ 新 path（新增）union
+        assert "char_vellin" in diff.changed_ontology_ids
 
     def test_no_change_returns_empty(self, tmp_path: Path) -> None:
         repo = tmp_path / "repo"

@@ -118,8 +118,26 @@ class ChangedOntology:
 # DP-1 核心：反向查询
 # ---------------------------------------------------------------------------
 
+def _normalize_changed_path(path: str) -> str:
+    """C-phase fix（B-review §3.1 🔴）：把"namespace 通配"形态归一到字面 prefix。
+
+    CLI help / docstring 一直把 `faction.iron_oath.*` 作为常见输入示意（"改了某个
+    namespace 子树"），但字面 `.*` 只是约定俗成的 ASCII 标记——后续 prefix 匹配是
+    `ch + "."` 字面拼接，输入 `faction.iron_oath.*` 时算出来的前缀变成
+    `faction.iron_oath.*.`，永远不会命中真实路径 `faction.iron_oath.reputation`。
+
+    做法：归一化到去尾 `.*` 的"父 path"形态——后续 `ref.startswith(ch + ".")`
+    分支会自然命中所有子路径。也兼容 `*` 单独项（兜底为空字符串，等价于"任意
+    state path 都命中"，但这种用法极不寻常；不需要在反向 propagate 工具内特殊
+    处理通配符 catch-all——作者真要"全标 stale"会直接传 broader inputs）。
+    """
+    if path.endswith(".*"):
+        return path[:-2]
+    return path
+
+
 def _state_path_intersect(changed: Iterable[str], referenced: Iterable[str]) -> list[str]:
-    """state path 命中检查（双向 prefix 匹配）。
+    """state path 命中检查（双向 prefix 匹配 + namespace 通配归一）。
 
     返回 sidecar 中被命中的 path 集合（用作 reason 渲染——给作者看的是 sidecar
     侧的具体路径，便于 grep 定位）。
@@ -131,8 +149,13 @@ def _state_path_intersect(changed: Iterable[str], referenced: Iterable[str]) -> 
     - B 是 A 的祖先（A 以 B + "." 开头）：作者改了 `faction.iron_oath.reputation`，
       sidecar 引用 `faction.iron_oath`（schema 实际拒收裸 namespace；保留方向
       性是为给 sidecar schema 演进留口子）→ 命中
+
+    输入端 `.*` 尾缀（如 `faction.iron_oath.*`，CLI help 暗示的常见用法）由
+    `_normalize_changed_path` 归一到 `faction.iron_oath` 后再走前缀匹配——B
+    阶段评审 §3.1 修订（避免静默 false negative，违背 ADR-023/F5
+    "宁可误报 stale 也不漏依赖"目标）。
     """
-    changed_set = set(changed)
+    changed_set = {_normalize_changed_path(c) for c in changed}
     hits: list[str] = []
     for ref in referenced:
         for ch in changed_set:
@@ -150,6 +173,39 @@ def _load_sidecar(deps_path: Path) -> Optional[dict]:
     except (OSError, json.JSONDecodeError) as exc:
         print(f"[dep_propagate] WARN failed to read sidecar {deps_path}: {exc}", file=sys.stderr)
         return None
+
+
+def _list_field(sidecar: dict, deps_path: Path, key: str) -> Optional[list[str]]:
+    """C-phase fix（B-review §4.2 🟡）：sidecar 字段类型 guard。
+
+    sidecar schema（content_dependency_index.schema.json）声明字段必须是
+    `array of string`、optional 字段走 missing-only（schema 拒收 null），但本工具
+    的设计哲学是"宁可宽松也不阻断"——遇到不合规 sidecar（例如 generator bug 把
+    optional 字段写成 null，或人工编辑 sidecar 时把 array 写成 object）时，**单个
+    sidecar skip + 全局扫描继续**，不能让一颗坏 sidecar 拖垮整批 stale report。
+
+    返回值语义：
+    - key 缺失（合法 missing-only）→ 空 list（"该 sidecar 没有此类引用"）
+    - key 存在但不是 list / list 元素不是 str → 返回 None（标记 sidecar 整体 skip）
+    """
+    if key not in sidecar:
+        return []
+    value = sidecar[key]
+    if not isinstance(value, list):
+        print(
+            f"[dep_propagate] WARN sidecar {deps_path}: field {key!r} expected list, got "
+            f"{type(value).__name__}; skipping sidecar",
+            file=sys.stderr,
+        )
+        return None
+    if not all(isinstance(item, str) for item in value):
+        print(
+            f"[dep_propagate] WARN sidecar {deps_path}: field {key!r} contains non-string item; "
+            f"skipping sidecar",
+            file=sys.stderr,
+        )
+        return None
+    return list(value)
 
 
 def _resolve_scene_path(deps_path: Path) -> Path:
@@ -201,32 +257,55 @@ def find_stale_scenes(
         sidecar = _load_sidecar(deps_path)
         if sidecar is None:
             continue
+        if not isinstance(sidecar, dict):
+            print(
+                f"[dep_propagate] WARN sidecar {deps_path}: expected JSON object, got "
+                f"{type(sidecar).__name__}; skipping sidecar",
+                file=sys.stderr,
+            )
+            continue
+
+        ontology_ids_read = _list_field(sidecar, deps_path, "ontology_ids_read")
+        state_paths_read = _list_field(sidecar, deps_path, "state_paths_read")
+        state_paths_written = _list_field(sidecar, deps_path, "state_paths_written")
+        visual_asset_ids = _list_field(sidecar, deps_path, "visual_asset_ids_referenced")
+        clock_ids = _list_field(sidecar, deps_path, "clock_ids_referenced")
+        if any(
+            field is None
+            for field in (
+                ontology_ids_read,
+                state_paths_read,
+                state_paths_written,
+                visual_asset_ids,
+                clock_ids,
+            )
+        ):
+            continue
 
         reasons: list[StaleReason] = []
 
-        ontology_hits = changed_ontology_set & set(sidecar.get("ontology_ids_read", []))
+        ontology_hits = changed_ontology_set & set(ontology_ids_read or [])
         for hit in sorted(ontology_hits):
             reasons.append(StaleReason(REASON_KIND_ONTOLOGY_ID, hit))
 
-        sidecar_state_paths = list(sidecar.get("state_paths_read", [])) + list(
-            sidecar.get("state_paths_written", [])
-        )
+        sidecar_state_paths = list(state_paths_read or []) + list(state_paths_written or [])
         state_hits = _state_path_intersect(changed_state_paths, sidecar_state_paths)
         for hit in sorted(set(state_hits)):
             reasons.append(StaleReason(REASON_KIND_STATE_PATH, hit))
 
-        visual_hits = changed_visual_set & set(sidecar.get("visual_asset_ids_referenced", []))
+        visual_hits = changed_visual_set & set(visual_asset_ids or [])
         for hit in sorted(visual_hits):
             reasons.append(StaleReason(REASON_KIND_VISUAL_ASSET, hit))
 
-        clock_hits = changed_clock_set & set(sidecar.get("clock_ids_referenced", []))
+        clock_hits = changed_clock_set & set(clock_ids or [])
         for hit in sorted(clock_hits):
             reasons.append(StaleReason(REASON_KIND_CLOCK, hit))
 
         if not reasons:
             continue
 
-        scene_id = sidecar.get("scene_id", deps_path.stem.replace(".deps", ""))
+        scene_id_raw = sidecar.get("scene_id", deps_path.stem.replace(".deps", ""))
+        scene_id = str(scene_id_raw) if not isinstance(scene_id_raw, str) else scene_id_raw
         scene_path = _resolve_scene_path(deps_path)
         priority = _derive_priority(ontology_hits, ontology_index)
 
@@ -303,36 +382,58 @@ def diff_ontology(
 ) -> ChangedOntology:
     """从 since_commit 到工作树（含未提交改动）做粗粒度 ontology entity diff。
 
-    实现：`git show <since_commit>:<rel_path>` 加载 OLD payload，工作树读 NEW
-    payload；按 `id` 比较 entity 字典，凡有任意字段不一致即标 changed。粒度
-    "实体级"——命中 ontology_ids，state_paths 仅在 `state_path_slug` 漂移时
-    粗粒度回填（当前 character entity 的 slug 漂移可能导致 `relationship.<slug>.*`
-    路径全部失效，回填两侧 slug）。
+    实现：取**工作树文件 ∪ since_commit 文件**两侧 union（C-phase fix B-review §4.1
+    🟡）——只看工作树会漏掉删除/重命名，pre-commit hook `--since HEAD` 路径要求
+    "ontology 删除也算变更"。每个文件分别 `git show <since_commit>:<rel_path>`
+    加载 OLD payload + 工作树读 NEW payload；按 `id` 比较 entity 字典，凡有任意
+    字段不一致（含 OLD 存在 NEW 不存在 = 删除）即标 changed。粒度"实体级"——
+    命中 ontology_ids，state_paths 仅在 `state_path_slug` 漂移时粗粒度回填
+    （当前 character entity 的 slug 漂移可能导致 `relationship.<slug>.*` 路径全部
+    失效，回填两侧 slug）。
 
     生产期 propagate 报告的设计哲学："偏宽松好于偏紧"——T-3.7 prompt §DP-2 §6
     明示。
 
     参数：
-    - ontology_path：ontology 目录或单文件（目录 → 扫描下属所有 .json）。
+    - ontology_path：ontology 目录或单文件（目录 → 扫描下属所有 .json + since
+      tree 同目录下的 .json union）。
     - since_commit：git revision（commit / branch / HEAD~N 等）。
     - repo_root：git repo 根目录（默认推断为 ontology_path 上溯到含 `.git/` 目录的
       最近祖先）。
 
-    failure modes：since_commit 不存在 / git 不可用 / OLD 文件不存在 → 抛
-    `RuntimeError`；OLD payload 解析失败 → 视作"全 entity 都是新增/变更"返回当前
-    全集（写入侧已 over-approx 不漏依赖）。
+    failure modes：since_commit 不存在 / git 不可用 → 抛 `RuntimeError`；OLD
+    payload 解析失败 → 视作"全 entity 都是新增/变更"返回当前全集（写入侧已
+    over-approx 不漏依赖）。
     """
     repo_root = repo_root or _find_git_root(ontology_path)
-    files = _ontology_files_to_diff(ontology_path)
+    files = _ontology_files_to_diff(ontology_path, repo_root, since_commit)
 
     changed_ids: set[str] = set()
     changed_paths: set[str] = set()
 
     for f in files:
         old_text = _git_show(repo_root, since_commit, f)
-        try:
-            new_payload = json.loads(f.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+
+        new_payload: Optional[dict] = None
+        if f.exists():
+            try:
+                new_payload = json.loads(f.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                new_payload = None
+
+        if new_payload is None and old_text is None:
+            continue
+
+        if new_payload is None:
+            try:
+                old_payload = json.loads(old_text or "")
+            except json.JSONDecodeError:
+                continue
+            for entity in old_payload.get("entities", []) or []:
+                if eid := entity.get("id"):
+                    changed_ids.add(eid)
+                if slug := entity.get("state_path_slug"):
+                    changed_paths.add(f"relationship.{slug}")
             continue
 
         if old_text is None:
@@ -372,12 +473,72 @@ def diff_ontology(
     )
 
 
-def _ontology_files_to_diff(ontology_path: Path) -> list[Path]:
-    if ontology_path.is_dir():
-        return sorted(ontology_path.glob("*.json"))
+def _ontology_files_to_diff(
+    ontology_path: Path,
+    repo_root: Path,
+    since_commit: str,
+) -> list[Path]:
+    """C-phase fix（B-review §4.1 🟡）：取"工作树 .json" ∪ "since_commit 树下同目录
+    .json"，包含被删除/重命名的旧文件。
+
+    单文件输入只看该文件本身（即使工作树已删除，也用 commit 树里同名 path 重建
+    abs path——`git show <rev>:<path>` 仍可读）。
+
+    目录输入扫两侧：
+    - 工作树 `<dir>/*.json`（rglob 用 glob，不递归——保持与原行为一致）
+    - `git ls-tree <since_commit> -- <rel_dir>/` 列出该目录下 .json 文件
+    """
     if ontology_path.is_file():
         return [ontology_path]
-    return []
+
+    candidates: set[Path] = set()
+    if ontology_path.is_dir():
+        candidates.update(ontology_path.glob("*.json"))
+
+    try:
+        rel_dir = ontology_path.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        rel_dir = None
+
+    if rel_dir is not None:
+        env = {"LC_ALL": "C", "LANG": "C", "PATH": _safe_path_env()}
+        try:
+            proc = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "ls-tree",
+                    "--name-only",
+                    since_commit,
+                    f"{rel_dir.as_posix()}/",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            raise RuntimeError("git executable not found; install git or pass --changed-* manually") from exc
+
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                line = line.strip()
+                if not line.endswith(".json"):
+                    continue
+                candidates.add((repo_root / line).resolve())
+        else:
+            stderr = proc.stderr or ""
+            if not (
+                "Not a valid object name" in stderr
+                or "fatal: bad revision" in stderr
+                or "unknown revision" in stderr
+                or "exists on disk" in stderr
+                or "does not exist" in stderr
+            ):
+                pass  # 目录不存在于 since_commit 时 ls-tree 返回空 + 0；非零 + 未识别字符串保守忽略
+
+    return sorted(candidates)
 
 
 def _find_git_root(start: Path) -> Path:
