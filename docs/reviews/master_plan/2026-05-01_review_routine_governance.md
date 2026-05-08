@@ -156,6 +156,7 @@
 
 ## 9. 修订记录
 
+- **2026-05-08 v0.4**：作者拍板把 L3 paste-ready prompt 从 `STAGE_X_TASKS.md` §8 内嵌的 ` ```text` 代码块拆出，每个 L3 任务单独存为 `/docs/prompts/stage_N/T-N.X.md` 文件。L3 会话起步标准格式从"复制粘贴 paste-ready prompt 块"改为"读 prompt 文件"。触发：阶段 3 起手期（PR #33 merge 后）作者发现复制粘贴 14 长 prompt 块辛苦 + 复盘困难。修订点：**新增 §11 L3 prompt 文件化工作流（v0.4 新增）**；§3 / §5 引用文件路径形态调整；§10 ABC 流程图 A 阶段首条消息形态改"读 prompt 文件 OR 直接说执行 T-N.X"。**默认行为**：阶段 3 起手新规范——所有 L3 prompt 单独文件；阶段 0/1/1.5/2 历史 prompts 不回填；阶段 4+ 复用同款规范（modifier `/docs/prompts/stage_N/`）。Meta task 落地：`claude/meta-prompt-extract` 分支整合（含 14 个 stage_3 prompt 文件 + STAGE_3_TASKS.md §8 改表格引用 + governance v0.4 修订；详见 PR）。
 - **2026-05-03 v0.3**：作者拍板（1）任务分类制度保留作为概念参考，但实操不依赖分类——routines 不再尝试串行跑 L3 任务；（2）所有 L3 一律跑统一 §10 ABC 三阶段流程，不按 [A-execute] / [B-author-gate] 差异化。触发：阶段 1.5 实操（commit `33611cd` 9 份 codex review backfill）确认 9 个 L3 都跑了同一 ABC 流程，与 v0.2 "A 类省 cross-LLM" 矛盾；作者认为按分类调度 routine 是结构复杂化没带来效率提升。修订点：§1 核心结论 / §2 状态 / §3 review tier 表格 / §4 routines 边界明示 / §5 L2 规划师约束 / §6 待办时机 / §7 决策表 3b/4 + 新增项 / **新增 §10 L3 ABC 三阶段流程**。**默认行为**：所有 L3 PR 都必须跑完 ABC 三阶段才算闭环。
 - **2026-05-01 v0.2**：作者拍板把 §2 任务分类制度从"硬性必须"降级为"软建议"。触发：阶段 1.5 已在执行中（T-1.5.1 commit `77a5f54` 已完成 / T-1.5.1a 已完成 / 后续 L2 规划层在路上），实际推进观察到 L3 大半涉及 schema / image / ADR / provider 接口，B 类居多，强制分类边际收益低。修订点：§2 引言语气 + §5 第 1 条 + §7 3b。**默认行为不变**：未分类的 L3 走 `[B-author-gate]`（作者每个 commit 看一眼），保持安全。其余条款（§3 review tier / §4 routines 启用清单 / §6 待办 / §8 与 L1 兼容性）未变。
 - **2026-05-01 v0.1**：初版。L1 规划讨论"能否用桌面端 routines 自动驱动 L1→L2→L3"问题落盘，含核心结论 / 任务分类制度（硬性版）/ review tier 分层 / routines 启用清单 / L2 规划师约束。
@@ -246,7 +247,86 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 
 ---
 
+## 11. L3 prompt 文件化工作流（v0.4 新增）
+
+> 阶段 3 起手期（2026-05-08 PR #33 merge 后）作者拍板：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。本节明文化 v0.4 工作流。
+
+### 目录结构
+
+```
+/docs/prompts/
+├── README.md                    # 通用说明 + 命名规范 + L3 起步模板
+├── stage_3/                     # 阶段 3 paste-ready prompts (14 个文件)
+│   ├── T-3.0.md
+│   ├── T-3.1.md
+│   ├── ...
+│   └── T-3.12.md
+└── stage_4/                     # 阶段 4 起手时由 L2 整合规划师落地
+```
+
+### L3 会话起步标准格式（v0.4）
+
+作者新会话首条消息（替代 v0.3 复制粘贴 paste-ready prompt 块）：
+
+**最简版**：
+```
+执行 T-3.0
+```
+
+**明示版**（推荐；避免歧义）：
+```
+请按 /docs/prompts/stage_3/T-3.0.md 的指示执行任务。
+```
+
+会话识别后第一步 Read 对应 prompt 文件 → 按内容开发 + 测试 + commit + push + 开 PR → A 阶段完成。
+
+### v0.3 → v0.4 工作流变化对照
+
+| 项 | v0.3（2026-05-03 起）| v0.4（2026-05-08 起）|
+|---|---|---|
+| L3 paste-ready prompt 存放 | `STAGE_X_TASKS.md` §8 内嵌 ` ```text` 代码块 | 单独文件 `/docs/prompts/stage_N/T-N.X.md` |
+| L3 会话起步首条消息 | 复制粘贴整块 ` ```text` 代码（~150 行）| `执行 T-N.X` 或 `请按 ... 执行任务。` |
+| §8 在 STAGE_X_TASKS.md 内 | 14 个 ` ```text` 代码块（~1700 行）| 表格引用（~25 行）+ 链接到 `/docs/prompts/stage_N/T-N.X.md` |
+| L3 prompt 修订 | Edit `STAGE_X_TASKS.md` §8 内对应段（污染大文件 git log）| Edit 对应 `/docs/prompts/stage_N/T-N.X.md` 单文件（git log 独立追踪）|
+
+### 命名规范
+
+- 阶段 N 任务编号：`T-N.X`（N = 阶段编号；X = 任务编号）
+- 拆分子任务：`T-N.Xa` / `T-N.Xb`（如 T-3.6a / T-3.6b 拆审阅 UI MVP / integrations）
+- 文件名：`T-N.X.md`（直接用任务编号）
+- 路径：`/docs/prompts/stage_N/T-N.X.md`
+
+### 历史阶段不回填
+
+阶段 0 / 1 / 1.5 / 2 已完成；旧 paste-ready prompts 仍存在 `STAGE_X_TASKS.md` §8 ` ```text` 代码块内。**不回填**——历史阶段已 audit 完成；阶段 3 起新规范即可。
+
+### 与 §10 ABC 三阶段闭环的关系
+
+§10 ABC 流程**不变**——仅 A 阶段首条消息形态从"复制粘贴 prompt 块"改为"读 prompt 文件"。B/C/L2 验收阶段流程完全继承 v0.3。
+
+### 与跳 BC 破例 5 类的关系（详 STAGE_3_TASKS.md §1.5.4）
+
+- prompt 文件本身的 ergonomic 微调（措辞 / 引用路径 / 示例补充）属"审阅 UI 工坊化 ergonomic 改进"延伸 → 跳 BC 破例第 4 类
+- prompt 文件的实质性修订（任务范围 / 模块边界变化）默认走完整 ABC
+
+### 修订流程
+
+修订单个 prompt 文件：直接 Edit `/docs/prompts/stage_N/T-N.X.md` + 走 ABC 闭环（§10）。
+
+prompt 文件 commit message 模板：
+
+- `docs(prompt): T-N.X v1.1 — <修订要点>`（小修订）
+- `docs(prompt): T-N.X v2.0 — <重写说明>`（大改）
+
+### 阶段 4+ 复用
+
+阶段 4 L2 整合规划师产 `STAGE_4_TASKS.md` 时，自动按 v0.4 规范落 prompt 文件到 `/docs/prompts/stage_4/`。`STAGE_4_TASKS.md` §8 直接用表格引用形态。
+
+阶段 4 复用 [/docs/REVIEW_PROMPT_L2_STAGE_TASKS.md](../../REVIEW_PROMPT_L2_STAGE_TASKS.md) 模板跑 cross-LLM critique 时，可在 critique prompt 内补一句："本草稿同时检查 §8 paste-ready prompt 是否已按 v0.4 规范拆为 `/docs/prompts/stage_4/T-4.X.md` 文件"。
+
+---
+
 ## 版本
 
-本文件版本：v0.3
-最后更新：2026-05-03
+本文件版本：v0.4
+最后更新：2026-05-08
