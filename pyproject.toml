@@ -36,6 +36,7 @@ packages = [
     "generator.providers",
     "generator.models",
     "generator.models._generated",
+    "tools",
 ]
 
 [tool.setuptools.package-data]
