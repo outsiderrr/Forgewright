@@ -495,6 +495,112 @@ def test_scene_metrics_computes_gross_and_topology_rates(tmp_path):
     assert "acceptance_rate" not in m
 
 
+# ---------------------------------------------------------------------------
+# R3.2 — pre-flight provider health probe (T-3.0)
+# ---------------------------------------------------------------------------
+
+
+class _ProbeOnlyProvider:
+    """Returns a single canned response then raises if called again."""
+
+    model_id = "fake-probe-model"
+
+    def __init__(self, content: dict | None, *, raise_exc: Exception | None = None):
+        self._content = content
+        self._raise = raise_exc
+        self.call_count = 0
+
+    def generate_structured(self, system_prompt, user_prompt, json_schema):
+        self.call_count += 1
+        if self._raise is not None:
+            raise self._raise
+        return StructuredResponse(
+            content=self._content or {},
+            raw_text=json.dumps(self._content or {}, ensure_ascii=False),
+            input_tokens=10,
+            output_tokens=4,
+            model_id=self.model_id,
+            finish_reason="STOP",
+        )
+
+    def estimate_cost(self, input_tokens: int, output_tokens: int) -> float:
+        return 0.0005
+
+
+def test_probe_provider_health_ok_on_well_formed_response(tmp_path, capsys):
+    """Happy path: provider returns ``{"ok":"yes"}`` → probe OK,
+    one call billed."""
+    provider = _ProbeOnlyProvider({"ok": "yes"})
+    ok, err = scene_experiment.probe_provider_health(provider)
+    assert ok is True
+    assert err is None
+    assert provider.call_count == 1
+    out = capsys.readouterr().out
+    assert "[probe] OK" in out
+    assert "fake-probe-model" in out
+
+
+def test_probe_provider_health_fails_on_provider_error(tmp_path):
+    """ProviderError surfaces as ``(False, "ProviderError: …")`` —
+    baseline_008 mode: PoloAI quota gate raises a 403 wrapped as
+    ProviderError before any tokens are spent."""
+    from generator.llm_provider import ProviderError as PE
+
+    provider = _ProbeOnlyProvider(
+        None,
+        raise_exc=PE("upstream_error: insufficient_user_quota"),
+    )
+    ok, err = scene_experiment.probe_provider_health(provider)
+    assert ok is False
+    assert err is not None
+    assert "ProviderError" in err
+    assert "insufficient_user_quota" in err
+
+
+def test_probe_provider_health_fails_on_budget_exceeded(monkeypatch, tmp_path):
+    """If the per-call budget is set lower than the probe's estimate,
+    BudgetExceeded must surface as a non-fatal probe failure (not crash
+    the harness)."""
+    monkeypatch.setenv("FORGEWRIGHT_COST_LOG", str(tmp_path / "cost_log.jsonl"))
+    monkeypatch.setenv("PER_CALL_BUDGET_USD", "0.00001")
+    provider = _ProbeOnlyProvider({"ok": "yes"})
+    ok, err = scene_experiment.probe_provider_health(provider)
+    assert ok is False
+    assert err is not None
+    assert "BudgetExceeded" in err
+    # Provider must NOT have been called — check_and_charge guards before
+    # any token spend.
+    assert provider.call_count == 0
+
+
+def test_probe_provider_health_fails_on_missing_ok_field(tmp_path):
+    """Sanitizer regression / prompt drift could return a JSON blob that
+    technically parses but is missing the ``ok`` field — probe must
+    treat that as a failure so the batch doesn't silently start with a
+    misbehaving provider."""
+    provider = _ProbeOnlyProvider({"unrelated": "value"})
+    ok, err = scene_experiment.probe_provider_health(provider)
+    assert ok is False
+    assert err is not None
+    assert "missing 'ok'" in err
+
+
+def test_scene_experiment_main_skip_probe_flag_smoke():
+    """``--skip-probe`` must be a recognised flag (CLI surface contract).
+
+    Smoke check via ``--help`` so we don't have to stand up a provider
+    just to exercise argparse — if the flag silently disappeared, we'd
+    miss the regression at L2 review time."""
+    proc = subprocess.run(
+        [sys.executable, "-m", "generator.scene_experiment", "--help"],
+        capture_output=True, text=True,
+        cwd=str(Path(__file__).resolve().parent.parent.parent),
+    )
+    assert proc.returncode == 0
+    assert "--skip-probe" in proc.stdout
+    assert "pre-flight" in proc.stdout.lower()
+
+
 def test_scene_metrics_with_review_log(tmp_path):
     batch_dir = _seed_review_batch(tmp_path)
     log_path = batch_dir / "scene_review_log.jsonl"

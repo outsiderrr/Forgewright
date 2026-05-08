@@ -47,13 +47,121 @@ from typing import Iterable
 from dotenv import load_dotenv
 
 from generator import budget, graph_view
+from generator.budget import BudgetExceeded
 from generator.generate_scene import SceneResult, generate_scene
-from generator.llm_provider import LLMProvider
+from generator.llm_provider import LLMProvider, ProviderError
 from generator.scene_strategies import SceneSetting
 from validator import dialogue_validator, graph_validation, sampling
 
 DEFAULT_COUNT = 15  # ADR-020 baseline protocol: N=15
 EXPERIMENTS_ROOT = Path(__file__).parent / "experiments"
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight probe (R2-10c → R3.2; T-3.0)
+# ---------------------------------------------------------------------------
+#
+# baseline_008 burned $0.30 on a 0% gross_pass_rate batch when the PoloAI
+# account hit the upstream balance gate (``insufficient_user_quota``) and
+# every call short-circuited. The author had to start running ad-hoc curl
+# probes by baseline_009 to avoid repeats. This block tools that into a
+# single budget-gated call (~$0.001) the harness fires before the loop —
+# fail-fast on quota / connectivity / sanitizer regressions instead of
+# wasting the full batch budget.
+
+_PROBE_SCHEMA: dict = {
+    "type": "object",
+    "required": ["ok"],
+    "properties": {"ok": {"type": "string"}},
+}
+_PROBE_SYSTEM_PROMPT = "You are a connectivity probe. Reply with valid JSON only."
+_PROBE_USER_PROMPT = (
+    'Reply with the JSON object {"ok":"yes"} and absolutely nothing else.'
+)
+_PROBE_OUTPUT_TOKEN_ESTIMATE = 16
+_CHARS_PER_TOKEN = 4
+
+
+def probe_provider_health(
+    provider: LLMProvider,
+    *,
+    output: "object | None" = None,
+) -> tuple[bool, str | None]:
+    """Send 1 minimal LLM call to verify provider connectivity + balance.
+
+    Returns ``(ok, error_message)``. ``ok=True`` iff the call returned
+    a parsed structured response with the expected ``ok`` field.
+
+    Cost: ~$0.0005–$0.005 depending on provider pricing; well under the
+    cost of a single failed batch iteration ($0.30+ in the baseline_008
+    fail mode). Always budget-gated — a probe that would exceed
+    PER_CALL_BUDGET_USD or DAILY_BUDGET_USD is reported as a failure
+    instead of crashing the harness.
+
+    No exceptions escape — callers receive ``(False, msg)`` for every
+    failure mode (budget / provider / decode) so the CLI can render a
+    single clear error and exit non-zero before any batch work runs.
+    """
+    out = output if output is not None else sys.stdout
+    input_tokens_est = max(
+        1, len(_PROBE_SYSTEM_PROMPT + _PROBE_USER_PROMPT) // _CHARS_PER_TOKEN
+    )
+    record_id: str | None = None
+    try:
+        estimated_cost = provider.estimate_cost(
+            input_tokens_est, _PROBE_OUTPUT_TOKEN_ESTIMATE
+        )
+        record_id = budget.check_and_charge(
+            estimated_cost,
+            model_id=getattr(provider, "model_id", "unknown"),
+            input_tokens=input_tokens_est,
+            output_tokens=_PROBE_OUTPUT_TOKEN_ESTIMATE,
+        )
+        response = provider.generate_structured(
+            _PROBE_SYSTEM_PROMPT, _PROBE_USER_PROMPT, _PROBE_SCHEMA
+        )
+        actual_cost = provider.estimate_cost(
+            response.input_tokens, response.output_tokens
+        )
+        budget.reconcile_after_call(
+            record_id,
+            actual_input_tokens=response.input_tokens,
+            actual_output_tokens=response.output_tokens,
+            actual_cost_usd=actual_cost,
+        )
+        if not isinstance(response.content, dict) or "ok" not in response.content:
+            return (
+                False,
+                f"probe response missing 'ok' field: {response.content!r}",
+            )
+        print(
+            f"[probe] OK  model={getattr(provider, 'model_id', '?')}  "
+            f"cost=${actual_cost:.4f}",
+            file=out,
+        )
+        return True, None
+    except BudgetExceeded as exc:
+        # check_and_charge raises before writing the row, so no refund
+        # needed for that path. If we hit BudgetExceeded after the row
+        # was written (impossible today; documented for future safety),
+        # the refund call below releases the estimate.
+        if record_id is not None:
+            budget.refund_estimated(
+                record_id, reason=f"probe BudgetExceeded: {exc}"
+            )
+        return False, f"BudgetExceeded: {exc}"
+    except ProviderError as exc:
+        if record_id is not None:
+            budget.refund_estimated(
+                record_id, reason=f"probe ProviderError: {exc}"
+            )
+        return False, f"ProviderError: {exc}"
+    except Exception as exc:  # noqa: BLE001 — wide net for probe diagnostics
+        if record_id is not None:
+            budget.refund_estimated(
+                record_id, reason=f"probe {type(exc).__name__}: {exc}"
+            )
+        return False, f"{type(exc).__name__}: {exc}"
 
 # Default sampling parameters for the 2B reach-rate check. ADR-021 §
 # completion criteria starts at N=100; we keep that as the default and
@@ -498,10 +606,32 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_COUNT,
         help=f"Number of scene iterations to run (default {DEFAULT_COUNT}).",
     )
+    parser.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help=(
+            "Skip the pre-flight provider health probe (R3.2). The probe "
+            "fires 1 minimal LLM call (~$0.001) to surface "
+            "balance/connectivity failures before the batch — disable only "
+            "when you've already verified the provider out-of-band."
+        ),
+    )
     args = parser.parse_args(argv)
 
     _print_budget_header()
     provider = _build_default_provider()
+
+    if not args.skip_probe:
+        ok, err = probe_provider_health(provider)
+        if not ok:
+            print(
+                f"error: pre-flight provider health probe failed: {err}\n"
+                f"hint: re-run with --skip-probe to bypass after manual "
+                f"verification.",
+                file=sys.stderr,
+            )
+            return 3
+
     batch_dir = run_scene_experiment(
         batch_name=args.batch_name,
         count=args.count,
