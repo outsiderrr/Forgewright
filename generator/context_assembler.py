@@ -605,6 +605,217 @@ def _summary_source_hash(summary: PriorSceneSummary) -> str:
     return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
 
 
+# ---------------------------------------------------------------------------
+# T-3.5 — GenerationDependencyTrace (ADR-023 / F5)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class GenerationDependencyTrace:
+    """Over-approx accumulator for dep_index sidecar writes (ADR-023 / F5).
+
+    Live trace populated by `generate_scene` while it resolves the
+    SceneGraphContext + walks the assembled graph's effects. T-3.5's
+    `dep_index_writer.write_sidecar` consumes this dataclass and projects
+    it into the on-disk `<scene>.deps.json` shape (sorted lists for
+    `set` fields, `sha256:`-prefixed prompt-template hash, etc.).
+
+    Why a separate accumulator (not a method on SceneGraphContext): the
+    sidecar's read-side fields (`ontology_ids_read` / `state_paths_read`
+    / `visual_asset_ids_referenced` / `clock_ids_referenced`) are
+    over-approxed at *context-assembly* time — i.e. before the LLM runs.
+    The write-side field (`state_paths_written`) is exact, derived from
+    the assembled graph's effect bags after generation succeeds. Both
+    feeds end up in the same dataclass so the writer has one input.
+
+    `prompt_template_files` is a list of source paths the writer hashes
+    into `prompt_template_hash` (sha256 of concatenated bytes; ADR-023
+    field). The list is the *files actually rendered into the prompt for
+    this scene* — typically `prompts/scene/system.py` + `prompts/scene/
+    fill.py` + `prompts/scene/few_shot.py`. Order matters: the hash is
+    over the concatenated bytes in caller-supplied order so re-running
+    with the same prompt set produces a stable hash.
+
+    `scene_history_referenced` mirrors the on-disk schema field — it is
+    populated from `prior_scene_summaries[*].scene_id` after truncation,
+    so the sidecar records the IDs the LLM actually saw (not the full
+    pre-truncation input).
+    """
+
+    ontology_ids_read: set[str] = field(default_factory=set)
+    state_paths_read: set[str] = field(default_factory=set)
+    state_paths_written: set[str] = field(default_factory=set)
+    visual_asset_ids_referenced: set[str] = field(default_factory=set)
+    clock_ids_referenced: set[str] = field(default_factory=set)
+    prompt_template_files: list = field(default_factory=list)
+    scene_history_referenced: list[str] = field(default_factory=list)
+
+
+def accumulate_scene_context_trace(
+    trace: GenerationDependencyTrace,
+    scene_ctx: SceneGraphContext,
+) -> None:
+    """Populate `trace` from a fully-built `SceneGraphContext`.
+
+    Conservative over-approx (ADR-023 §F5): every entity that *reached*
+    the prompt is recorded — even if the LLM ultimately ignored it,
+    `dep_propagate` should still mark this scene stale if that entity
+    later changes. Caller is expected to invoke this once after
+    `build_scene_graph_context` returns and before any per-graph
+    accumulation (`accumulate_written_paths_from_graph`).
+
+    Field-by-field mapping:
+      * `participating_characters[*].id` → `ontology_ids_read`
+      * `location_candidates[*].id` → `ontology_ids_read`
+      * `primary_location_ref` (when set) → `ontology_ids_read`
+      * `chapter_ref` (when set) → `ontology_ids_read`
+      * `active_clocks[*].id` → `ontology_ids_read` + `clock_ids_referenced`
+      * `active_clocks[*].tick_effects[*].path` → `state_paths_read`
+        (clock effects are surfaced in the prompt's active_clocks
+        block; a clock that names `world.scene_count` reaching the
+        sidecar through this read-side path lets dep_propagate flip
+        the scene stale when that path's value mutates).
+      * `participating_characters[*].visual_assets[*].asset_id` →
+        `visual_asset_ids_referenced`
+      * `relations_matrix[*]` → only contributes the target_character_ref
+        ID to `ontology_ids_read`; the relation itself isn't a separate
+        ontology entity.
+      * `system_time` → the system-time block is rendered
+        unconditionally by `assemble_scene_context_block`, so we
+        always record `world.scene_count` + `world.long_rest_count`
+        as read.
+      * `prior_scene_summaries[*].key_state_paths` (post-truncation,
+        i.e. only the entries the LLM actually saw) → `state_paths_read`.
+
+    `state_paths_read` from this helper is the read-side over-approx
+    anchor set — the write-side exact list comes later from
+    `accumulate_written_paths_from_graph` walking effect bags.
+    """
+    for character in scene_ctx.participating_characters or []:
+        if not isinstance(character, dict):
+            continue
+        cid = character.get("id")
+        if isinstance(cid, str) and cid:
+            trace.ontology_ids_read.add(cid)
+        for asset in character.get("visual_assets") or []:
+            if not isinstance(asset, dict):
+                continue
+            asset_id = asset.get("asset_id")
+            if isinstance(asset_id, str) and asset_id:
+                trace.visual_asset_ids_referenced.add(asset_id)
+
+    for location in scene_ctx.location_candidates or []:
+        if not isinstance(location, dict):
+            continue
+        lid = location.get("id")
+        if isinstance(lid, str) and lid:
+            trace.ontology_ids_read.add(lid)
+
+    if isinstance(scene_ctx.primary_location_ref, str) and scene_ctx.primary_location_ref:
+        trace.ontology_ids_read.add(scene_ctx.primary_location_ref)
+
+    if isinstance(scene_ctx.chapter_ref, str) and scene_ctx.chapter_ref:
+        trace.ontology_ids_read.add(scene_ctx.chapter_ref)
+
+    for clock in scene_ctx.active_clocks or []:
+        if not isinstance(clock, dict):
+            continue
+        clock_id = clock.get("id")
+        if isinstance(clock_id, str) and clock_id:
+            trace.ontology_ids_read.add(clock_id)
+            trace.clock_ids_referenced.add(clock_id)
+        for tick_effect in clock.get("tick_effects") or []:
+            _add_path(trace, tick_effect, read_only=True)
+
+    for relation in scene_ctx.relations_matrix or []:
+        if not isinstance(relation, dict):
+            continue
+        target = relation.get("target_character_ref")
+        if isinstance(target, str) and target:
+            trace.ontology_ids_read.add(target)
+
+    # `assemble_scene_context_block` always renders the system-time
+    # block (regardless of whether scene_count / long_rest_count are
+    # zero), so the LLM always sees both paths. Recording them up-front
+    # means dep_propagate flips the scene stale when system_time
+    # mutates — without this, a clock-tick advance that bumps
+    # world.scene_count would never invalidate scenes that depended
+    # on the old count.
+    trace.state_paths_read.add("world.scene_count")
+    trace.state_paths_read.add("world.long_rest_count")
+
+    # prior_scene_summaries' `key_state_paths` enter the prompt
+    # verbatim via `render_prior_scene_summaries_block` (one bullet
+    # per kept summary). Only the *post-truncation* set actually
+    # reaches the LLM, so we trim before recording.
+    if scene_ctx.prior_scene_summaries:
+        kept, _reason = truncate_prior_scene_summaries(
+            scene_ctx.prior_scene_summaries
+        )
+        for summary in kept:
+            for path in summary.key_state_paths or []:
+                if isinstance(path, str) and path:
+                    trace.state_paths_read.add(path)
+
+
+def accumulate_written_paths_from_graph(
+    trace: GenerationDependencyTrace,
+    graph: dict,
+) -> None:
+    """Pull every `effects[*].path` and `on_enter_effects[*].path` from
+    `graph` into `trace.state_paths_written`.
+
+    The write-side field is exact (effect bags are part of the produced
+    DialogueGraph), unlike the read-side over-approx. Paths are added
+    to the set as-is — the dep_index schema regex on the writer side
+    rejects bare-namespace / out-of-namespace paths before landing in
+    the sidecar, so a malformed path here surfaces at sidecar-write
+    time rather than being silently dropped. We also fold the same
+    paths into `state_paths_read` since a write at minimum implies the
+    namespace is in the prompt's reachable set (sidecar consumers do
+    not need the read/write disjointness).
+    """
+    if not isinstance(graph, dict):
+        return
+    nodes = graph.get("nodes")
+    if not isinstance(nodes, dict):
+        return
+    for node in nodes.values():
+        if not isinstance(node, dict):
+            continue
+        for eff in node.get("on_enter_effects") or []:
+            _add_path(trace, eff)
+        for option in node.get("options") or []:
+            if not isinstance(option, dict):
+                continue
+            for eff in option.get("effects") or []:
+                _add_path(trace, eff)
+
+
+def _add_path(
+    trace: GenerationDependencyTrace,
+    effect_obj,
+    *,
+    read_only: bool = False,
+) -> None:
+    """Pull `effect_obj["path"]` into the trace.
+
+    `read_only=True` (clock tick_effects, anything advertised in the
+    prompt as “may write later”) records only the read side — the
+    current scene didn't actually write that path, but the LLM did
+    see it surface in context, so dep_propagate should treat it as a
+    read dependency.
+    """
+    if not isinstance(effect_obj, dict):
+        return
+    path = effect_obj.get("path")
+    if not isinstance(path, str) or not path:
+        return
+    if not read_only:
+        trace.state_paths_written.add(path)
+    trace.state_paths_read.add(path)
+
+
 def compute_prior_summary_token_metrics(
     summaries: list[PriorSceneSummary],
     *,
