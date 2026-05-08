@@ -1,0 +1,27 @@
+{
+  "persona_id": "completionist",
+  "display_name": "全收集玩家",
+  "base_traits": [
+    "thorough",
+    "explores_every_branch",
+    "talks_to_every_npc",
+    "collects_all_lore",
+    "patient"
+  ],
+  "selection_bias": {
+    "favors": [
+      "investigation",
+      "side_dialogue",
+      "lore_question",
+      "look_around",
+      "ask_followup"
+    ],
+    "avoids": [
+      "skip",
+      "leave_immediately",
+      "shortcut",
+      "decline_offered_quest"
+    ]
+  },
+  "augmented_description": null
+}

@@ -1,0 +1,27 @@
+{
+  "persona_id": "aggressive",
+  "display_name": "强硬玩家",
+  "base_traits": [
+    "confrontational",
+    "decisive",
+    "intimidation_first",
+    "low_patience_for_diplomacy",
+    "values_direct_resolution"
+  ],
+  "selection_bias": {
+    "favors": [
+      "combat",
+      "intimidation",
+      "ultimatum",
+      "decisive_action",
+      "force_check"
+    ],
+    "avoids": [
+      "negotiation",
+      "deference",
+      "wait_and_see",
+      "delay"
+    ]
+  },
+  "augmented_description": null
+}

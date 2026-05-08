@@ -37,8 +37,10 @@ packages = [
     "generator.models",
     "generator.models._generated",
     "tools",
+    "generator.playtest",
 ]
 
 [tool.setuptools.package-data]
 "generator.prompts.visual" = ["*.md"]
 "generator.prompts.scene" = ["*.md"]
+"generator.playtest" = ["personas/*.json"]

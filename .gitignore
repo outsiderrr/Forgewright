@@ -57,6 +57,7 @@ coverage.xml
 .env*
 !.env.example
 /generator/cost_log.jsonl
+/generator/playtest_cost_log.jsonl
 /generator/experiments/
 
 # Stage 1.5 visual assets — directories tracked, contents not (copyright + temp artifacts)
