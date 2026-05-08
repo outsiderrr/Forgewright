@@ -21,6 +21,7 @@ import json
 
 import pytest
 
+from generator.context_assembler import PriorSceneSummary
 from generator.llm_provider import StructuredResponse
 from generator.scene_strategies import (
     GraphSkeleton,
@@ -1062,3 +1063,132 @@ def test_fill_phase_provider_error_propagates_failure_metadata():
     assert isinstance(md, dict)
     assert md["http_status"] is None  # timeouts have no HTTP status
     assert md["exception_class"].endswith("._FakeTimeoutError")
+
+
+# ---------------------------------------------------------------------------
+# T-3.3 (ADR-024) — long-conversation-consistency C-tier prompt wiring
+# ---------------------------------------------------------------------------
+
+
+def _three_prior_summaries() -> list[PriorSceneSummary]:
+    """Three caller-supplied summaries; below the 5-entry cap so they
+    all land in the rendered prompts unchanged."""
+    return [
+        PriorSceneSummary(
+            scene_id="scene_history_a",
+            summary="Vellin 与 Corvan 在兰岭分道",
+            key_state_paths=["world.scene_count", "flag.glades_oath"],
+        ),
+        PriorSceneSummary(
+            scene_id="scene_history_b",
+            summary="驿站夜火被袭",
+            key_state_paths=["faction.iron_oath.discipline"],
+        ),
+        PriorSceneSummary(
+            scene_id="scene_history_c",
+            summary="Vellin 接到铁誓巡逻官的传讯",
+            key_state_paths=["relationship.vellin.trust"],
+        ),
+    ]
+
+
+def test_t_3_3_skeleton_prompt_includes_prior_scene_summaries():
+    """When `prior_scene_summaries` is supplied, the skeleton phase's
+    user prompt must carry the rendered ## 前置场景概要 section
+    immediately above ## 当前任务."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    summaries = _three_prior_summaries()
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        prior_scene_summaries=summaries,
+    )
+    assert result.success is True
+    skeleton_prompt = provider.user_prompts[0]
+    assert "前置场景概要" in skeleton_prompt
+    for summary in summaries:
+        assert f"[{summary.scene_id}]" in skeleton_prompt
+        assert summary.summary in skeleton_prompt
+    # Section must sit before "## 当前任务" so it reads as historical context.
+    assert skeleton_prompt.index("前置场景概要") < skeleton_prompt.index("## 当前任务")
+
+
+def test_t_3_3_fill_prompts_include_prior_scene_summaries():
+    """Every fill prompt must carry the same `## 前置场景概要` block — the
+    LLM should see the long-conversation context on every node call,
+    not only the skeleton phase."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    summaries = _three_prior_summaries()
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        prior_scene_summaries=summaries,
+    )
+    assert result.success is True
+    fill_prompts = provider.user_prompts[1:]
+    assert len(fill_prompts) == 5
+    for idx, prompt in enumerate(fill_prompts):
+        assert "前置场景概要" in prompt, f"fill prompt {idx} missing summaries section"
+        for summary in summaries:
+            assert f"[{summary.scene_id}]" in prompt
+
+
+def test_t_3_3_skeleton_and_fill_prompts_omit_section_without_summaries():
+    """Empty `prior_scene_summaries` must leave skeleton + fill prompts
+    byte-identical to pre-T-3.3 behaviour — no header, no empty stub."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        # prior_scene_summaries left as None
+    )
+    assert result.success is True
+    for prompt in provider.user_prompts:
+        assert "前置场景概要" not in prompt
+
+
+def test_t_3_3_skeleton_prompt_caps_summaries_at_five():
+    """Eight summaries → only 5 land in the prompt (recent + boundary
+    heuristic). Verifies the strategy applies the same truncation
+    logic that `compute_prior_summary_token_metrics` records."""
+    fill_responses = _build_fill_responses_for_valid_skeleton(_VALID_SKELETON_JSON)
+    provider = _ScriptedProvider(
+        [_make_response(copy.deepcopy(_VALID_SKELETON_JSON))] + fill_responses
+    )
+    summaries = [
+        PriorSceneSummary(
+            scene_id=f"scene_h{i}",
+            summary=f"history-{i}",
+            key_state_paths=[],
+        )
+        for i in range(8)
+    ]
+    result = generate_scene_skeleton_first(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        provider=provider,
+        prior_scene_summaries=summaries,
+    )
+    assert result.success is True
+    skeleton_prompt = provider.user_prompts[0]
+    # Recent 5 (h3..h7) must appear; oldest 3 (h0..h2) must not.
+    for kept in ("scene_h3", "scene_h4", "scene_h5", "scene_h6", "scene_h7"):
+        assert f"[{kept}]" in skeleton_prompt
+    for dropped in ("scene_h0", "scene_h1", "scene_h2"):
+        assert f"[{dropped}]" not in skeleton_prompt

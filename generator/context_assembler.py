@@ -18,9 +18,21 @@ T-2.6 adds `SceneGraphContext` (scene-level sibling of `GraphContext`) +
 STAGE_2_TASKS §2.8 (active_clocks / location_candidates /
 primary_location_ref) so scene-level and node-level contexts share one
 shape.
+
+T-3.3 (ADR-024 + F3 修订) adds long-conversation-consistency C-tier on
+`SceneGraphContext` only — `prior_scene_summaries` is the prompt-side
+window into earlier scenes' digests, capped at 5 entries with a
+"recent + chapter/act boundary" heuristic; `token_metrics` records the
+post-truncation accounting (count / hashes / token estimate /
+truncation_reason) so T-3.5 can write the same numbers into the
+content_dependency_index sidecar without re-deriving them. Node-level
+`GraphContext` is intentionally untouched — scene-level generation never
+wires through node-level context, so injecting summaries there would be
+work that nothing reads (F3).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Literal
@@ -223,6 +235,95 @@ def assemble_context_block(
 # ---------------------------------------------------------------------------
 
 
+# T-3.3 (ADR-024). Hard cap on how many prior-scene digests reach the
+# prompt. The number is taken straight from §3.3 ("每场景 prompt 注入
+# ≤ 5 条 prior_scene_summaries（避免 prompt 膨胀）"). When the caller
+# supplies more, `truncate_prior_scene_summaries` keeps recent entries
+# plus chapter/act boundaries (whichever fit inside the cap).
+PRIOR_SCENE_SUMMARY_CAP = 5
+
+# Same 4 chars/token convention used in `generate_node` / `generate_scene`
+# / `scene_strategies` so token-budget numbers compare across modules.
+# tiktoken would be more accurate but is not currently a project
+# dependency; the figure is a *budget guard* not a billing line.
+_PROMPT_CHARS_PER_TOKEN = 4
+
+
+@dataclass
+class PriorSceneSummary:
+    """One earlier scene's digest, as it travels into the prompt.
+
+    `summary` is the human-authored or LLM-drafted ≤ 200 中文字符 / ≤ 800
+    英文字符 prose. Length is enforced by `scene_summary_writer` at
+    write-time, not here — this dataclass is the wire format and stays
+    permissive so unit tests can construct edge-case fixtures without
+    fighting the validator.
+
+    `key_state_paths` lists the ADR-016-namespaced paths the source scene
+    actually wrote (extracted from its `effects` / `on_enter_effects`
+    bags by `scene_summary_writer`). They land verbatim in the rendered
+    prompt block so the LLM can refer back to "what already changed".
+
+    `chapter_id` / `act_id` are optional because not every scene knows
+    its parent chapter/act yet (T-3.5 will populate them via the
+    content_dependency_index sidecar). When present they participate in
+    the boundary-preservation heuristic inside
+    `truncate_prior_scene_summaries` — see ADR-024 §"启发式裁剪".
+    """
+
+    scene_id: str
+    summary: str
+    key_state_paths: list[str]
+    chapter_id: str | None = None
+    act_id: str | None = None
+
+
+@dataclass
+class TokenMetrics:
+    """Post-truncation accounting for the prior_scene_summaries injection.
+
+    Lives on `SceneGraphContext`; T-3.5 will copy the same four fields into
+    the per-scene `content_dependency_index` sidecar (ADR-023 / ADR-024).
+    Computing it at SceneGraphContext build time means downstream callers
+    don't have to re-run the truncation/hashing logic.
+
+    **Schema alignment** (PR #44 review §3.1, B-phase finding 🔴):
+    `truncation_reason` matches `content_dependency_index.schema.json`'s
+    enum exactly; `summary_source_hashes` carry the `sha256:` prefix the
+    schema requires. Drift between this dataclass and the sidecar
+    schema would force T-3.5 to translate at write time — instead we
+    align here once.
+
+      * `prompt_token_estimate` — chars-of-rendered-prompt-text / 4.
+        Computed by `compute_prior_summary_token_metrics`; the caller
+        passes `additional_chars` (system prompt + scene context block
+        chars) so the estimate reflects the full SceneGraphContext-side
+        prompt the LLM will see, not just the summary block. Per-node
+        fill prompts add variance that's only knowable at fill time;
+        T-3.5 may refine this number at sidecar-write time once those
+        prompts have been rendered.
+      * `summaries_injected_count` — 0..PRIOR_SCENE_SUMMARY_CAP. The
+        LLM-visible count, after truncation.
+      * `summary_source_hashes` — `sha256:<hex>` digest of each kept
+        summary's `(scene_id, summary, key_state_paths)` triple, in
+        injection order. Lets reviewers verify the prompt-bound digest
+        matches what's on disk.
+      * `truncation_reason` — non-nullable, one of (per schema enum):
+          - `"none"` — no truncation (≤ 5 entries or empty input)
+          - `"summaries_over_5"` — input > 5; cap-driven truncation
+            (boundary preservation collapses to this bucket; the
+            boundary signal can be reconstructed from
+            `summary_source_hashes` if needed)
+          - `"token_budget"` — reserved for a future token-budget gate
+          - `"manual_override"` — reserved for an author-pinned subset
+    """
+
+    prompt_token_estimate: int = 0
+    summaries_injected_count: int = 0
+    summary_source_hashes: list[str] = field(default_factory=list)
+    truncation_reason: str = "none"
+
+
 @dataclass
 class SceneGraphContext:
     """Scene-level context (T-2.6 / STAGE_2_TASKS §2.8).
@@ -245,6 +346,15 @@ class SceneGraphContext:
     stage scenes that don't have a chosen chapter / dominant location yet.
     `system_time` defaults to a `{scene_count: 0, long_rest_count: 0}`
     fallback when the ontology omits it (Stage 0 stub).
+
+    T-3.3: `prior_scene_summaries` carries the **input** list (caller-
+    supplied; can exceed `PRIOR_SCENE_SUMMARY_CAP`). The render layer in
+    `scene_strategies` re-runs `truncate_prior_scene_summaries` to pick
+    the actually-injected subset — the same call shape used to populate
+    `token_metrics` here, so the prompt and the sidecar describe the
+    same kept set. `token_metrics` is the post-truncation snapshot
+    (count, hashes, token estimate, reason). Both default to empty so
+    pre-T-3.3 scene tests keep passing unchanged.
     """
 
     scene_anchor: str
@@ -256,6 +366,8 @@ class SceneGraphContext:
     active_clocks: list[dict]
     system_time: dict
     target_beats: list[str]
+    prior_scene_summaries: list[PriorSceneSummary] = field(default_factory=list)
+    token_metrics: TokenMetrics = field(default_factory=TokenMetrics)
 
 
 def assemble_scene_context_block(
@@ -346,4 +458,183 @@ def assemble_scene_context_block(
     else:
         parts.append("（调用方未给节拍序列；strategy 会按 scene_anchor 自行推断）")
 
+    # T-3.3 (ADR-024): debug surface for the long-conversation-consistency
+    # injection. Mirrors what the strategy actually feeds the LLM
+    # (post-truncation), so a sidecar audit can compare on-disk hashes
+    # against the rendered block here. Skipped silently when no summaries
+    # were supplied so pre-T-3.3 fixture goldens stay byte-identical.
+    if scene_ctx.prior_scene_summaries:
+        kept, _ = truncate_prior_scene_summaries(scene_ctx.prior_scene_summaries)
+        parts.append("")
+        parts.append(render_prior_scene_summaries_block(kept))
+
     return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# T-3.3 — long-conversation-consistency C-tier helpers (ADR-024)
+# ---------------------------------------------------------------------------
+
+
+def truncate_prior_scene_summaries(
+    summaries: list[PriorSceneSummary],
+) -> tuple[list[PriorSceneSummary], str]:
+    """Cap the prior_scene_summaries list at `PRIOR_SCENE_SUMMARY_CAP`.
+
+    Returns ``(kept, truncation_reason)``. The reason matches
+    `content_dependency_index.schema.json`'s enum exactly (PR #44
+    review §3.1):
+
+      * ``"none"`` — empty input, or ``len <= 5`` (no cap-driven drop).
+      * ``"summaries_over_5"`` — input > 5 entries; this single bucket
+        covers both boundary-preserving and recency-only paths because
+        the schema only distinguishes the cap-trigger reason. The
+        boundary signal collapses but stays reconstructable from
+        `summary_source_hashes` if a downstream tool needs it.
+      * ``"token_budget"`` / ``"manual_override"`` are reserved for
+        future T-3.5 paths (token-budget gate, author-pinned subset).
+
+    Truncation strategy follows ADR-024 §"启发式裁剪":
+
+      1. ``len <= 5`` → keep all; reason ``"none"``.
+      2. Otherwise, **boundary scenes are preserved first** — every
+         entry whose `chapter_id` or `act_id` differs from the
+         previous non-`None` value is pinned. Remaining slots (up to
+         the cap) are filled with the most-recent **non-boundary**
+         entries.
+      3. If boundaries themselves overflow the cap (rare; only when
+         the history spans many short chapters), the most-recent
+         boundaries win and older ones are dropped.
+    """
+    if not summaries:
+        return [], "none"
+    n = len(summaries)
+    if n <= PRIOR_SCENE_SUMMARY_CAP:
+        return list(summaries), "none"
+
+    boundary_indices: set[int] = set()
+    prev_chapter: str | None = None
+    prev_act: str | None = None
+    for idx, summary in enumerate(summaries):
+        chapter_id = summary.chapter_id
+        act_id = summary.act_id
+        is_boundary = False
+        if chapter_id is not None and chapter_id != prev_chapter:
+            is_boundary = True
+        if act_id is not None and act_id != prev_act:
+            is_boundary = True
+        if is_boundary:
+            boundary_indices.add(idx)
+        if chapter_id is not None:
+            prev_chapter = chapter_id
+        if act_id is not None:
+            prev_act = act_id
+
+    if len(boundary_indices) >= PRIOR_SCENE_SUMMARY_CAP:
+        # Even boundaries overflow the cap — keep the most recent
+        # ``PRIOR_SCENE_SUMMARY_CAP`` boundaries, drop older ones.
+        kept_indices = sorted(
+            sorted(boundary_indices, reverse=True)[:PRIOR_SCENE_SUMMARY_CAP]
+        )
+    else:
+        # Boundaries fit; fill remaining slots with the most-recent
+        # non-boundary entries so the LLM still sees the freshest
+        # narrative beats alongside the structural anchors.
+        needed = PRIOR_SCENE_SUMMARY_CAP - len(boundary_indices)
+        non_boundary = [i for i in range(n) if i not in boundary_indices]
+        fill = sorted(non_boundary, reverse=True)[:needed]
+        kept_indices = sorted(boundary_indices | set(fill))
+
+    kept = [summaries[i] for i in kept_indices]
+    return kept, "summaries_over_5"
+
+
+def render_prior_scene_summaries_block(
+    kept_summaries: list[PriorSceneSummary],
+) -> str:
+    """Render the ``## 前置场景概要`` markdown section.
+
+    Caller should pass the *post-truncation* list (the output of
+    `truncate_prior_scene_summaries`). Empty input returns an empty
+    string so the strategy can use a simple ``if rendered: parts.append``
+    check without a section-header gap.
+
+    Format (one bullet per kept summary, in caller-supplied order):
+
+        ## 前置场景概要（按时间顺序）
+
+        - [scene_id] {summary}; 关键状态写入：path1, path2
+
+    Newlines inside ``summary`` are flattened to spaces so each bullet
+    stays single-line in the rendered prompt.
+    """
+    if not kept_summaries:
+        return ""
+    parts: list[str] = ["## 前置场景概要（按时间顺序）", ""]
+    for summary in kept_summaries:
+        body = (summary.summary or "").strip().replace("\n", " ")
+        if summary.key_state_paths:
+            paths = ", ".join(summary.key_state_paths)
+        else:
+            paths = "（无）"
+        parts.append(f"- [{summary.scene_id}] {body}; 关键状态写入：{paths}")
+    return "\n".join(parts)
+
+
+def _summary_source_hash(summary: PriorSceneSummary) -> str:
+    """`sha256:<hex>` digest of a stable serialisation of the summary's
+    user-visible bits.
+
+    The ``sha256:`` prefix matches the pattern
+    ``content_dependency_index.schema.json`` enforces on
+    `summary_source_hashes` items (PR #44 review §3.1).
+
+    `chapter_id` / `act_id` are intentionally excluded — they're used by
+    the truncation heuristic but don't reach the prompt body, so a
+    sidecar consumer cross-checking "what the LLM actually saw" only
+    needs the prompt-visible triple `(scene_id, summary, key_state_paths)`
+    to hash.
+    """
+    raw = (
+        summary.scene_id
+        + "\x1f"
+        + summary.summary
+        + "\x1f"
+        + "\x1e".join(summary.key_state_paths)
+    )
+    return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
+
+
+def compute_prior_summary_token_metrics(
+    summaries: list[PriorSceneSummary],
+    *,
+    additional_chars: int = 0,
+) -> TokenMetrics:
+    """Compute the post-truncation `TokenMetrics` view for a summary list.
+
+    Internally calls `truncate_prior_scene_summaries` so both the
+    metrics-on-context and the strategy-side render share identical
+    truncation logic.
+
+    ``additional_chars`` (PR #44 review §4.1, B-phase finding 🟡) is
+    the caller-supplied character count of *the rest of the prompt the
+    LLM will see* — typically ``len(SCENE_SYSTEM_PROMPT) +
+    len(rendered_scene_context_block)``. The returned
+    ``prompt_token_estimate`` covers ``additional_chars`` *plus* the
+    summary block's chars, divided by `_PROMPT_CHARS_PER_TOKEN`. Per-
+    node fill prompt variance is not captured here; T-3.5 may refine at
+    sidecar-write time once the actual prompts have been rendered.
+    Callers that don't have a baseline (unit tests) can omit
+    ``additional_chars`` and get the summary-only estimate.
+    """
+    kept, reason = truncate_prior_scene_summaries(summaries)
+    rendered = render_prior_scene_summaries_block(kept) if kept else ""
+    total_chars = max(0, additional_chars) + len(rendered)
+    estimate = total_chars // _PROMPT_CHARS_PER_TOKEN
+    hashes = [_summary_source_hash(s) for s in kept]
+    return TokenMetrics(
+        prompt_token_estimate=estimate,
+        summaries_injected_count=len(kept),
+        summary_source_hashes=hashes,
+        truncation_reason=reason,
+    )
