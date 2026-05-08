@@ -65,10 +65,34 @@ PassMode = Literal["lenient", "strict"]
 Advisory = Literal["accept", "reject", "marginal"]
 
 
-# Response schema kept loose so the T-2.9 prompt can pick its own
-# dimension labels without a code change. We require `dimensions` to be
-# a string→number map and `advisory` to land in the canonical 3-value
-# enum so downstream aggregation is deterministic.
+# R3.0 fix (T-3.0; baseline_007–011 finding): the previous schema used
+# ``"dimensions": {"type": "object", "additionalProperties": {...}}`` so
+# the prompt could pick any dimension labels. Two layers conspired to
+# zero out the ``dimensions`` dict in every batch:
+#
+#   1. ``providers/_schema_sanitizer.py`` strips ``additionalProperties``
+#      before the schema reaches Gemini (the OpenAPI subset rejects it).
+#   2. With no ``properties`` declared either, Gemini treated
+#      ``dimensions`` as a closed empty object and emitted ``{}``.
+#
+# Locking the prompt's CLI-OUTPUT contract (REVIEW_PROMPT_AI_JUDGE_SCENE.md
+# §CLI-OUTPUT — the 10 scene-level dims S1_topology…S10_naming, each
+# 0|1|2) into the schema as explicit ``properties`` survives sanitization
+# and tells the model exactly what fields to fill. The runner is the
+# canonical author of this list — the prompt mirrors it.
+_SCENE_DIMENSION_KEYS: tuple[str, ...] = (
+    "S1_topology",
+    "S2_pacing",
+    "S3_arc",
+    "S4_decision",
+    "S5_closure",
+    "S6_length",
+    "S7_context",
+    "S8_relations",
+    "S9_clocks",
+    "S10_naming",
+)
+
 _JUDGE_RESPONSE_SCHEMA: dict = {
     "type": "object",
     "required": ["scene_id", "dimensions", "advisory"],
@@ -76,7 +100,11 @@ _JUDGE_RESPONSE_SCHEMA: dict = {
         "scene_id": {"type": "string"},
         "dimensions": {
             "type": "object",
-            "additionalProperties": {"type": "number"},
+            "required": list(_SCENE_DIMENSION_KEYS),
+            "properties": {
+                key: {"type": "integer", "minimum": 0, "maximum": 2}
+                for key in _SCENE_DIMENSION_KEYS
+            },
         },
         "advisory": {"type": "string", "enum": ["accept", "reject", "marginal"]},
         "rationale": {"type": "string"},
@@ -157,10 +185,18 @@ def _render_user_prompt(
       * {{TARGET_BEATS}}        — comma-joined fixture beats
       * {{PARTICIPATING_NPCS}}  — comma-joined fixture NPCs
       * {{SCENE_ANCHOR}}        — fixture scene_anchor
+      * {{JUDGE_CONTEXT}}       — pretty-printed ontology snapshot
+                                  (B-review 4.1; T-3.0 C): character
+                                  cards, location card, active_clocks,
+                                  system_time. Empty ``{}`` for legacy
+                                  envelopes that pre-date the field —
+                                  the rubric still works, it just
+                                  means S7-S9 fall back to "no info".
     """
     fixture = env.get("fixture", {}) or {}
     setting = fixture.get("scene_setting", {}) or {}
     graph = (env.get("result") or {}).get("graph") or {}
+    judge_context = env.get("judge_context") or {}
     substitutions = {
         "{{SCENE_ID}}": scene_id,
         "{{PASS_MODE}}": pass_mode,
@@ -168,6 +204,9 @@ def _render_user_prompt(
         "{{TARGET_BEATS}}": ", ".join(fixture.get("target_beats") or []),
         "{{PARTICIPATING_NPCS}}": ", ".join(fixture.get("participating_npcs") or []),
         "{{SCENE_ANCHOR}}": setting.get("scene_anchor", ""),
+        "{{JUDGE_CONTEXT}}": json.dumps(
+            judge_context, ensure_ascii=False, indent=2
+        ),
     }
     rendered = template
     for key, value in substitutions.items():
@@ -226,6 +265,37 @@ def _call_judge(
         actual_cost_usd=actual_cost,
     )
     return response.content, actual_cost
+
+
+# ---------------------------------------------------------------------------
+# Public single-scene wrapper (T-3.0 R3.3 calibration entry)
+# ---------------------------------------------------------------------------
+
+
+def judge_scene_envelope(
+    env: dict,
+    *,
+    pass_mode: PassMode,
+    provider: LLMProvider,
+    template_text: str,
+) -> tuple[dict, float]:
+    """Run one judge pass on a single ``scene_results.jsonl`` envelope.
+
+    Thin public wrapper around the batch runner's per-pass call so
+    ``judge_calibration`` can score a hand-picked scene set without
+    replaying the whole batch loop. Returns ``(parsed_content, cost_usd)``.
+    Raises :class:`BudgetExceeded` and
+    :class:`generator.llm_provider.ProviderError` the same way the batch
+    runner does — callers decide whether to skip or abort.
+    """
+    scene_id = _scene_id_for(env)
+    return _call_judge(
+        template=template_text,
+        scene_id=scene_id,
+        pass_mode=pass_mode,
+        env=env,
+        provider=provider,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +505,21 @@ def _record_pass(
                 clean[str(k)] = float(v)
             except (TypeError, ValueError):
                 continue
+        # R3.0: surface partial / empty dimensions instead of silently
+        # writing an empty dict (the baseline_007–011 failure mode the
+        # schema fix above closes — but keep the diagnostic in case a
+        # provider regression reintroduces it).
+        missing = [k for k in _SCENE_DIMENSION_KEYS if k not in clean]
+        if missing:
+            _LOG.warning(
+                "scene_ai_judge: scene_id=%s pass=%s missing %d/%d expected "
+                "dimension keys: %s",
+                scene_id,
+                pass_mode,
+                len(missing),
+                len(_SCENE_DIMENSION_KEYS),
+                missing,
+            )
         if pass_mode == "lenient":
             report.pass1_lenient_scores[scene_id] = clean
         else:
@@ -523,5 +608,6 @@ if __name__ == "__main__":  # pragma: no cover
 __all__ = [
     "AIJudgeReport",
     "DEFAULT_TEMPLATE_PATH",
+    "judge_scene_envelope",
     "run_scene_ai_judge",
 ]

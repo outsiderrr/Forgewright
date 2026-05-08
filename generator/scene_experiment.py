@@ -47,13 +47,133 @@ from typing import Iterable
 from dotenv import load_dotenv
 
 from generator import budget, graph_view
+from generator.budget import BudgetExceeded
+from generator.generate_node import _is_request_not_sent
 from generator.generate_scene import SceneResult, generate_scene
-from generator.llm_provider import LLMProvider
+from generator.llm_provider import LLMProvider, ProviderError
 from generator.scene_strategies import SceneSetting
 from validator import dialogue_validator, graph_validation, sampling
 
 DEFAULT_COUNT = 15  # ADR-020 baseline protocol: N=15
 EXPERIMENTS_ROOT = Path(__file__).parent / "experiments"
+
+
+# ---------------------------------------------------------------------------
+# Pre-flight probe (R2-10c → R3.2; T-3.0)
+# ---------------------------------------------------------------------------
+#
+# baseline_008 burned $0.30 on a 0% gross_pass_rate batch when the PoloAI
+# account hit the upstream balance gate (``insufficient_user_quota``) and
+# every call short-circuited. The author had to start running ad-hoc curl
+# probes by baseline_009 to avoid repeats. This block tools that into a
+# single budget-gated call (~$0.001) the harness fires before the loop —
+# fail-fast on quota / connectivity / sanitizer regressions instead of
+# wasting the full batch budget.
+
+_PROBE_SCHEMA: dict = {
+    "type": "object",
+    "required": ["ok"],
+    "properties": {"ok": {"type": "string"}},
+}
+_PROBE_SYSTEM_PROMPT = "You are a connectivity probe. Reply with valid JSON only."
+_PROBE_USER_PROMPT = (
+    'Reply with the JSON object {"ok":"yes"} and absolutely nothing else.'
+)
+_PROBE_OUTPUT_TOKEN_ESTIMATE = 16
+_CHARS_PER_TOKEN = 4
+
+
+def probe_provider_health(
+    provider: LLMProvider,
+    *,
+    output: "object | None" = None,
+) -> tuple[bool, str | None]:
+    """Send 1 minimal LLM call to verify provider connectivity + balance.
+
+    Returns ``(ok, error_message)``. ``ok=True`` iff the call returned
+    a parsed structured response with the expected ``ok`` field.
+
+    Cost: ~$0.0005–$0.005 depending on provider pricing; well under the
+    cost of a single failed batch iteration ($0.30+ in the baseline_008
+    fail mode). Always budget-gated — a probe that would exceed
+    PER_CALL_BUDGET_USD or DAILY_BUDGET_USD is reported as a failure
+    instead of crashing the harness.
+
+    No exceptions escape — callers receive ``(False, msg)`` for every
+    failure mode (budget / provider / decode) so the CLI can render a
+    single clear error and exit non-zero before any batch work runs.
+    """
+    out = output if output is not None else sys.stdout
+    input_tokens_est = max(
+        1, len(_PROBE_SYSTEM_PROMPT + _PROBE_USER_PROMPT) // _CHARS_PER_TOKEN
+    )
+    record_id: str | None = None
+    try:
+        estimated_cost = provider.estimate_cost(
+            input_tokens_est, _PROBE_OUTPUT_TOKEN_ESTIMATE
+        )
+        record_id = budget.check_and_charge(
+            estimated_cost,
+            model_id=getattr(provider, "model_id", "unknown"),
+            input_tokens=input_tokens_est,
+            output_tokens=_PROBE_OUTPUT_TOKEN_ESTIMATE,
+        )
+        response = provider.generate_structured(
+            _PROBE_SYSTEM_PROMPT, _PROBE_USER_PROMPT, _PROBE_SCHEMA
+        )
+        actual_cost = provider.estimate_cost(
+            response.input_tokens, response.output_tokens
+        )
+        budget.reconcile_after_call(
+            record_id,
+            actual_input_tokens=response.input_tokens,
+            actual_output_tokens=response.output_tokens,
+            actual_cost_usd=actual_cost,
+        )
+        if not isinstance(response.content, dict) or "ok" not in response.content:
+            return (
+                False,
+                f"probe response missing 'ok' field: {response.content!r}",
+            )
+        print(
+            f"[probe] OK  model={getattr(provider, 'model_id', '?')}  "
+            f"cost=${actual_cost:.4f}",
+            file=out,
+        )
+        return True, None
+    except BudgetExceeded as exc:
+        # check_and_charge raises before writing the row, so no refund
+        # needed for that path. If we hit BudgetExceeded after the row
+        # was written (impossible today; documented for future safety),
+        # the refund call below releases the estimate.
+        if record_id is not None:
+            budget.refund_estimated(
+                record_id, reason=f"probe BudgetExceeded: {exc}"
+            )
+        return False, f"BudgetExceeded: {exc}"
+    except ProviderError as exc:
+        # B-review 4.2 (T-3.0 C): align probe refund policy with
+        # generate_node's three-state contract — only refund when the
+        # request never reached the upstream (connect failure / DNS / etc).
+        # HTTP 4xx/5xx and decode failures mean the request was sent and
+        # likely consumed quota; keep the estimate on the row so cost_log
+        # doesn't under-report. ADR-012 + R2.9 alignment; mirrors
+        # scene_strategies.py:355.
+        if record_id is not None and _is_request_not_sent(exc):
+            budget.refund_estimated(
+                record_id, reason=f"probe request_not_sent: {exc}"
+            )
+        return False, f"ProviderError: {exc}"
+    except Exception as exc:  # noqa: BLE001 — wide net for probe diagnostics
+        # Same three-state policy: refund only when the wrapper exception
+        # chain proves the request never went out. Most non-Provider
+        # errors here will be schema-decode / assertion bugs after a
+        # successful call — those keep their charge.
+        if record_id is not None and _is_request_not_sent(exc):
+            budget.refund_estimated(
+                record_id, reason=f"probe request_not_sent: {exc}"
+            )
+        return False, f"{type(exc).__name__}: {exc}"
 
 # Default sampling parameters for the 2B reach-rate check. ADR-021 §
 # completion criteria starts at N=100; we keep that as the default and
@@ -187,6 +307,96 @@ def _summarise_sampling(graph: dict) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Judge context (B-review 4.1; T-3.0 C)
+# ---------------------------------------------------------------------------
+
+
+def _build_judge_context(
+    *,
+    fixture: SceneFixture,
+    ontology: dict,
+) -> dict:
+    """Extract the ontology subset the AI judge needs for S7-S9 scoring.
+
+    The CLI judge prompt's §A "输入" block lists what the judge expects
+    to see beyond the DialogueGraph itself: character cards (features /
+    dramatic_triggers / relations), the location card, active clocks,
+    and system_time. Without these, S7 (context / dramatic_triggers) /
+    S8 (relations / narrative_weight) / S9 (clocks) become guesses —
+    that's the failure mode B-review 4.1 flagged after R3.0 unblocked
+    dimension reporting (the dimensions are no longer ``{}``, but the
+    rubric for S7-S9 has no input to ground itself in).
+
+    The helper writes a snapshot into the envelope at experiment time
+    so a later judge / calibration run replays the *same* ontology
+    state the scene was generated against; running the judge after a
+    later ontology mutation would otherwise compare against drift.
+    """
+    entities = ontology.get("entities") or []
+    by_id = {ent.get("id"): ent for ent in entities if ent.get("id")}
+
+    character_cards: list[dict] = []
+    for npc_id in fixture.participating_npcs:
+        ent = by_id.get(npc_id)
+        if ent is None or ent.get("type") != "character":
+            continue
+        character_cards.append({
+            "id": ent.get("id"),
+            "display_name": ent.get("display_name"),
+            "state_path_slug": ent.get("state_path_slug"),
+            "character_features": list(ent.get("character_features") or []),
+            "dramatic_triggers": list(ent.get("dramatic_triggers") or []),
+            "relations": list(ent.get("relations") or []),
+        })
+
+    location_card: dict | None = None
+    primary_loc = fixture.scene_setting.primary_location_ref
+    if primary_loc:
+        loc_ent = by_id.get(primary_loc)
+        if loc_ent is not None and loc_ent.get("type") == "location":
+            location_card = {
+                "id": loc_ent.get("id"),
+                "display_name": loc_ent.get("display_name"),
+                "description": loc_ent.get("description"),
+                "location_type": loc_ent.get("location_type"),
+                "parent_location_ref": loc_ent.get("parent_location_ref"),
+            }
+
+    # Active clocks = ticks_filled > 0 (per ADR-017 active = has progress).
+    # Empty list when the ontology hasn't seeded any clocks yet (current
+    # state of waystation.json) — the judge gets an empty array and
+    # scores S9 "no active clocks to reflect" rather than guessing.
+    active_clocks: list[dict] = []
+    for clk in ontology.get("clocks") or []:
+        try:
+            ticks_filled = int(clk.get("ticks_filled", 0) or 0)
+        except (TypeError, ValueError):
+            ticks_filled = 0
+        if ticks_filled <= 0:
+            continue
+        active_clocks.append({
+            "id": clk.get("id"),
+            "scope": clk.get("scope"),
+            "ticks_filled": clk.get("ticks_filled"),
+            "ticks_total": clk.get("ticks_total"),
+            "advance_rule": clk.get("advance_rule"),
+        })
+
+    system_time_raw = ontology.get("system_time") or {}
+    system_time = {
+        "scene_count": system_time_raw.get("scene_count", 0),
+        "long_rest_count": system_time_raw.get("long_rest_count", 0),
+    }
+
+    return {
+        "character_cards": character_cards,
+        "location_card": location_card,
+        "active_clocks": active_clocks,
+        "system_time": system_time,
+    }
+
+
 def _summarise_mechanical(graph: dict, ontology: dict) -> dict:
     """Re-run T-2.4 over the assembled graph for the per-iteration record.
 
@@ -272,6 +482,7 @@ def _serialise_envelope(
             "inner_attempt_count": len(result.inner_results),
         },
         "validator_summaries": None,
+        "judge_context": None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     if result.success and isinstance(result.graph, dict):
@@ -280,6 +491,14 @@ def _serialise_envelope(
             "topology": _summarise_topology(result.graph, ontology),
             "sampling": _summarise_sampling(result.graph),
         }
+        # B-review 4.1 (T-3.0 C): freeze the ontology snapshot the
+        # judge needs for S7-S9 alongside the graph so a later
+        # scene_ai_judge / judge_calibration replay scores against the
+        # same state the scene was generated under. Failure rows skip
+        # this — judge can't score them anyway.
+        env["judge_context"] = _build_judge_context(
+            fixture=fixture, ontology=ontology
+        )
     return env
 
 
@@ -498,10 +717,32 @@ def main(argv: list[str] | None = None) -> int:
         default=DEFAULT_COUNT,
         help=f"Number of scene iterations to run (default {DEFAULT_COUNT}).",
     )
+    parser.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help=(
+            "Skip the pre-flight provider health probe (R3.2). The probe "
+            "fires 1 minimal LLM call (~$0.001) to surface "
+            "balance/connectivity failures before the batch — disable only "
+            "when you've already verified the provider out-of-band."
+        ),
+    )
     args = parser.parse_args(argv)
 
     _print_budget_header()
     provider = _build_default_provider()
+
+    if not args.skip_probe:
+        ok, err = probe_provider_health(provider)
+        if not ok:
+            print(
+                f"error: pre-flight provider health probe failed: {err}\n"
+                f"hint: re-run with --skip-probe to bypass after manual "
+                f"verification.",
+                file=sys.stderr,
+            )
+            return 3
+
     batch_dir = run_scene_experiment(
         batch_name=args.batch_name,
         count=args.count,

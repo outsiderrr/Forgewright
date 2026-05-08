@@ -25,7 +25,7 @@ SCENE_SYSTEM_PROMPT = """你是 Forgewright RPG 项目的**场景级**对话图�
 ## 你的输出
 - 必须是符合调用方提供 schema 的**单个 DialogueGraph 对象 JSON**——`schema_version` 取 `"0.1.1"`，**不要**改成 `"0.3.0"` 或其他值（dialogue_graph schema_version 在阶段 2 保持不动；新增字段走 optional 兼容路径）。
 - `nodes` 字典含 5–15 个节点；其中 `type=="end"` 的 ending 节点 3–5 个；其余为 `type=="dialogue"` 节点。
-- 仅输出 JSON 本身，禁止前后包裹任何说明文字、代码围栏或 markdown。
+- **JSON-only 硬约束**（违反 = 解析失败 → schema_invalid）：输出必须是 valid JSON，不得包含任何解释 / 注释 / markdown code fence (```) / 自然语言开场白 / "好的，这是 JSON" / "<think>" 等控制 token；**输出第一个字符必须是 `{` 或 `[`，最后一个字符必须是 `}` 或 `]`**；不要在 JSON 之前或之后追加任何字符（含空白行、说明文字、签名）。
 - 任何字段语义请以 schema 为准；**不要捏造新字段**。
 - StateCondition 有两种形态——**叶条件**（必须三键齐全：`op` + `path` + `value`）和**复合条件**（必须恰好包含 `all_of` / `any_of` / `not` 三者之一）；两种形态**不可混用**。复合条件的子项本身也是 StateCondition，可继续嵌套。
 

@@ -137,6 +137,31 @@ def render_bleed_through_guard() -> str:
     )
 
 
+def render_json_only_guard() -> str:
+    """Render the ``【硬约束 — JSON-only 输出格式】`` block.
+
+    R3.1 (T-3.0) addition: baseline_010 / baseline_011 advisory caught
+    iter07 / iter09 / iter11 fill responses where the model leaked
+    non-JSON content (markdown fences, ``<think>`` tags, "好的，这是
+    JSON" preamble) inside json mode. The schema sanitizer / validator
+    layer tolerated some of those, but advisory scoring degraded —
+    one marginal-accept slipped through baseline_011.
+
+    Static text rendered into ``extra_user_context`` on every fill call
+    (defense in depth alongside the system prompt's "JSON-only 硬约束"
+    section). Phrasing matches T-3.0 R3.1 §"加硬指令措辞" verbatim so a
+    future test can assert the exact constraint reached the wire.
+    """
+    return (
+        "【硬约束 — JSON-only 输出格式】\n\n"
+        "- 输出必须是 valid JSON，不得包含任何解释 / 注释 / markdown code "
+        "fence (```) / 自然语言开场白 / 控制 token（如 `<think>`）\n"
+        "- 输出第一个字符必须是 `{` 或 `[`，最后一个字符必须是 `}` 或 `]`\n"
+        "- JSON 之前与之后都不允许出现任何字符（含空格 / 换行 / "
+        "签名 / 解释文字）"
+    )
+
+
 def render_fill_extras(
     *,
     filled_so_far: list[tuple[str, str]],
@@ -144,12 +169,17 @@ def render_fill_extras(
     index: int,
     total: int,
 ) -> str:
-    """Compose previously_filled + beat_position + bleed-through guard.
+    """Compose previously_filled + beat_position + bleed-through guard
+    + json-only guard (R3.1).
 
     First-node case (``index == 0`` ⇒ ``filled_so_far == []``) emits only
-    beat_position + guard — the previously-filled summary is intentionally
+    beat_position + guards — the previously-filled summary is intentionally
     skipped because there's nothing yet, and rendering an empty section
     would just be visual noise the LLM has to step over (R2.6 §3).
+
+    The json-only guard is appended last so it sits closest to the
+    response in the rendered prompt, where instruction-following is
+    statistically strongest (T-3.0 R3.1).
     """
     sections: list[str] = []
     summary = render_previously_filled_summary(filled_so_far)
@@ -157,4 +187,5 @@ def render_fill_extras(
         sections.append(summary)
     sections.append(render_beat_position(beat=beat, index=index, total=total))
     sections.append(render_bleed_through_guard())
+    sections.append(render_json_only_guard())
     return "\n\n".join(sections)
