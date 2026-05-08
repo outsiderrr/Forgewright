@@ -42,16 +42,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from generator import budget
+from generator._atomic_write import write_json_atomic
 from generator.budget import BudgetExceeded
+from generator.chapter_assembler import LockFactory
 from generator.context_assembler import (
+    GenerationDependencyTrace,
     PriorSceneSummary,
     SceneGraphContext,
     TokenMetrics,
+    accumulate_scene_context_trace,
+    accumulate_written_paths_from_graph,
     assemble_scene_context_block,
     compute_prior_summary_token_metrics,
+    truncate_prior_scene_summaries,
 )
 from generator.llm_provider import LLMProvider, ProviderError
 from generator.prompts.scene.system import SCENE_SYSTEM_PROMPT
@@ -62,6 +69,16 @@ from generator.scene_strategies import (
 )
 from validator import dialogue_validator, schema_check
 from validator.dialogue_validator import ValidationIssue
+
+# T-3.5 BS-5: prompt template fileset rolled into prompt_template_hash.
+# Order is the rendering order skeleton/fill flows actually concatenate
+# (system → fill extras → few-shot), so the digest is stable across
+# runs that touch the same template files.
+_SCENE_PROMPT_TEMPLATE_FILES: tuple[Path, ...] = (
+    Path(__file__).resolve().parent / "prompts" / "scene" / "system.py",
+    Path(__file__).resolve().parent / "prompts" / "scene" / "fill.py",
+    Path(__file__).resolve().parent / "prompts" / "scene" / "few_shot.py",
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -111,12 +128,30 @@ class SceneResult:
       * `"mechanical_invalid"`     — assembled graph fails T-2.4
                                      mechanical pre-check on every outer
                                      attempt
+      * `"hook_failed"`            — T-3.5 post-success hook chain
+                                     (write scene → assign chapter →
+                                     write deps → record version) raised;
+                                     the scene is still generated but
+                                     the on-disk artefacts may be
+                                     partially written. `schema_issues`
+                                     carries the failure trail.
 
     R2.9: `failure_metadata` is only populated when
     `failure_reason == "provider_error"`. It carries the underlying
     exception class + HTTP status + redacted body excerpt so batch
     finders can disambiguate sanitizer-gap / relay-timeout / upstream-
     quota failure modes from a single jsonl row.
+
+    T-3.5 fields (only populated by the batch_scheduler integration —
+    callers that pass `scene_path=None` see the defaults):
+      * `dependency_trace` — the over-approx trace accumulated during
+        context assembly + write-side accumulation. Returned even on
+        failure so a caller can see what was about to land.
+      * `scene_path` / `dep_index_path` / `version_sidecar_path` /
+        `chapter_assignment` — paths and the chapter-assembler reason
+        the four F6 hooks produced. `chapter_assignment` reason is
+        also surfaced for `dry_run_layer_planning` callers to check
+        the assignment outcome without re-loading the helper.
     """
 
     success: bool
@@ -128,6 +163,11 @@ class SceneResult:
     mechanical_issues: dict[str, list[ValidationIssue]] = field(default_factory=dict)
     inner_results: list[SceneGenerationResult] = field(default_factory=list)
     total_cost_usd: float = 0.0
+    dependency_trace: GenerationDependencyTrace | None = None
+    scene_path: Path | None = None
+    dep_index_path: Path | None = None
+    version_sidecar_path: Path | None = None
+    chapter_assignment: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +184,12 @@ def generate_scene(
     provider: LLMProvider,
     max_retries: int = 2,
     prior_scene_summaries: list[PriorSceneSummary] | None = None,
+    scene_path: Path | None = None,
+    ontology_path: Path | None = None,
+    chapter_id: str | None = None,
+    act_id: str | None = None,
+    generation_method: str = "batch_scheduler",
+    ontology_lock_factory: LockFactory | None = None,
 ) -> SceneResult:
     """Produce a full DialogueGraph for one scene.
 
@@ -187,9 +233,30 @@ def generate_scene(
     `SceneResult.failure_reason` (review 3.1). The total cost is the sum
     of all inner `SceneGenerationResult.total_cost_usd` accumulated
     across attempts.
+
+    T-3.5 BS-4 / BS-6 hooks (ADR-026 + ADR-023 + F6 修订):
+
+      * A `GenerationDependencyTrace` is instantiated up-front and
+        populated as the SceneGraphContext lands and (post-success)
+        the assembled graph's effects fold in. The trace ships back
+        on `SceneResult.dependency_trace` regardless of whether the
+        on-disk hooks fired (so callers that only need the trace can
+        leave `scene_path=None`).
+      * When `scene_path` is provided, the post-success path runs the
+        F6 sequence — write scene → assign chapter (T-3.9 helper) →
+        write dep_index sidecar (T-3.5; this PR) → record version
+        (T-3.8a helper) — and surfaces the resulting paths /
+        chapter-assignment reason on the SceneResult. Any exception
+        in that chain converts the success into
+        `failure_reason="hook_failed"` so the batch scheduler can
+        flag the scene loudly; the trace still rides back so an
+        operator can inspect what was about to land.
     """
     inner_results: list[SceneGenerationResult] = []
     total_cost = 0.0
+    trace = GenerationDependencyTrace(
+        prompt_template_files=list(_SCENE_PROMPT_TEMPLATE_FILES)
+    )
 
     # Step 1: cost estimate + scene-level budget pre-flight (ADR-012).
     # Both wrapped — `provider.estimate_cost` and the env-var parse in
@@ -240,7 +307,26 @@ def generate_scene(
             failure_reason="provider_error",
             failure_metadata=_metadata_from_unexpected(exc),
             schema_issues=[f"context_assembly_failed: {type(exc).__name__}: {exc}"],
+            dependency_trace=trace,
         )
+
+    # T-3.5 BS-4: fold the resolved SceneGraphContext into the trace.
+    # The over-approx convention records every entity that *reached* the
+    # prompt — even if the LLM's eventual output doesn't reference it,
+    # `dep_propagate` should mark this scene stale when those entities
+    # mutate. Truncated prior summaries also inform `scene_history_
+    # referenced` here (post-truncation) so the sidecar describes what
+    # the LLM actually saw.
+    accumulate_scene_context_trace(trace, scene_ctx)
+    if scene_ctx.prior_scene_summaries:
+        kept_for_history, _ = truncate_prior_scene_summaries(
+            scene_ctx.prior_scene_summaries
+        )
+        seen_history: set[str] = set()
+        for s in kept_for_history:
+            if s.scene_id and s.scene_id not in seen_history:
+                seen_history.add(s.scene_id)
+                trace.scene_history_referenced.append(s.scene_id)
 
     # Steps 3–6: outer retry loop.
     last_schema_issues: list[str] = []
@@ -284,6 +370,7 @@ def generate_scene(
                 schema_issues=[f"strategy_exception: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
             )
         inner_results.append(inner)
         total_cost += inner.total_cost_usd
@@ -298,6 +385,7 @@ def generate_scene(
                 failure_metadata=inner.failure_metadata,
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
             )
 
         graph = inner.graph
@@ -320,6 +408,7 @@ def generate_scene(
                 schema_issues=["strategy_returned_success_with_no_graph"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
             )
 
         # Step 4a: schema layer check on the assembled graph.
@@ -333,6 +422,7 @@ def generate_scene(
                 schema_issues=[f"schema_check_exception: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
             )
         if schema_issues:
             last_schema_issues = [
@@ -363,6 +453,7 @@ def generate_scene(
                 schema_issues=[f"mechanical_check_exception: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
             )
         node_issues = {
             nid: [i for i in res.issues if i.severity == "error"]
@@ -395,6 +486,61 @@ def generate_scene(
                 schema_issues=[f"trace_attach_failed: {type(exc).__name__}: {exc}"],
                 inner_results=inner_results,
                 total_cost_usd=total_cost,
+                dependency_trace=trace,
+            )
+
+        # T-3.5 BS-4: write-side trace accumulation. Conservative
+        # over-approx semantics still apply but for state_paths_written
+        # we get exact data straight off the assembled graph's effect
+        # bags (option.effects + on_enter_effects). Same source the
+        # T-2.4 mechanical pre-check just walked, so any namespace
+        # violation already failed above.
+        accumulate_written_paths_from_graph(trace, graph)
+
+        # T-3.5 BS-6 / F6: post-success on-disk hooks. Only fire when
+        # the caller asked for them by passing scene_path; otherwise
+        # the SceneResult shape stays back-compat for scene_experiment
+        # / unit-test callers that handle their own persistence.
+        if scene_path is not None:
+            try:
+                hook_paths = _run_post_success_hooks(
+                    scene_path=scene_path,
+                    ontology_path=ontology_path,
+                    chapter_id=chapter_id,
+                    act_id=act_id,
+                    graph=graph,
+                    trace=trace,
+                    scene_ctx=scene_ctx,
+                    generation_method=generation_method,
+                    ontology_lock_factory=ontology_lock_factory,
+                )
+            except Exception as exc:  # noqa: BLE001 — keep "never raise"
+                _LOG.exception(
+                    "post-success hook chain failed for %s", scene_path
+                )
+                return SceneResult(
+                    success=False,
+                    failure_reason="hook_failed",
+                    failure_metadata=_metadata_from_unexpected(exc),
+                    schema_issues=[
+                        f"hook_failed: {type(exc).__name__}: {exc}"
+                    ],
+                    graph=graph,
+                    inner_results=inner_results,
+                    total_cost_usd=total_cost,
+                    dependency_trace=trace,
+                    scene_path=scene_path,
+                )
+            return SceneResult(
+                success=True,
+                graph=graph,
+                inner_results=inner_results,
+                total_cost_usd=total_cost,
+                dependency_trace=trace,
+                scene_path=scene_path,
+                dep_index_path=hook_paths.get("dep_index_path"),
+                version_sidecar_path=hook_paths.get("version_sidecar_path"),
+                chapter_assignment=hook_paths.get("chapter_assignment"),
             )
 
         return SceneResult(
@@ -402,6 +548,7 @@ def generate_scene(
             graph=graph,
             inner_results=inner_results,
             total_cost_usd=total_cost,
+            dependency_trace=trace,
         )
 
     # Outer attempts exhausted with schema/mechanical issues.
@@ -413,7 +560,114 @@ def generate_scene(
         mechanical_issues=last_mechanical_issues,
         inner_results=inner_results,
         total_cost_usd=total_cost,
+        dependency_trace=trace,
     )
+
+
+def _run_post_success_hooks(
+    *,
+    scene_path: Path,
+    ontology_path: Path | None,
+    chapter_id: str | None,
+    act_id: str | None,
+    graph: dict,
+    trace: GenerationDependencyTrace,
+    scene_ctx: SceneGraphContext,
+    generation_method: str,
+    ontology_lock_factory: LockFactory | None,
+) -> dict:
+    """Run the F6 write-order chain after a successful scene generation.
+
+    Order is **not negotiable** (ADR-026 / F6): the dep_index sidecar
+    must record the chapter_id the chapter_assembler just assigned, so
+    chapter_assembler runs after the scene file lands but before the
+    sidecar; record_version closes the chain so the version row reflects
+    the final on-disk state.
+
+      1. write `scene.json` (`graph` payload, atomic)
+      2. assign chapter via T-3.9 helper (mutates ontology under the
+         shared lock, if `ontology_path` supplied)
+      3. write `<scene>.deps.json` sidecar (T-3.5; this PR)
+      4. record version via T-3.8a helper
+
+    `ontology_path=None` means "skip steps 2 + 4 ontology coupling" —
+    a chapter assignment can't happen without an ontology to mutate.
+    Step 4 still runs (record_version doesn't touch the ontology), but
+    it leaves `git_*` fields whatever git has to say about
+    `scene_path.parent`.
+    """
+    # Step 1 — write scene.json atomically. The strategy hands us a
+    # plain dict; we serialise via the shared atomic writer so a
+    # mid-write crash leaves the prior scene intact.
+    write_json_atomic(scene_path, graph)
+
+    # Step 2 — chapter assignment (only when ontology is provided).
+    # `assignment` is the chapter_assembler return when we ran step 2,
+    # else None — the dep_index call below pulls chapter_id / act_id
+    # straight off it (or falls back to the inputs when no ontology
+    # was provided, so the sidecar still records what the caller
+    # asked for).
+    assignment = None
+    chapter_assignment_dict: dict | None = None
+    if ontology_path is not None:
+        from generator.chapter_assembler import assign_scene_to_chapter
+
+        anchor = scene_ctx.scene_anchor or graph.get("scene_anchor") or graph.get("graph_id")
+        if not isinstance(anchor, str) or not anchor:
+            raise ValueError(
+                "scene_ctx.scene_anchor / graph.scene_anchor / graph.graph_id "
+                "are all empty; cannot drive chapter assignment."
+            )
+        kwargs = {}
+        if ontology_lock_factory is not None:
+            kwargs["lock_factory"] = ontology_lock_factory
+        assignment = assign_scene_to_chapter(
+            anchor,
+            ontology_path,
+            chapter_id=chapter_id,
+            act_id=act_id,
+            **kwargs,
+        )
+        if not assignment.success:
+            raise RuntimeError(
+                f"chapter_assembler refused to assign scene_anchor "
+                f"{anchor!r} to (chapter_id={chapter_id!r}, "
+                f"act_id={act_id!r}): reason={assignment.reason}"
+            )
+        chapter_assignment_dict = {
+            "scene_anchor": assignment.scene_anchor,
+            "chapter_id": assignment.chapter_id,
+            "act_id": assignment.act_id,
+            "reason": assignment.reason,
+            "success": assignment.success,
+        }
+
+    # Step 3 — dep_index sidecar. Schema validation happens inside
+    # write_sidecar; an invalid payload raises and is caught by the
+    # outer `_run_post_success_hooks` try/except.
+    from generator.dep_index_writer import write_sidecar
+
+    sidecar_path = write_sidecar(
+        scene_path,
+        graph,
+        trace,
+        scene_ctx.prior_scene_summaries,
+        scene_ctx.token_metrics,
+        assignment.chapter_id if assignment is not None else chapter_id,
+        assignment.act_id if assignment is not None else act_id,
+    )
+
+    # Step 4 — version sidecar.
+    from generator.version_recorder import record_version, sidecar_path_for as _vr_sidecar_path
+
+    record_version(scene_path, generation_method=generation_method)
+    version_sidecar = _vr_sidecar_path(scene_path)
+
+    return {
+        "dep_index_path": sidecar_path,
+        "version_sidecar_path": version_sidecar,
+        "chapter_assignment": chapter_assignment_dict,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -793,6 +1047,7 @@ __all__ = [
     "SceneResult",
     "SceneSetting",
     "SceneGraphContext",
+    "GenerationDependencyTrace",
     "generate_scene",
     "estimate_scene_cost",
     "build_scene_graph_context",
