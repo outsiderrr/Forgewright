@@ -705,7 +705,12 @@ def test_build_scene_graph_context_falls_back_when_system_time_missing():
 
 def test_t_3_3_build_scene_graph_context_populates_summaries_and_metrics():
     """build_scene_graph_context fills `prior_scene_summaries` verbatim
-    and computes a matching `token_metrics` snapshot."""
+    and computes a matching `token_metrics` snapshot.
+
+    PR #44 review §3.1: schema-aligned `truncation_reason='none'` for
+    under-cap inputs; `summary_source_hashes` carry the `sha256:`
+    prefix.
+    """
     from generator.context_assembler import PriorSceneSummary
 
     summaries = [
@@ -726,14 +731,17 @@ def test_t_3_3_build_scene_graph_context_populates_summaries_and_metrics():
     assert scene_ctx.prior_scene_summaries == summaries
     metrics = scene_ctx.token_metrics
     assert metrics.summaries_injected_count == 3
-    assert metrics.truncation_reason == "no_truncation"
+    assert metrics.truncation_reason == "none"
     assert metrics.prompt_token_estimate > 0
     assert len(metrics.summary_source_hashes) == 3
+    assert all(h.startswith("sha256:") for h in metrics.summary_source_hashes)
 
 
 def test_t_3_3_build_scene_graph_context_default_metrics_when_summaries_omitted():
-    """Pre-T-3.3 callers passing no summaries get empty defaults — no
-    spurious truncation_reason / hashes."""
+    """Pre-T-3.3 callers passing no summaries get an empty injection
+    set + schema-aligned `truncation_reason='none'`. The estimate is
+    non-zero because PR #44 review §4.1 had us include the SCENE_SYSTEM_PROMPT
+    + scene context block char count in the baseline."""
     scene_ctx = build_scene_graph_context(
         scene_setting=_scene_setting(),
         target_beats=_target_beats(),
@@ -744,13 +752,14 @@ def test_t_3_3_build_scene_graph_context_default_metrics_when_summaries_omitted(
     metrics = scene_ctx.token_metrics
     assert metrics.summaries_injected_count == 0
     assert metrics.summary_source_hashes == []
-    assert metrics.prompt_token_estimate == 0
-    assert metrics.truncation_reason is None
+    assert metrics.truncation_reason == "none"
+    # Baseline-only estimate covers system prompt + scene context block.
+    assert metrics.prompt_token_estimate > 0
 
 
 def test_t_3_3_build_scene_graph_context_records_truncation_reason_over_cap():
     """Eight summaries → metrics record post-truncation count = 5 +
-    `kept_recent_only` reason (no chapter/act boundaries supplied)."""
+    schema-aligned `summaries_over_5` reason."""
     from generator.context_assembler import (
         PRIOR_SCENE_SUMMARY_CAP,
         PriorSceneSummary,
@@ -772,10 +781,41 @@ def test_t_3_3_build_scene_graph_context_records_truncation_reason_over_cap():
         prior_scene_summaries=summaries,
     )
     assert scene_ctx.token_metrics.summaries_injected_count == PRIOR_SCENE_SUMMARY_CAP
-    assert scene_ctx.token_metrics.truncation_reason == "kept_recent_only"
+    assert scene_ctx.token_metrics.truncation_reason == "summaries_over_5"
     # Caller-side list is preserved verbatim (pre-truncation) so audit
     # tooling can still see the full input.
     assert len(scene_ctx.prior_scene_summaries) == 8
+
+
+def test_t_3_3_build_scene_graph_context_estimate_grows_with_summaries():
+    """PR #44 review §4.1: `prompt_token_estimate` reflects the full
+    SceneGraphContext-side prompt — adding summaries should raise the
+    estimate above the no-summaries baseline."""
+    from generator.context_assembler import PriorSceneSummary
+
+    no_summaries = build_scene_graph_context(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+    )
+    with_summaries = build_scene_graph_context(
+        scene_setting=_scene_setting(),
+        target_beats=_target_beats(),
+        participating_npcs=_participating_npcs(),
+        ontology=_ontology(),
+        prior_scene_summaries=[
+            PriorSceneSummary(
+                scene_id="scene_a",
+                summary="prose " * 30,
+                key_state_paths=["world.scene_count"],
+            ),
+        ],
+    )
+    assert (
+        with_summaries.token_metrics.prompt_token_estimate
+        > no_summaries.token_metrics.prompt_token_estimate
+    )
 
 
 # ---------------------------------------------------------------------------

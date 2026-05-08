@@ -49,9 +49,12 @@ from generator.budget import BudgetExceeded
 from generator.context_assembler import (
     PriorSceneSummary,
     SceneGraphContext,
+    TokenMetrics,
+    assemble_scene_context_block,
     compute_prior_summary_token_metrics,
 )
 from generator.llm_provider import LLMProvider, ProviderError
+from generator.prompts.scene.system import SCENE_SYSTEM_PROMPT
 from generator.scene_strategies import (
     SceneGenerationResult,
     SceneSetting,
@@ -546,7 +549,34 @@ def build_scene_graph_context(
         system_time = {"scene_count": 0, "long_rest_count": 0}
 
     summaries_in = list(prior_scene_summaries or [])
-    token_metrics = compute_prior_summary_token_metrics(summaries_in)
+
+    # PR #44 review §4.1 (B-phase finding 🟡): `prompt_token_estimate`
+    # must reflect the *full* prompt the LLM sees, not just the
+    # summary block. We render the scene-context block on a stub
+    # without summaries (so adding the summary block in
+    # `compute_prior_summary_token_metrics` doesn't double-count) and
+    # pass system_prompt + scene_context_block char counts as the
+    # baseline. Per-node fill-prompt variance is still not captured;
+    # T-3.5 may refine at sidecar-write time.
+    baseline_ctx = SceneGraphContext(
+        scene_anchor=scene_setting.scene_anchor,
+        chapter_ref=scene_setting.chapter_ref,
+        location_candidates=location_candidates,
+        primary_location_ref=scene_setting.primary_location_ref,
+        participating_characters=participating_characters,
+        relations_matrix=relations_matrix,
+        active_clocks=active_clocks,
+        system_time=system_time,
+        target_beats=list(target_beats),
+        prior_scene_summaries=[],
+        token_metrics=TokenMetrics(),
+    )
+    baseline_block = assemble_scene_context_block(baseline_ctx, scene_setting)
+    additional_chars = len(SCENE_SYSTEM_PROMPT) + len(baseline_block)
+
+    token_metrics = compute_prior_summary_token_metrics(
+        summaries_in, additional_chars=additional_chars
+    )
 
     return SceneGraphContext(
         scene_anchor=scene_setting.scene_anchor,

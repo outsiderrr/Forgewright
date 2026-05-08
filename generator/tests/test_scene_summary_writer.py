@@ -523,3 +523,143 @@ def test_run_cli_missing_scene_returns_2(tmp_path):
     )
     assert rc == 2
     assert "scene file not found" in err.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# PR #44 review C-phase coverage
+# ---------------------------------------------------------------------------
+
+
+def _scene_graph_with_id(graph_id: str) -> dict:
+    g = _scene_graph()
+    g["graph_id"] = graph_id
+    return g
+
+
+def _write_scene_with_id(tmp_path: Path, graph_id: str) -> Path:
+    target = tmp_path / "scene_alpha.json"
+    target.write_text(
+        json.dumps(_scene_graph_with_id(graph_id), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return target
+
+
+def test_c_phase_4_2_draft_path_rejects_overlong_llm_summary(tmp_path):
+    """PR #44 review §4.2 — provider returns 900 codepoints (>800 cap)
+    → `draft_summary` raises `ProviderError` instead of silently
+    pushing over-long prose into the sidecar pipeline."""
+    scene = _write_scene(tmp_path)
+    overlong = "x" * 900
+    provider = _ScriptedProvider(
+        [_make_response({"summary": overlong})]
+    )
+    with pytest.raises(ProviderError) as excinfo:
+        draft_summary(scene_path=scene, provider=provider)
+    assert "exceeds" in str(excinfo.value)
+    assert "ADR-024" in str(excinfo.value)
+
+
+def test_c_phase_4_2_draft_path_rejects_overlong_cjk_summary(tmp_path):
+    """201 CJK characters trips the ≤ 200 中文 cap even when total
+    codepoints ≤ 800."""
+    scene = _write_scene(tmp_path)
+    cjk_overlong = "中" * 201
+    provider = _ScriptedProvider(
+        [_make_response({"summary": cjk_overlong})]
+    )
+    with pytest.raises(ProviderError):
+        draft_summary(scene_path=scene, provider=provider)
+
+
+def test_c_phase_4_2_write_sidecar_rejects_overlong_summary(tmp_path):
+    """A direct `write_summary_sidecar` call with an over-long summary
+    must reject too — covers programmatic callers (T-3.5 batch
+    scheduler, replay tooling) that bypass the CLI flows."""
+    scene = _write_scene(tmp_path)
+    bad = PriorSceneSummary(
+        scene_id="scene_alpha",
+        summary="y" * 900,
+        key_state_paths=["world.scene_count"],
+    )
+    with pytest.raises(ValueError):
+        write_summary_sidecar(bad, scene)
+
+
+def test_c_phase_4_2_draft_to_summary_revalidates_length():
+    """A hand-built `SummaryDraft` with overlong text fails the
+    promotion step — the validator covers every entry into the
+    `PriorSceneSummary` shape."""
+    bad_draft = SummaryDraft(
+        scene_id="scene_alpha",
+        summary="z" * 900,
+        key_state_paths=[],
+    )
+    with pytest.raises(ValueError):
+        draft_to_summary(bad_draft)
+
+
+def test_c_phase_4_3_draft_path_rejects_hyphenated_scene_id(tmp_path):
+    """PR #44 review §4.3 — `graph_id='scene-alpha'` is legal in
+    dialogue_graph schema but NOT in dep_index `scene_id` pattern.
+    `draft_summary` must raise before the LLM call, not after, so
+    budget isn't burned on doomed inputs."""
+    scene = _write_scene_with_id(tmp_path, "scene-alpha")
+    provider = _ScriptedProvider(
+        [_make_response({"summary": "must-not-be-called"})]
+    )
+    with pytest.raises(ValueError) as excinfo:
+        draft_summary(scene_path=scene, provider=provider)
+    assert "ADR-023" in str(excinfo.value)
+    # Provider must not have been touched.
+    assert provider.call_count == 0
+
+
+def test_c_phase_4_3_write_sidecar_rejects_hyphenated_scene_id(tmp_path):
+    """Same gate at the write side — programmatic constructors with
+    hyphens are rejected."""
+    scene = _write_scene(tmp_path)
+    bad = PriorSceneSummary(
+        scene_id="scene-alpha",
+        summary="ok",
+        key_state_paths=[],
+    )
+    with pytest.raises(ValueError):
+        write_summary_sidecar(bad, scene)
+
+
+def test_c_phase_4_3_read_sidecar_rejects_hyphenated_scene_id(tmp_path):
+    """Round-trip read also enforces the pattern — a hand-edited
+    sidecar with bad scene_id surfaces as a clean ValueError instead
+    of contaminating downstream code."""
+    scene = _write_scene(tmp_path)
+    sidecar = summary_sidecar_path(scene)
+    sidecar.write_text(
+        json.dumps(
+            {
+                "scene_id": "scene-alpha",
+                "summary": "ok",
+                "key_state_paths": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        read_summary_sidecar(scene)
+
+
+def test_c_phase_4_3_manual_edit_rejects_hyphenated_scene_id(tmp_path, monkeypatch):
+    """Author-edited template with hyphenated scene_id raises
+    RuntimeError so the CLI re-prompts (as with other bad templates),
+    rather than the editor flow swallowing the schema mismatch."""
+    scene = _write_scene(tmp_path)
+    _patch_editor(
+        monkeypatch,
+        {
+            "scene_id": "scene-alpha",
+            "summary": "ok",
+            "key_state_paths": [],
+        },
+    )
+    with pytest.raises(RuntimeError):
+        manual_edit(scene_path=scene)

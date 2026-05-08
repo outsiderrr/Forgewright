@@ -287,29 +287,41 @@ class TokenMetrics:
     Computing it at SceneGraphContext build time means downstream callers
     don't have to re-run the truncation/hashing logic.
 
-      * `prompt_token_estimate` — chars-of-rendered-summary-block / 4.
-        Specifically the cost the summaries contribute to the prompt;
-        not the full prompt's token count (the rest of the prompt is a
-        moving target T-3.3 doesn't try to estimate). Zero when no
-        summaries land.
+    **Schema alignment** (PR #44 review §3.1, B-phase finding 🔴):
+    `truncation_reason` matches `content_dependency_index.schema.json`'s
+    enum exactly; `summary_source_hashes` carry the `sha256:` prefix the
+    schema requires. Drift between this dataclass and the sidecar
+    schema would force T-3.5 to translate at write time — instead we
+    align here once.
+
+      * `prompt_token_estimate` — chars-of-rendered-prompt-text / 4.
+        Computed by `compute_prior_summary_token_metrics`; the caller
+        passes `additional_chars` (system prompt + scene context block
+        chars) so the estimate reflects the full SceneGraphContext-side
+        prompt the LLM will see, not just the summary block. Per-node
+        fill prompts add variance that's only knowable at fill time;
+        T-3.5 may refine this number at sidecar-write time once those
+        prompts have been rendered.
       * `summaries_injected_count` — 0..PRIOR_SCENE_SUMMARY_CAP. The
         LLM-visible count, after truncation.
-      * `summary_source_hashes` — SHA-256 of each kept summary's
-        `(scene_id, summary, key_state_paths)` triple, in injection
-        order. Lets reviewers verify the prompt-bound digest matches
-        what's on disk — drift between sidecar and prompt is what the
-        ADR-024 metrics hook is meant to surface.
-      * `truncation_reason` — one of:
-          - `None` (no summaries supplied)
-          - `"no_truncation"` (≤ 5 entries; everything kept)
-          - `"kept_recent_with_boundary"` (> 5; cap honoured boundaries)
-          - `"kept_recent_only"` (> 5; only recency mattered)
+      * `summary_source_hashes` — `sha256:<hex>` digest of each kept
+        summary's `(scene_id, summary, key_state_paths)` triple, in
+        injection order. Lets reviewers verify the prompt-bound digest
+        matches what's on disk.
+      * `truncation_reason` — non-nullable, one of (per schema enum):
+          - `"none"` — no truncation (≤ 5 entries or empty input)
+          - `"summaries_over_5"` — input > 5; cap-driven truncation
+            (boundary preservation collapses to this bucket; the
+            boundary signal can be reconstructed from
+            `summary_source_hashes` if needed)
+          - `"token_budget"` — reserved for a future token-budget gate
+          - `"manual_override"` — reserved for an author-pinned subset
     """
 
     prompt_token_estimate: int = 0
     summaries_injected_count: int = 0
     summary_source_hashes: list[str] = field(default_factory=list)
-    truncation_reason: str | None = None
+    truncation_reason: str = "none"
 
 
 @dataclass
@@ -466,13 +478,25 @@ def assemble_scene_context_block(
 
 def truncate_prior_scene_summaries(
     summaries: list[PriorSceneSummary],
-) -> tuple[list[PriorSceneSummary], str | None]:
+) -> tuple[list[PriorSceneSummary], str]:
     """Cap the prior_scene_summaries list at `PRIOR_SCENE_SUMMARY_CAP`.
 
-    Returns ``(kept, truncation_reason)``. Truncation strategy follows
-    ADR-024 §"启发式裁剪":
+    Returns ``(kept, truncation_reason)``. The reason matches
+    `content_dependency_index.schema.json`'s enum exactly (PR #44
+    review §3.1):
 
-      1. ``len <= 5`` → keep all; reason ``"no_truncation"``.
+      * ``"none"`` — empty input, or ``len <= 5`` (no cap-driven drop).
+      * ``"summaries_over_5"`` — input > 5 entries; this single bucket
+        covers both boundary-preserving and recency-only paths because
+        the schema only distinguishes the cap-trigger reason. The
+        boundary signal collapses but stays reconstructable from
+        `summary_source_hashes` if a downstream tool needs it.
+      * ``"token_budget"`` / ``"manual_override"`` are reserved for
+        future T-3.5 paths (token-budget gate, author-pinned subset).
+
+    Truncation strategy follows ADR-024 §"启发式裁剪":
+
+      1. ``len <= 5`` → keep all; reason ``"none"``.
       2. Otherwise, **boundary scenes are preserved first** — every
          entry whose `chapter_id` or `act_id` differs from the
          previous non-`None` value is pinned. Remaining slots (up to
@@ -481,17 +505,12 @@ def truncate_prior_scene_summaries(
       3. If boundaries themselves overflow the cap (rare; only when
          the history spans many short chapters), the most-recent
          boundaries win and older ones are dropped.
-
-    Reason classification in the > 5 path: ``"kept_recent_with_boundary"``
-    when *any* boundary survived the cap, else ``"kept_recent_only"``.
-    Empty input → ``(_, None)`` so a missing-summaries scene doesn't
-    look like it was actively truncated.
     """
     if not summaries:
-        return [], None
+        return [], "none"
     n = len(summaries)
     if n <= PRIOR_SCENE_SUMMARY_CAP:
-        return list(summaries), "no_truncation"
+        return list(summaries), "none"
 
     boundary_indices: set[int] = set()
     prev_chapter: str | None = None
@@ -527,13 +546,7 @@ def truncate_prior_scene_summaries(
         kept_indices = sorted(boundary_indices | set(fill))
 
     kept = [summaries[i] for i in kept_indices]
-    saw_boundary_in_kept = bool(boundary_indices & set(kept_indices))
-    reason = (
-        "kept_recent_with_boundary"
-        if saw_boundary_in_kept
-        else "kept_recent_only"
-    )
-    return kept, reason
+    return kept, "summaries_over_5"
 
 
 def render_prior_scene_summaries_block(
@@ -569,7 +582,12 @@ def render_prior_scene_summaries_block(
 
 
 def _summary_source_hash(summary: PriorSceneSummary) -> str:
-    """SHA-256 of a stable serialisation of the summary's user-visible bits.
+    """`sha256:<hex>` digest of a stable serialisation of the summary's
+    user-visible bits.
+
+    The ``sha256:`` prefix matches the pattern
+    ``content_dependency_index.schema.json`` enforces on
+    `summary_source_hashes` items (PR #44 review §3.1).
 
     `chapter_id` / `act_id` are intentionally excluded — they're used by
     the truncation heuristic but don't reach the prompt body, so a
@@ -584,31 +602,35 @@ def _summary_source_hash(summary: PriorSceneSummary) -> str:
         + "\x1f"
         + "\x1e".join(summary.key_state_paths)
     )
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()}"
 
 
 def compute_prior_summary_token_metrics(
     summaries: list[PriorSceneSummary],
+    *,
+    additional_chars: int = 0,
 ) -> TokenMetrics:
     """Compute the post-truncation `TokenMetrics` view for a summary list.
 
     Internally calls `truncate_prior_scene_summaries` so both the
     metrics-on-context and the strategy-side render share identical
-    truncation logic. `prompt_token_estimate` is the rendered block's
-    char count divided by `_PROMPT_CHARS_PER_TOKEN` (the same crude
-    convention used elsewhere in the generator); zero when no summary
-    actually lands.
+    truncation logic.
+
+    ``additional_chars`` (PR #44 review §4.1, B-phase finding 🟡) is
+    the caller-supplied character count of *the rest of the prompt the
+    LLM will see* — typically ``len(SCENE_SYSTEM_PROMPT) +
+    len(rendered_scene_context_block)``. The returned
+    ``prompt_token_estimate`` covers ``additional_chars`` *plus* the
+    summary block's chars, divided by `_PROMPT_CHARS_PER_TOKEN`. Per-
+    node fill prompt variance is not captured here; T-3.5 may refine at
+    sidecar-write time once the actual prompts have been rendered.
+    Callers that don't have a baseline (unit tests) can omit
+    ``additional_chars`` and get the summary-only estimate.
     """
     kept, reason = truncate_prior_scene_summaries(summaries)
-    if not kept:
-        return TokenMetrics(
-            prompt_token_estimate=0,
-            summaries_injected_count=0,
-            summary_source_hashes=[],
-            truncation_reason=reason,
-        )
-    rendered = render_prior_scene_summaries_block(kept)
-    estimate = max(0, len(rendered) // _PROMPT_CHARS_PER_TOKEN)
+    rendered = render_prior_scene_summaries_block(kept) if kept else ""
+    total_chars = max(0, additional_chars) + len(rendered)
+    estimate = total_chars // _PROMPT_CHARS_PER_TOKEN
     hashes = [_summary_source_hash(s) for s in kept]
     return TokenMetrics(
         prompt_token_estimate=estimate,

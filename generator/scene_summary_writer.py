@@ -42,6 +42,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -79,13 +80,93 @@ _SUMMARY_SYSTEM_PROMPT = (
     "输出必须是 valid JSON，仅含一个 `summary` 键。"
 )
 
-# Per-summary length cap (中文字符 budget; 英文允许 ~4× 字符量略松)。
-_SUMMARY_MAX_CHARS = 200
+# Per-summary length cap. ADR-024 quotes "≤ 200 中文字符 / ≤ 800 英文字符";
+# the ≤ 200 form is a CJK-codepoint count, the ≤ 800 form is a generic
+# codepoint cap. We enforce *both* via `_validate_summary_text` so a
+# pure-CJK summary tops out at 200 codepoints, a pure-Latin summary at
+# 800, and a mixed summary at whichever bound it hits first. PR #44
+# review §4.2 (B-phase finding 🟡): the LLM-draft, manual-edit, and
+# direct-write paths all share this validator now — without it,
+# provider-returned overlong summaries slipped past `--auto-accept`.
+_SUMMARY_MAX_CJK_CHARS = 200
+_SUMMARY_MAX_TOTAL_CHARS = 800
+
+# scene_id pattern. Aligned with ADR-023 / dep_index schema's `scene_id`
+# pattern `^[a-z0-9_]+$` (PR #44 review §4.3, B-phase finding 🟡).
+# Strict-er than dialogue_graph.graph_id which still allows `-`; this
+# normalisation matches the sidecar schema so prior_scene_summaries
+# never carry IDs the dep_index schema would later reject.
+_SCENE_ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
+
+# CJK Unified Ideographs ranges that count toward the ≤ 200 CJK cap.
+# We use a conservative set: BMP CJK + extension A. Other CJK
+# characters (kana, hangul, etc.) aren't in scope for "中文字符".
+_CJK_RE = re.compile(r"[㐀-䶿一-鿿]")
 
 # Extension convention for the sidecar — sits next to scene.json /
 # scene.deps.json (T-3.2) / scene.version.json (T-3.8a).
 _SUMMARY_SUFFIX = ".summary.json"
 _DEPS_SUFFIX = ".deps.json"
+
+
+def _validate_scene_id(scene_id: object, *, source: str) -> str:
+    """Reject `scene_id` values that don't match the sidecar schema.
+
+    `source` names the call site (``"sidecar"`` / ``"editor"`` /
+    ``"draft"``) so the resulting error message points the author at
+    where to fix the input. Centralised here (PR #44 review §4.3) so
+    the LLM-draft, manual-edit, and direct read/write paths all share
+    one rule rather than each rolling its own non-empty-string check.
+    """
+    if not isinstance(scene_id, str):
+        raise ValueError(
+            f"`scene_id` from {source} must be a string, got "
+            f"{type(scene_id).__name__}"
+        )
+    if not _SCENE_ID_PATTERN.fullmatch(scene_id):
+        raise ValueError(
+            f"`scene_id` from {source} = {scene_id!r} does not match "
+            f"ADR-023 pattern ^[a-z0-9_]+$ — re-name the source scene's "
+            f"`graph_id` (or normalise here) before writing the sidecar"
+        )
+    return scene_id
+
+
+def _validate_summary_text(summary: object, *, source: str) -> str:
+    """Reject empty / over-long summary prose at every entry point.
+
+    Enforces both ADR-024 caps:
+      * ≤ `_SUMMARY_MAX_CJK_CHARS` (200) for CJK ideographs
+      * ≤ `_SUMMARY_MAX_TOTAL_CHARS` (800) total codepoints
+
+    Centralised so the LLM-draft path (`draft_to_summary`), manual-edit
+    path (`_summary_from_edited`), and round-trip read path
+    (`read_summary_sidecar`) all enforce the same cap (PR #44 review
+    §4.2). Without this the `--auto-accept` flow could write an
+    over-long sidecar straight to disk.
+    """
+    if not isinstance(summary, str):
+        raise ValueError(
+            f"`summary` from {source} must be a string, got "
+            f"{type(summary).__name__}"
+        )
+    body = summary.strip()
+    if not body:
+        raise ValueError(
+            f"`summary` from {source} is empty after stripping whitespace"
+        )
+    if len(body) > _SUMMARY_MAX_TOTAL_CHARS:
+        raise ValueError(
+            f"`summary` from {source} is {len(body)} codepoints, "
+            f"exceeds {_SUMMARY_MAX_TOTAL_CHARS} (ADR-024 cap)"
+        )
+    cjk_count = len(_CJK_RE.findall(body))
+    if cjk_count > _SUMMARY_MAX_CJK_CHARS:
+        raise ValueError(
+            f"`summary` from {source} contains {cjk_count} CJK characters, "
+            f"exceeds {_SUMMARY_MAX_CJK_CHARS} (ADR-024 中文 cap)"
+        )
+    return body
 
 
 @dataclass
@@ -134,7 +215,15 @@ def write_summary_sidecar(
     omitted from the file when ``None`` so a freshly-authored sidecar
     doesn't carry meaningless ``null`` placeholders that drift out of
     sync as those fields acquire values later.
+
+    PR #44 review §4.2 / §4.3: the sidecar's `scene_id` and `summary`
+    are re-validated here as a final write-side guard, even when an
+    upstream draft / edit path already enforced the same rules.
+    Belt-and-braces because direct programmatic callers (T-3.5 batch
+    scheduler, future pipelines) might bypass the CLI flows.
     """
+    _validate_scene_id(summary.scene_id, source="write_summary_sidecar")
+    _validate_summary_text(summary.summary, source="write_summary_sidecar")
     target = summary_sidecar_path(scene_path)
     payload: dict = {
         "scene_id": summary.scene_id,
@@ -171,17 +260,9 @@ def read_summary_sidecar(scene_path: Path) -> PriorSceneSummary | None:
             f"summary sidecar {target} top-level must be a JSON object, "
             f"got {type(raw).__name__}"
         )
-    scene_id = raw.get("scene_id")
-    summary = raw.get("summary")
+    scene_id = _validate_scene_id(raw.get("scene_id"), source=str(target))
+    summary = _validate_summary_text(raw.get("summary"), source=str(target))
     state_paths = raw.get("key_state_paths") or []
-    if not isinstance(scene_id, str) or not scene_id:
-        raise ValueError(
-            f"summary sidecar {target} missing or non-string `scene_id`"
-        )
-    if not isinstance(summary, str):
-        raise ValueError(
-            f"summary sidecar {target} missing or non-string `summary`"
-        )
     if not isinstance(state_paths, list) or not all(
         isinstance(p, str) for p in state_paths
     ):
@@ -327,7 +408,7 @@ def _build_summary_user_prompt(graph: dict, scene_id: str) -> str:
         parts.append("")
     parts.append("## 输出要求")
     parts.append(
-        f"输出 JSON 对象 `{{\"summary\": \"<≤ {_SUMMARY_MAX_CHARS} 中文字符 / ≤ 800 英文字符>\"}}`，"
+        f"输出 JSON 对象 `{{\"summary\": \"<≤ {_SUMMARY_MAX_CJK_CHARS} 中文字符 / ≤ {_SUMMARY_MAX_TOTAL_CHARS} 英文字符>\"}}`，"
         "概述本场冲突、关键决策走向、余韵。不要复述 narration 原文。"
     )
     return "\n".join(parts)
@@ -370,12 +451,18 @@ def _draft_summary_via_llm(
             f"!= dict (raw_text={response.raw_text!r})"
         )
     text = response.content.get("summary")
-    if not isinstance(text, str) or not text.strip():
+    # PR #44 review §4.2: enforce the ADR-024 length cap on the LLM's
+    # raw output before the prose travels any further. ProviderError
+    # (not ValueError) so the CLI surfaces it as `provider failure`
+    # alongside other prompt-quality regressions.
+    try:
+        validated = _validate_summary_text(text, source="LLM response")
+    except ValueError as exc:
         raise ProviderError(
-            f"summary response missing/empty `summary` field "
-            f"(raw_text={response.raw_text!r})"
-        )
-    return text.strip(), actual_cost, response.raw_text
+            f"summary response failed length cap "
+            f"(raw_text={response.raw_text!r}): {exc}"
+        ) from exc
+    return validated, actual_cost, response.raw_text
 
 
 def draft_summary(
@@ -390,10 +477,17 @@ def draft_summary(
     through the editor / review CLI before committing. `graph` is an
     explicit override path used by tests so they can build a synthetic
     scene without touching disk.
+
+    PR #44 review §4.3: `scene_id` is validated against the ADR-023
+    pattern up-front so a draft built from a hyphenated graph_id
+    surfaces as a clean ValueError instead of silently producing a
+    sidecar the dep_index schema would later reject.
     """
     if graph is None:
         graph = load_scene(scene_path)
-    scene_id = _scene_id_from_graph(graph, scene_path)
+    scene_id = _validate_scene_id(
+        _scene_id_from_graph(graph, scene_path), source=str(scene_path)
+    )
     chapter_id, act_id = _read_chapter_act_from_deps(scene_path)
     summary_text, cost, raw_text = _draft_summary_via_llm(
         scene_id=scene_id, graph=graph, provider=provider
@@ -413,11 +507,15 @@ def draft_to_summary(draft: SummaryDraft) -> PriorSceneSummary:
     """Promote a `SummaryDraft` to the wire-shape `PriorSceneSummary`.
 
     Drops draft-only metadata (raw_response_text / cost_usd) so what
-    lands in the sidecar matches the dataclass T-3.5 reads back.
+    lands in the sidecar matches the dataclass T-3.5 reads back. PR
+    #44 review §4.2: re-validates length here too — the LLM-side check
+    in `_draft_summary_via_llm` covers the wire path, but a future
+    caller that builds a `SummaryDraft` by hand still hits the same
+    cap.
     """
     return PriorSceneSummary(
-        scene_id=draft.scene_id,
-        summary=draft.summary,
+        scene_id=_validate_scene_id(draft.scene_id, source="SummaryDraft"),
+        summary=_validate_summary_text(draft.summary, source="SummaryDraft"),
         key_state_paths=list(draft.key_state_paths),
         chapter_id=draft.chapter_id,
         act_id=draft.act_id,
@@ -511,29 +609,29 @@ def _summary_from_edited(edited: dict) -> PriorSceneSummary:
     Length cap is checked *and rejected* (not silently truncated) so an
     over-long summary doesn't sneak into the sidecar — the author has
     to actively trim the prose, which preserves authorial intent.
+
+    PR #44 review §4.2 / §4.3: shares `_validate_scene_id` and
+    `_validate_summary_text` with the LLM-draft and write-sidecar
+    paths. A bad template raises ``RuntimeError`` (not ``ValueError``)
+    because the editor flow's existing caller already catches
+    ``RuntimeError`` to re-prompt — we wrap the underlying error
+    message verbatim so the author still sees the schema-aligned
+    diagnostic.
     """
-    scene_id = edited.get("scene_id")
-    summary = edited.get("summary")
     state_paths = edited.get("key_state_paths") or []
-    if not isinstance(scene_id, str) or not scene_id.strip():
-        raise RuntimeError("`scene_id` is required and must be a non-empty string")
-    if not isinstance(summary, str) or not summary.strip():
-        raise RuntimeError("`summary` is required and must be non-empty after editing")
-    body = summary.strip()
-    if len(body) > _SUMMARY_MAX_CHARS * 4:
-        # ≤ 200 中文字符 ≈ ≤ 800 codepoints loose bound. Anything beyond
-        # 800 codepoints overflows even an English digest at 4×.
-        raise RuntimeError(
-            f"`summary` exceeds {_SUMMARY_MAX_CHARS * 4} codepoints — please trim"
-        )
     if not isinstance(state_paths, list) or not all(
         isinstance(p, str) for p in state_paths
     ):
         raise RuntimeError("`key_state_paths` must be a list of strings")
+    try:
+        scene_id = _validate_scene_id(edited.get("scene_id"), source="editor")
+        body = _validate_summary_text(edited.get("summary"), source="editor")
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
     chapter = edited.get("chapter_id")
     act = edited.get("act_id")
     return PriorSceneSummary(
-        scene_id=scene_id.strip(),
+        scene_id=scene_id,
         summary=body,
         key_state_paths=list(state_paths),
         chapter_id=chapter if isinstance(chapter, str) and chapter else None,
@@ -553,14 +651,22 @@ def manual_edit(
     text so the author edits in place — used by the semi-auto ``[E]dit``
     path. `--manual` mode passes ``initial_draft=None`` and the
     template's `summary` starts blank.
+
+    PR #44 review §4.3: validate the seed scene_id against
+    ADR-023 pattern up-front so a hyphenated graph_id can't slip into
+    the editor template (and back out into the sidecar).
     """
     if graph is None:
         graph = load_scene(scene_path)
-    scene_id = (
+    seed_scene_id = (
         initial_draft.scene_id
         if initial_draft is not None
         else _scene_id_from_graph(graph, scene_path)
     )
+    try:
+        scene_id = _validate_scene_id(seed_scene_id, source=str(scene_path))
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
     chapter_id, act_id = _read_chapter_act_from_deps(scene_path)
     if initial_draft is not None:
         if initial_draft.chapter_id is not None:
