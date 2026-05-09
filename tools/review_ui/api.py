@@ -9,6 +9,15 @@ Endpoints (all under ``/api`` except the static / index routes which
   * ``POST /api/review``            append an A/R decision to ``scene_review_log.jsonl``
   * ``GET  /api/health``            simple liveness probe (used by browser smoke)
 
+T-3.6b integrations layer (RUI-INT-1..4 — additive; MVP routes above
+keep the same contract):
+
+  * ``GET  /api/scene/{scene_id}/visuals``  thumbnails for character + location assets
+  * ``GET  /api/visual/{asset_id}``         streams the asset PNG/JPG bytes
+  * ``GET  /api/playtest/{scene_id}``       worst_paths/scenes for the scene (F13 degrade)
+  * ``GET  /api/stale``                     dep_propagate stale list (lazy)
+  * ``GET  /api/chapters``                  ontology chapters[].acts[].included_scenes
+
 The router is intentionally a small surface — ``server.build_app`` is
 the composition root that wires it to a ``ReviewDataLoader``, exposes
 the static directory, and serves the index page.
@@ -19,7 +28,7 @@ from dataclasses import asdict
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from .data import GRAPH_FORMATS, ReviewDataLoader
@@ -104,5 +113,76 @@ def build_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         return {"ok": True, "record": record}
+
+    # ---- T-3.6b integrations (RUI-INT-1..4) -----------------------------
+
+    @router.get("/scene/{scene_id}/visuals")
+    def get_scene_visuals(
+        scene_id: str,
+        loader: ReviewDataLoader = Depends(get_loader),
+    ) -> dict:
+        payload = loader.get_visual_assets(scene_id)
+        if payload is None:
+            raise HTTPException(404, f"scene not found: {scene_id}")
+        return payload
+
+    @router.get("/visual/{asset_id}")
+    def get_visual_file(
+        asset_id: str,
+        loader: ReviewDataLoader = Depends(get_loader),
+    ) -> FileResponse:
+        # Path traversal guard lives inside ``loader.get_visual_file``;
+        # any escape attempt returns None and we 404 here.
+        result = loader.get_visual_file(asset_id)
+        if result is None:
+            raise HTTPException(404, f"visual asset not found: {asset_id}")
+        path, content_type = result
+        return FileResponse(path, media_type=content_type)
+
+    @router.get("/playtest/{scene_id}")
+    def get_playtest(
+        scene_id: str,
+        loader: ReviewDataLoader = Depends(get_loader),
+    ) -> dict:
+        # F13 degrade: the loader handles "no data" by returning a payload
+        # with ``playtest_run=null`` and a human reason. We never 404 — the
+        # UI's playtest panel always renders, even pre-run.
+        return loader.get_playtest(scene_id)
+
+    @router.get("/stale")
+    def get_stale(
+        since: str | None = Query(None, description="git revision; merges into changed_ontology / state"),
+        changed_ontology_ids: str | None = Query(
+            None,
+            description="comma-separated ontology entity ids that changed",
+        ),
+        changed_state_paths: str | None = Query(
+            None,
+            description="comma-separated ADR-016 state paths (e.g. faction.iron_oath.*)",
+        ),
+        changed_visual_assets: str | None = Query(
+            None, description="comma-separated visual asset_ids that changed"
+        ),
+        changed_clocks: str | None = Query(
+            None, description="comma-separated clock ids that changed"
+        ),
+        loader: ReviewDataLoader = Depends(get_loader),
+    ) -> dict:
+        def split(value: str | None) -> list[str]:
+            if not value:
+                return []
+            return [piece.strip() for piece in value.split(",") if piece.strip()]
+
+        return loader.get_stale(
+            since=since,
+            changed_ontology_ids=split(changed_ontology_ids),
+            changed_state_paths=split(changed_state_paths),
+            changed_visual_assets=split(changed_visual_assets),
+            changed_clocks=split(changed_clocks),
+        )
+
+    @router.get("/chapters")
+    def get_chapters(loader: ReviewDataLoader = Depends(get_loader)) -> dict:
+        return loader.get_chapters()
 
     return router

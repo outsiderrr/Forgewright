@@ -70,7 +70,13 @@ def _now_iso() -> str:
 
 @dataclass(frozen=True)
 class SceneSummary:
-    """Lightweight per-scene row returned by ``GET /api/scenes``."""
+    """Lightweight per-scene row returned by ``GET /api/scenes``.
+
+    T-3.6b extension: ``scene_anchor`` is added so the chapter-grouping
+    UI can match scenes to ``chapters[].acts[].included_scenes`` without
+    a second round-trip per scene. Field is additive — MVP clients that
+    don't read it stay unaffected.
+    """
 
     scene_id: str
     iter_id: int | None
@@ -91,6 +97,7 @@ class SceneSummary:
     reviewable: bool = False
     not_reviewable_reason: str | None = None
     graph_views_available: list[str] = field(default_factory=list)
+    scene_anchor: str | None = None
 
 
 def _envelope_scene_id(env: dict[str, Any]) -> str:
@@ -145,9 +152,26 @@ class ReviewDataLoader:
         *,
         batch_dir: Path | None,
         scenes_dir: Path | None,
+        visuals_dir: Path | None = None,
+        ontology_path: Path | None = None,
+        playtest_root: Path | None = None,
     ) -> None:
         self.batch_dir = batch_dir.resolve() if batch_dir else None
         self.scenes_dir = scenes_dir.resolve() if scenes_dir else None
+        # T-3.6b integrations: paths default to the conventional layout
+        # (visuals next to scenes; ontology at repo's state/ontology;
+        # playtest dirs nested under batch_dir per the prompt's literal
+        # ``batch_dir/playtest_NNN/`` contract — operator can copy or
+        # symlink playtest output into batch_dir).
+        self.visuals_dir = (
+            visuals_dir.resolve()
+            if visuals_dir
+            else (self.scenes_dir / "visuals" if self.scenes_dir else None)
+        )
+        self.ontology_path = ontology_path.resolve() if ontology_path else None
+        self.playtest_root = (
+            playtest_root.resolve() if playtest_root else self.batch_dir
+        )
         self._review_lock = threading.Lock()
 
     # -- discovery --------------------------------------------------------
@@ -371,6 +395,7 @@ class ReviewDataLoader:
             reviewable=reviewable,
             not_reviewable_reason=not_reviewable_reason,
             graph_views_available=self.graph_views_available(scene_id),
+            scene_anchor=graph.get("scene_anchor"),
         )
 
     def _envelope_to_detail(self, env: dict[str, Any]) -> dict[str, Any]:
@@ -438,6 +463,7 @@ class ReviewDataLoader:
                 node_count=len(data.get("nodes") or {}),
                 has_deps_sidecar=deps_path.exists(),
                 graph_views_available=[],
+                scene_anchor=data.get("scene_anchor"),
             )
 
     def _content_scene_paths(self) -> list[Path]:
@@ -485,3 +511,394 @@ class ReviewDataLoader:
             if _envelope_scene_id(env) == scene_id:
                 return env
         return None
+
+    # =====================================================================
+    # T-3.6b integrations (RUI-INT-1..4) — additive helpers; MVP methods
+    # above stay byte-identical to the T-3.6a contract.
+    # =====================================================================
+
+    # ---- shared scene-graph resolver -----------------------------------
+
+    def _resolve_scene_graph(self, scene_id: str) -> dict[str, Any] | None:
+        """Return the dialogue-graph dict for ``scene_id`` from either the
+        batch envelope or the content/ scene.json. Used by visuals and
+        chapter-membership lookup; MVP detail loaders do their own thing."""
+        for env in self._batch_envelopes():
+            if _envelope_scene_id(env) == scene_id:
+                graph = (env.get("result") or {}).get("graph") or None
+                if graph:
+                    return graph
+        for path in self._content_scene_paths():
+            data = _read_json_or_none(path)
+            if isinstance(data, dict) and data.get("graph_id") == scene_id:
+                return data
+        return None
+
+    # ---- RUI-INT-1: visual asset thumbnails -----------------------------
+
+    def _load_visuals_manifest(self) -> dict[str, Any] | None:
+        if not self.visuals_dir:
+            return None
+        manifest_path = self.visuals_dir / "manifest.json"
+        data = _read_json_or_none(manifest_path)
+        return data if isinstance(data, dict) else None
+
+    def _visuals_file_root(self) -> Path | None:
+        """Resolution base for relative ``file_path`` entries in manifest.json.
+
+        Manifest stores paths like ``content/visuals/vellin/img.png`` —
+        relative to the repo root. ``scenes_dir`` defaults to ``content/``
+        so its parent is the repo root.  When the operator overrides
+        ``scenes_dir`` to something else, fall back to cwd; the path
+        traversal guard below still pins resolution to a known root.
+        """
+        if self.scenes_dir is not None:
+            return self.scenes_dir.parent
+        return Path.cwd().resolve()
+
+    def get_visual_assets(self, scene_id: str) -> dict[str, Any] | None:
+        graph = self._resolve_scene_graph(scene_id)
+        if graph is None:
+            return None
+        character_refs = list(graph.get("character_refs") or [])
+        scene_anchor = graph.get("scene_anchor")
+        manifest = self._load_visuals_manifest()
+        manifest_path = (
+            str(self.visuals_dir / "manifest.json") if self.visuals_dir else None
+        )
+        if manifest is None:
+            return {
+                "scene_id": scene_id,
+                "scene_anchor": scene_anchor,
+                "character_refs": character_refs,
+                "manifest_loaded": False,
+                "manifest_path": manifest_path,
+                "characters": [],
+                "locations": [],
+            }
+        characters: list[dict[str, Any]] = []
+        locations: list[dict[str, Any]] = []
+        assets = manifest.get("assets") or {}
+        if not isinstance(assets, dict):
+            assets = {}
+        for asset_id, asset in assets.items():
+            if not isinstance(asset, dict):
+                continue
+            target_type = asset.get("target_type")
+            target_ref = asset.get("target_ref")
+            character_ref = asset.get("character_ref")
+            location_ref = asset.get("location_ref")
+            normalized = _project_visual_asset(str(asset_id), asset)
+            if target_type == "character" and (
+                target_ref in character_refs or character_ref in character_refs
+            ):
+                characters.append(normalized)
+            elif target_type == "location" and scene_anchor and (
+                target_ref == scene_anchor or location_ref == scene_anchor
+            ):
+                locations.append(normalized)
+        characters.sort(key=lambda a: (a.get("character_ref") or "", a.get("asset_id") or ""))
+        locations.sort(key=lambda a: (a.get("location_ref") or "", a.get("asset_id") or ""))
+        return {
+            "scene_id": scene_id,
+            "scene_anchor": scene_anchor,
+            "character_refs": character_refs,
+            "manifest_loaded": True,
+            "manifest_path": manifest_path,
+            "characters": characters,
+            "locations": locations,
+        }
+
+    def get_visual_file(self, asset_id: str) -> tuple[Path, str] | None:
+        """Resolve an asset to ``(disk_path, content_type)`` or None.
+
+        Path traversal guard mirrors :meth:`_safe_view_dir` — the
+        manifest's ``file_path`` is data, not trusted input, but we
+        still pin resolution to ``_visuals_file_root`` so a manifest
+        edited offline can't escape it.
+        """
+        manifest = self._load_visuals_manifest()
+        if manifest is None:
+            return None
+        assets = manifest.get("assets") or {}
+        asset = assets.get(asset_id) if isinstance(assets, dict) else None
+        if not isinstance(asset, dict):
+            return None
+        rel = asset.get("file_path")
+        if not isinstance(rel, str) or not rel:
+            return None
+        base = self._visuals_file_root()
+        if base is None:
+            return None
+        candidate = (base / rel).resolve()
+        base_resolved = base.resolve()
+        try:
+            candidate.relative_to(base_resolved)
+        except ValueError:
+            return None
+        if not candidate.is_file():
+            return None
+        fmt = str(asset.get("format") or "").lower()
+        content_type = _IMG_CONTENT_TYPE.get(fmt, "application/octet-stream")
+        return candidate, content_type
+
+    # ---- RUI-INT-2: playtest worst paths/scenes (F13 degrade) -----------
+
+    def get_playtest(self, scene_id: str) -> dict[str, Any]:
+        """Search ``playtest_root/playtest_*/`` for runs covering ``scene_id``.
+
+        F13 degrade: never raises, never 404s on missing data. When no
+        run covers this scene the response carries ``playtest_run=null``
+        + a human-readable ``reason`` so the UI keeps rendering the
+        panel (with the run-the-CLI hint) instead of hiding it.
+        """
+        scanned = 0
+        if self.playtest_root is not None and self.playtest_root.is_dir():
+            runs = [
+                c
+                for c in sorted(self.playtest_root.iterdir(), key=lambda p: p.name)
+                if c.is_dir() and c.name.startswith("playtest_")
+            ]
+            scanned = len(runs)
+            matches: list[tuple[Path, dict[str, Any]]] = []
+            for run_dir in runs:
+                manifest = _read_json_or_none(run_dir / "run_manifest.json")
+                if not isinstance(manifest, dict):
+                    continue
+                scenes_played = manifest.get("scenes_played") or []
+                if isinstance(scenes_played, list) and scene_id in scenes_played:
+                    matches.append((run_dir, manifest))
+            if matches:
+                run_dir, manifest = matches[-1]
+                worst_paths_rows: list[dict[str, Any]] = []
+                paths_path = run_dir / "worst_paths.jsonl"
+                if paths_path.is_file():
+                    for row in _read_jsonl(paths_path):
+                        if row.get("scene_id") == scene_id:
+                            worst_paths_rows.append(_compact_path_row(row))
+                scene_summary = None
+                rubric_version = None
+                scenes_payload = _read_json_or_none(run_dir / "worst_scenes.json")
+                if isinstance(scenes_payload, dict):
+                    rubric_version = scenes_payload.get("rubric_version")
+                    for s in scenes_payload.get("scenes") or []:
+                        if isinstance(s, dict) and s.get("scene_id") == scene_id:
+                            scene_summary = s
+                            break
+                return {
+                    "scene_id": scene_id,
+                    "playtest_run": run_dir.name,
+                    "playtest_id": manifest.get("playtest_id"),
+                    "started_at": manifest.get("started_at"),
+                    "completed_at": manifest.get("completed_at"),
+                    "model_id": manifest.get("model_id"),
+                    "rubric_version": rubric_version,
+                    "scene_summary": scene_summary,
+                    "worst_paths": worst_paths_rows,
+                    "all_runs_scanned": scanned,
+                    "playtest_root": str(self.playtest_root),
+                }
+        # F13 degrade — no run covers this scene
+        if self.playtest_root is None:
+            reason = "no playtest_root configured (batch_dir not set)"
+        elif not self.playtest_root.is_dir():
+            reason = f"playtest_root does not exist: {self.playtest_root}"
+        elif scanned == 0:
+            reason = (
+                f"no playtest_*/ subdirs under {self.playtest_root.name}/ "
+                f"— run `python -m generator.playtest <scene_path>` then "
+                f"copy/symlink the output dir into batch_dir"
+            )
+        else:
+            reason = (
+                f"no playtest run for this scene (scanned {scanned} run(s) "
+                f"under {self.playtest_root.name}/)"
+            )
+        return {
+            "scene_id": scene_id,
+            "playtest_run": None,
+            "reason": reason,
+            "all_runs_scanned": scanned,
+            "playtest_root": (
+                str(self.playtest_root) if self.playtest_root is not None else None
+            ),
+        }
+
+    # ---- RUI-INT-3: stale list (lazy dep_propagate call) ----------------
+
+    def _effective_ontology_path(self) -> Path:
+        return self.ontology_path or Path("state/ontology/waystation.json")
+
+    def _effective_ontology_root(self) -> Path:
+        path = self._effective_ontology_path()
+        # dep_propagate.find_stale_scenes accepts a directory; if the
+        # operator passed a single-file ontology, hand it the parent.
+        if path.is_file() or path.suffix == ".json":
+            return path.parent
+        return path
+
+    def get_stale(
+        self,
+        *,
+        since: str | None = None,
+        changed_ontology_ids: list[str] | None = None,
+        changed_state_paths: list[str] | None = None,
+        changed_visual_assets: list[str] | None = None,
+        changed_clocks: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Run T-3.7 reverse-propagate against the configured content/ontology
+        roots and return the JSON report verbatim (schema_version pinned by
+        ``tools.dep_propagate.REPORT_SCHEMA_VERSION``).
+
+        Lazy import keeps the review UI startup free of dep_propagate's
+        git subprocess / regex compile cost when the operator never opens
+        the stale view.
+        """
+        from tools.dep_propagate import (  # noqa: WPS433 — lazy by design
+            REPORT_SCHEMA_VERSION,
+            diff_ontology,
+            find_stale_scenes,
+            render_json_report,
+        )
+
+        content_root = self.scenes_dir or Path("content")
+        ontology_root = self._effective_ontology_root()
+
+        explicit_ids = list(changed_ontology_ids or [])
+        explicit_paths = list(changed_state_paths or [])
+        explicit_visuals = list(changed_visual_assets or [])
+        explicit_clocks = list(changed_clocks or [])
+        diff_error: str | None = None
+        if since:
+            try:
+                diff = diff_ontology(ontology_root, since)
+                explicit_ids = sorted(set(explicit_ids) | set(diff.changed_ontology_ids))
+                explicit_paths = sorted(set(explicit_paths) | set(diff.changed_state_paths))
+            except RuntimeError as exc:
+                diff_error = str(exc)
+
+        stale = find_stale_scenes(
+            changed_ontology_ids=explicit_ids,
+            changed_state_paths=explicit_paths,
+            changed_visual_assets=explicit_visuals,
+            changed_clocks=explicit_clocks,
+            content_root=content_root,
+            ontology_root=ontology_root,
+        )
+        inputs_meta = {
+            "since_commit": since,
+            "changed_ontology_ids": explicit_ids,
+            "changed_state_paths": explicit_paths,
+            "changed_visual_assets": explicit_visuals,
+            "changed_clocks": explicit_clocks,
+        }
+        payload = render_json_report(stale, inputs_meta, content_root)
+        # attach errors / metadata that dep_propagate's report doesn't
+        # carry on its own — the UI shows these inline so the operator
+        # knows when --since failed without surfacing a 500.
+        payload["diff_error"] = diff_error
+        payload["report_schema_version"] = REPORT_SCHEMA_VERSION
+        return payload
+
+    # ---- RUI-INT-4: chapter grouping ------------------------------------
+
+    def _load_ontology(self) -> dict[str, Any] | None:
+        path = self._effective_ontology_path()
+        data = _read_json_or_none(path)
+        return data if isinstance(data, dict) else None
+
+    def get_chapters(self) -> dict[str, Any]:
+        ontology = self._load_ontology()
+        path = self._effective_ontology_path()
+        if ontology is None:
+            return {
+                "ontology_path": str(path),
+                "ontology_loaded": False,
+                "chapters": [],
+            }
+        chapters: list[dict[str, Any]] = []
+        for chap in ontology.get("chapters") or []:
+            if not isinstance(chap, dict):
+                continue
+            chapters.append(
+                {
+                    "chapter_id": chap.get("chapter_id"),
+                    "display_name": chap.get("display_name"),
+                    "acts": [
+                        {
+                            "act_id": act.get("act_id"),
+                            "display_name": act.get("display_name"),
+                            "included_scenes": list(act.get("included_scenes") or []),
+                        }
+                        for act in (chap.get("acts") or [])
+                        if isinstance(act, dict)
+                    ],
+                }
+            )
+        return {
+            "ontology_path": str(path),
+            "ontology_loaded": True,
+            "chapters": chapters,
+        }
+
+
+# ---------------------------------------------------------------------------
+# T-3.6b integrations: helpers shared across endpoints
+# ---------------------------------------------------------------------------
+
+
+_IMG_CONTENT_TYPE = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+}
+
+
+def _project_visual_asset(asset_id: str, asset: dict[str, Any]) -> dict[str, Any]:
+    """Trim an ``ImageAsset`` row to the fields the UI thumbnail card uses.
+
+    Stripping bulky fields (prompt_hash, generation_metadata, reference_ids)
+    keeps the JSON payload small for batches with hundreds of assets.
+    """
+    return {
+        "asset_id": asset_id,
+        "asset_kind": asset.get("asset_kind"),
+        "asset_role": asset.get("asset_role"),
+        "target_type": asset.get("target_type"),
+        "target_ref": asset.get("target_ref"),
+        "character_ref": asset.get("character_ref"),
+        "location_ref": asset.get("location_ref"),
+        "format": asset.get("format"),
+        "width": asset.get("width"),
+        "height": asset.get("height"),
+        "has_alpha": asset.get("has_alpha"),
+        "file_path": asset.get("file_path"),
+        "file_url": f"/api/visual/{asset_id}",
+    }
+
+
+def _compact_path_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop the verbose ``steps[]`` snapshot from a worst_paths.jsonl row.
+
+    The full step trace is hundreds of KB per path; the review UI only
+    needs the summary metrics (judge_score, severity counts) plus a
+    pointer back to ``worst_paths.jsonl`` for the operator to grep.
+    """
+    return {
+        "path_id": row.get("path_id"),
+        "persona_id": row.get("persona_id"),
+        "scene_id": row.get("scene_id"),
+        "reached_end": row.get("reached_end"),
+        "end_node_id": row.get("end_node_id"),
+        "failure_reason": row.get("failure_reason"),
+        "judge_score": row.get("judge_score"),
+        "judge_dimensions": row.get("judge_dimensions"),
+        "judge_rationale": row.get("judge_rationale"),
+        "severity_findings": row.get("severity_findings") or [],
+        "critical_count": row.get("critical_count"),
+        "major_count": row.get("major_count"),
+        "minor_count": row.get("minor_count"),
+        "step_count": len(row.get("steps") or []),
+    }

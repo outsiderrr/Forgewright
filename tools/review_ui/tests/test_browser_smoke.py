@@ -75,6 +75,29 @@ def live_server(fixture_batch_dir: Path, fixture_scenes_dir: Path):
         yield f"http://{srv.host}:{srv.port}"
 
 
+@pytest.fixture
+def live_server_full(
+    fixture_batch_with_playtest: Path,
+    fixture_scenes_dir: Path,
+    fixture_visuals: Path,
+    fixture_ontology: Path,
+):
+    """Live uvicorn for T-3.6b integrations (visuals + playtest + ontology)."""
+    from tools.review_ui.data import ReviewDataLoader
+
+    loader = ReviewDataLoader(
+        batch_dir=fixture_batch_with_playtest,
+        scenes_dir=fixture_scenes_dir,
+        visuals_dir=fixture_visuals,
+        ontology_path=fixture_ontology,
+    )
+    app = build_app(batch_dir=fixture_batch_with_playtest, scenes_dir=fixture_scenes_dir)
+    app.state.loader = loader
+    port = _free_port()
+    with _UvicornInThread(app, "127.0.0.1", port) as srv:
+        yield f"http://{srv.host}:{srv.port}"
+
+
 def _ensure_screenshot_dir() -> Path:
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
     return SCREENSHOT_DIR
@@ -220,4 +243,105 @@ def test_browser_smoke_unreviewable_disables_buttons(live_server: str) -> None:
         assert "failed batch row" in note, note
         page.screenshot(path=str(out / "07_review_disabled_failed.png"), full_page=True)
 
+        browser.close()
+
+
+# ---------------------------------------------------------------------------
+# T-3.6b RUI-INT-5: integrations smoke + 5-view screenshots (mandatory).
+# ---------------------------------------------------------------------------
+
+
+def test_browser_smoke_integrations_full_walk(live_server_full: str) -> None:
+    """End-to-end smoke for the four T-3.6b integrations.
+
+    Walks every panel that ships in this PR:
+
+      1. Visual asset thumbnails (right pane)
+      2. Playtest panel — populated path (s_alpha → playtest_001/)
+      3. Playtest panel — F13 degrade (a scene with no run)
+      4. Stale list (refresh with changed_ontology_ids → demo_scene flagged)
+      5. Chapter / act tree in the left nav (toggle from list view)
+
+    Saves screenshots under ``_screenshots/`` for the PR description.
+    """
+    out = _ensure_screenshot_dir()
+    with sync_playwright() as p:
+        browser = _launch(p)
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        page = context.new_page()
+        console_msgs: list[str] = []
+        page.on("console", lambda msg: console_msgs.append(f"[{msg.type}] {msg.text}"))
+
+        page.goto(live_server_full)
+        page.wait_for_selector("#scene-list .scene-row", timeout=10_000)
+
+        # --- View 1: visuals (RUI-INT-1) — click s_alpha, wait for thumbnails
+        page.click("text=s_alpha")
+        page.wait_for_selector("#visuals-content .visual-card img", timeout=10_000)
+        # Both groups must render
+        assert page.text_content("#visuals-content").strip().count("出场角色") + \
+               page.text_content("#visuals-content").strip().count("场景背景") >= 2
+        page.screenshot(path=str(out / "08_visuals.png"), full_page=True)
+
+        # --- View 2: playtest with data (RUI-INT-2)
+        page.click("#main-tabs .tab[data-tab='playtest']")
+        page.wait_for_selector(".playtest-header", timeout=10_000)
+        playtest_text = page.text_content("#playtest-panel") or ""
+        assert "playtest_001" in playtest_text, playtest_text
+        assert "p001" in playtest_text or "p002" in playtest_text
+        page.screenshot(path=str(out / "09_playtest_populated.png"), full_page=True)
+
+        # --- View 3: playtest F13 degrade — open demo_scene (no playtest run)
+        page.click(".scene-row[data-scene-id='demo_scene']")
+        page.wait_for_function(
+            "() => document.getElementById('scene-title').textContent.includes('demo_scene')",
+            timeout=5_000,
+        )
+        page.click("#main-tabs .tab[data-tab='playtest']")
+        page.wait_for_selector(".playtest-empty", timeout=10_000)
+        empty_text = page.text_content("#playtest-panel") or ""
+        assert "未跑 playtest" in empty_text, empty_text
+        assert "python -m generator.playtest" in empty_text
+        page.screenshot(path=str(out / "10_playtest_degrade.png"), full_page=True)
+
+        # --- View 4: stale list (RUI-INT-3) — open the panel + refresh
+        page.evaluate("document.getElementById('stale-panel').open = true")
+        page.fill("#stale-ontology", "char_vellin")
+        page.click("#stale-refresh")
+        page.wait_for_selector(".stale-item .stale-item-link", timeout=10_000)
+        stale_html = page.text_content("#stale-list") or ""
+        assert "demo_scene" in stale_html, stale_html
+        # Toggle badge should reflect non-zero count
+        toggle_text = page.text_content("#stale-toggle") or ""
+        assert "Stale (1)" in toggle_text or "Stale (1" in toggle_text, toggle_text
+        # Click the stale link → scene-main shows the red banner
+        page.click(".stale-item .stale-item-link")
+        page.wait_for_selector("#stale-banner:not([hidden])", timeout=5_000)
+        banner_text = page.text_content("#stale-banner") or ""
+        assert "stale" in banner_text.lower(), banner_text
+        page.screenshot(path=str(out / "11_stale_list_and_banner.png"), full_page=True)
+
+        # --- View 5: chapter / act grouping (RUI-INT-4)
+        page.click("#nav-mode .nav-btn[data-nav='chapter']")
+        page.wait_for_selector("#scene-tree .chapter-group", timeout=5_000)
+        tree_text = page.text_content("#scene-tree") or ""
+        assert "chap_intro" in tree_text, tree_text
+        assert "act_arrival" in tree_text, tree_text
+        # s_alpha (with scene_anchor=scene_alpha) must appear under the act
+        assert "s_alpha" in tree_text, tree_text
+        # Click s_alpha from the chapter view to verify the chapter link header.
+        # Wait on title + link content rather than visibility — selectScene is
+        # async and the link can briefly render with the previous scene's data.
+        page.click("#scene-tree .scene-row[data-scene-id='s_alpha']")
+        page.wait_for_function(
+            "() => (document.getElementById('scene-chapter-link').textContent || '').includes('chap_intro')",
+            timeout=5_000,
+        )
+        link_text = page.text_content("#scene-chapter-link") or ""
+        assert "chap_intro" in link_text, link_text
+        page.screenshot(path=str(out / "12_chapter_tree.png"), full_page=True)
+
+        (out / "console_integrations.log").write_text(
+            "\n".join(console_msgs), encoding="utf-8"
+        )
         browser.close()

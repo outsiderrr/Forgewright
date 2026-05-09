@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Forgewright Review UI · T-3.6a MVP</title>
+  <title>Forgewright Review UI · T-3.6a MVP + T-3.6b integrations</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
   <header class="topbar">
-    <h1>Forgewright Review UI <small>T-3.6a MVP · ADR-025</small></h1>
+    <h1>Forgewright Review UI <small>T-3.6a MVP + T-3.6b integrations · ADR-025</small></h1>
     <div class="topbar-meta">
       <span id="batch-dir">batch: …</span>
       <span id="scenes-dir">scenes: …</span>
@@ -19,6 +19,40 @@
   <main class="layout">
     <aside class="pane scene-list" aria-label="场景列表">
       <h2>场景</h2>
+
+      <div class="nav-controls">
+        <div class="nav-toggle" id="nav-mode">
+          <button data-nav="list" class="nav-btn active">列表</button>
+          <button data-nav="chapter" class="nav-btn">按章节</button>
+        </div>
+        <button id="stale-toggle" class="stale-toggle">⚠ Stale (–)</button>
+      </div>
+
+      <details id="stale-panel" class="stale-panel">
+        <summary>Stale 检测（需手动触发）</summary>
+        <p class="advisory-note">填入"自上次合并起的变更"，调用 T-3.7 反向 propagate（ADR-023 / F5）。</p>
+        <div class="stale-form">
+          <label>since (git rev)
+            <input type="text" id="stale-since" placeholder="HEAD~1">
+          </label>
+          <label>changed ontology ids
+            <input type="text" id="stale-ontology" placeholder="char_vellin,loc_x">
+          </label>
+          <label>changed state paths
+            <input type="text" id="stale-state-paths" placeholder="faction.iron_oath.*">
+          </label>
+          <label>changed visual asset ids
+            <input type="text" id="stale-visuals" placeholder="img_vellin_neutral_torso_up_01">
+          </label>
+          <label>changed clock ids
+            <input type="text" id="stale-clocks" placeholder="clk_seasons">
+          </label>
+          <button id="stale-refresh" type="button">刷新 stale list</button>
+        </div>
+        <div id="stale-error" class="stale-error" hidden></div>
+        <div id="stale-list" class="stale-list">（未刷新）</div>
+      </details>
+
       <div class="filter-row">
         <label><input type="checkbox" id="filter-unreviewed" checked> 未审</label>
         <label><input type="checkbox" id="filter-accepted" checked> [A]</label>
@@ -26,13 +60,17 @@
         <label><input type="checkbox" id="filter-skipped" checked> [S]</label>
         <label><input type="checkbox" id="filter-failed" checked> 失败</label>
       </div>
+
       <ul id="scene-list"></ul>
+      <div id="scene-tree" class="scene-tree" hidden></div>
     </aside>
 
     <section class="pane scene-main" aria-label="场景主视图">
+      <div id="stale-banner" class="stale-banner" hidden></div>
       <header class="scene-header">
         <h2 id="scene-title">选择左侧场景</h2>
         <div id="scene-meta" class="scene-meta"></div>
+        <div id="scene-chapter-link" class="scene-chapter-link" hidden></div>
       </header>
 
       <nav class="tab-bar" id="main-tabs">
@@ -40,6 +78,7 @@
         <button data-tab="setting" class="tab">Setting / Beats</button>
         <button data-tab="nodes" class="tab">Nodes</button>
         <button data-tab="deps" class="tab">Dependencies</button>
+        <button data-tab="playtest" class="tab">Playtest</button>
       </nav>
 
       <div class="tab-panels">
@@ -63,10 +102,19 @@
         <div class="tab-panel" data-panel="deps">
           <pre id="scene-deps" class="json-block">未加载场景。</pre>
         </div>
+        <div class="tab-panel" data-panel="playtest">
+          <div id="playtest-panel" class="playtest-panel">未加载场景。</div>
+        </div>
       </div>
     </section>
 
-    <aside class="pane scene-side" aria-label="校验 + 审阅">
+    <aside class="pane scene-side" aria-label="校验 + 审阅 + 视觉资产">
+      <section class="visuals-section">
+        <h2>视觉资产</h2>
+        <p class="advisory-note">出场角色立绘 + 场景背景（manifest.json）</p>
+        <div id="visuals-content" class="visuals-content">未加载场景。</div>
+      </section>
+
       <section class="validator-section">
         <h2>Validator</h2>
         <nav class="tab-bar tab-bar-small" id="validator-tabs">
@@ -98,12 +146,21 @@
           <button id="btn-skip" class="btn btn-skip" disabled>[S] Skip</button>
         </div>
         <label class="reason-label" for="reject-reason">Reject / Skip reason（[R] 与 [S] 都必填）</label>
-        <textarea id="reject-reason" rows="3" placeholder="（[R] 写拒收理由；[S] 写为何跳过——例如"先看全集再决定"。[A] 不需要。）"></textarea>
+        <textarea id="reject-reason" rows="3" placeholder="（[R] 写拒收理由；[S] 写为何跳过——例如&quot;先看全集再决定&quot;。[A] 不需要。）"></textarea>
         <p id="not-reviewable-note" class="advisory-note" style="display:none"></p>
         <p id="review-flash" class="flash" role="status" aria-live="polite"></p>
       </section>
     </aside>
   </main>
+
+  <div id="visual-modal" class="visual-modal" hidden role="dialog" aria-label="放大视图">
+    <div class="visual-modal-backdrop"></div>
+    <div class="visual-modal-card">
+      <button id="visual-modal-close" class="visual-modal-close" type="button" aria-label="关闭">×</button>
+      <img id="visual-modal-img" alt="">
+      <div id="visual-modal-caption" class="visual-modal-caption"></div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>
