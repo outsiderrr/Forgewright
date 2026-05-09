@@ -82,17 +82,15 @@ def live_server_full(
     fixture_visuals: Path,
     fixture_ontology: Path,
 ):
-    """Live uvicorn for T-3.6b integrations (visuals + playtest + ontology)."""
-    from tools.review_ui.data import ReviewDataLoader
+    """Live uvicorn for T-3.6b integrations (visuals + playtest + ontology).
 
-    loader = ReviewDataLoader(
-        batch_dir=fixture_batch_with_playtest,
-        scenes_dir=fixture_scenes_dir,
-        visuals_dir=fixture_visuals,
-        ontology_path=fixture_ontology,
-    )
+    PR #48 review §3.2: path overrides go on ``app.state.t36b_*`` attrs
+    (set after ``build_app`` returns) so ``ReviewDataLoader`` stays
+    MVP-shaped.
+    """
     app = build_app(batch_dir=fixture_batch_with_playtest, scenes_dir=fixture_scenes_dir)
-    app.state.loader = loader
+    app.state.t36b_visuals_dir = fixture_visuals
+    app.state.t36b_ontology_path = fixture_ontology
     port = _free_port()
     with _UvicornInThread(app, "127.0.0.1", port) as srv:
         yield f"http://{srv.host}:{srv.port}"

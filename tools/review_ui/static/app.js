@@ -23,7 +23,10 @@ const state = {
   // T-3.6b
   navMode: 'list', // 'list' | 'chapter'
   chapters: [],
-  sceneAnchorToChapter: new Map(), // scene_anchor → { chapter_id, act_id, chapter_name, act_name }
+  // PR #48 review §4.3: placements come from /api/chapters scene_placements,
+  // which prefers sidecar chapter_id/act_id over ontology anchor lookup.
+  scenePlacements: {}, // scene_id → { chapter_id, act_id, scene_anchor, source }
+  placementSummary: null, // { total, placed, from_sidecar, from_ontology_anchor, unplaced }
   staleReport: null, // last /api/stale payload, or null
   staleSceneIds: new Set(), // scene_ids flagged stale by current report
 };
@@ -218,20 +221,41 @@ function renderChapterTree() {
     els.sceneTree.appendChild(p);
     return;
   }
-  const visibleByAnchor = new Map();
-  for (const scene of state.filteredScenes) {
-    if (!scene.scene_anchor) continue;
-    if (!visibleByAnchor.has(scene.scene_anchor)) visibleByAnchor.set(scene.scene_anchor, []);
-    visibleByAnchor.get(scene.scene_anchor).push(scene);
+  // PR #48 review §4.3: only render chapter tree if at least one scene
+  // has a placed chapter_id+act_id (from sidecar or ontology lookup).
+  // Otherwise the tree would be a sea of "未归入" pseudo-state, which
+  // the reviewer flagged as misleading.  Fall back to the flat list
+  // with an explanatory notice instead.
+  const summary = state.placementSummary || { placed: 0 };
+  if (summary.placed === 0) {
+    const p = document.createElement('p');
+    p.className = 'placeholder';
+    p.textContent =
+      '（场景的 dep_index sidecar 缺 chapter_id / act_id，且 scene_anchor 未在 ontology 的 included_scenes 中；' +
+      '已退回 列表 视图。请等 T-3.5 batch_scheduler 写入 sidecar 后再切到本视图。）';
+    els.sceneTree.appendChild(p);
+    return;
   }
+  // Bucket each visible scene by chapter_id/act_id from scene_placements.
+  const buckets = new Map(); // chapter_id → Map(act_id → [scene])
   const placedSceneIds = new Set();
+  for (const scene of state.filteredScenes) {
+    const placement = state.scenePlacements[scene.scene_id];
+    if (!placement || !placement.chapter_id || !placement.act_id) continue;
+    if (!buckets.has(placement.chapter_id)) buckets.set(placement.chapter_id, new Map());
+    const acts = buckets.get(placement.chapter_id);
+    if (!acts.has(placement.act_id)) acts.set(placement.act_id, []);
+    acts.get(placement.act_id).push(scene);
+    placedSceneIds.add(scene.scene_id);
+  }
   for (const chap of state.chapters) {
     const det = document.createElement('details');
     det.className = 'chapter-group';
     det.open = true;
-    const sum = document.createElement('summary');
-    sum.textContent = `${chap.chapter_id || '(no id)'} · ${chap.display_name || ''}`;
-    det.appendChild(sum);
+    const sumEl = document.createElement('summary');
+    sumEl.textContent = `${chap.chapter_id || '(no id)'} · ${chap.display_name || ''}`;
+    det.appendChild(sumEl);
+    const acts = buckets.get(chap.chapter_id) || new Map();
     for (const act of chap.acts || []) {
       const actDet = document.createElement('details');
       actDet.className = 'act-group';
@@ -241,38 +265,34 @@ function renderChapterTree() {
       actDet.appendChild(actSum);
       const ul = document.createElement('ul');
       ul.className = 'act-scene-list';
-      let added = 0;
-      for (const anchor of act.included_scenes || []) {
-        for (const scene of visibleByAnchor.get(anchor) || []) {
-          if (placedSceneIds.has(scene.scene_id)) continue;
-          placedSceneIds.add(scene.scene_id);
-          ul.appendChild(buildSceneRow(scene));
-          added += 1;
-        }
-      }
-      if (added === 0) {
+      const scenes = acts.get(act.act_id) || [];
+      if (scenes.length === 0) {
         const empty = document.createElement('li');
         empty.className = 'placeholder';
         empty.textContent = '（本 act 暂无可见场景）';
         ul.appendChild(empty);
+      } else {
+        for (const scene of scenes) ul.appendChild(buildSceneRow(scene));
       }
       actDet.appendChild(ul);
       det.appendChild(actDet);
     }
     els.sceneTree.appendChild(det);
   }
-  // Orphan scenes (anchor not placed under any act)
-  const orphans = state.filteredScenes.filter((s) => !placedSceneIds.has(s.scene_id));
-  if (orphans.length > 0) {
+  // Unplaced scenes — sidecar lacks chapter_id/act_id AND ontology
+  // anchor lookup didn't resolve.  Surface them in a separate group so
+  // the operator can see what's missing rather than silently hiding.
+  const unplaced = state.filteredScenes.filter((s) => !placedSceneIds.has(s.scene_id));
+  if (unplaced.length > 0) {
     const det = document.createElement('details');
     det.className = 'chapter-group chapter-orphan';
     det.open = true;
-    const sum = document.createElement('summary');
-    sum.textContent = `（未归属 / orphan · ${orphans.length}）`;
-    det.appendChild(sum);
+    const sumEl = document.createElement('summary');
+    sumEl.textContent = `（未归属 — sidecar 缺 chapter_id/act_id · ${unplaced.length}）`;
+    det.appendChild(sumEl);
     const ul = document.createElement('ul');
     ul.className = 'act-scene-list';
-    for (const scene of orphans) ul.appendChild(buildSceneRow(scene));
+    for (const scene of unplaced) ul.appendChild(buildSceneRow(scene));
     det.appendChild(ul);
     els.sceneTree.appendChild(det);
   }
@@ -954,55 +974,62 @@ function applyStaleBannerForScene(sceneId) {
 // T-3.6b RUI-INT-4: chapter / act link in scene header
 // ---------------------------------------------------------------------------
 
-function indexChapters() {
-  state.sceneAnchorToChapter = new Map();
-  for (const chap of state.chapters || []) {
-    for (const act of chap.acts || []) {
-      for (const anchor of act.included_scenes || []) {
-        state.sceneAnchorToChapter.set(anchor, {
-          chapter_id: chap.chapter_id,
-          chapter_name: chap.display_name,
-          act_id: act.act_id,
-          act_name: act.display_name,
-        });
-      }
-    }
-  }
-}
-
 async function loadChapters() {
   try {
     const payload = await api('/api/chapters');
     state.chapters = payload.chapters || [];
-    indexChapters();
+    state.scenePlacements = payload.scene_placements || {};
+    state.placementSummary = payload.placement_summary || null;
   } catch (err) {
     state.chapters = [];
-    state.sceneAnchorToChapter = new Map();
+    state.scenePlacements = {};
+    state.placementSummary = null;
     console.warn('[chapters] load failed', err);
   }
 }
 
+function chapterDisplayName(chapter_id) {
+  const chap = (state.chapters || []).find((c) => c.chapter_id === chapter_id);
+  return chap ? chap.display_name : '';
+}
+
+function actDisplayName(chapter_id, act_id) {
+  const chap = (state.chapters || []).find((c) => c.chapter_id === chapter_id);
+  if (!chap) return '';
+  const act = (chap.acts || []).find((a) => a.act_id === act_id);
+  return act ? act.display_name : '';
+}
+
 function renderChapterLinkForScene(detail) {
   const link = els.sceneChapterLink;
-  const anchor = (detail && detail.graph && detail.graph.scene_anchor) ||
-                 (state.scenes.find((s) => s.scene_id === detail.scene_id) || {}).scene_anchor;
-  if (!anchor) {
+  const placement = state.scenePlacements[detail.scene_id];
+  if (!placement) {
     link.hidden = true;
     return;
   }
-  const placement = state.sceneAnchorToChapter.get(anchor);
-  if (!placement) {
+  if (!placement.chapter_id || !placement.act_id) {
+    // Reviewer §4.3: when sidecar lacks chapter_id/act_id we no longer
+    // synthesize a "未归入" pseudo-placement.  Show a small advisory
+    // instead so the operator knows the data is missing — but never
+    // claim a chapter/act the data doesn't support.
     link.hidden = false;
+    const anchor = placement.scene_anchor || '';
     link.innerHTML =
-      `<span class="badge badge-muted">未归入 chapter / act</span> ` +
+      `<span class="badge badge-muted">sidecar 缺 chapter_id / act_id</span> ` +
       `<span class="advisory-note">scene_anchor=<code>${escapeHtml(anchor)}</code></span>`;
     return;
   }
+  const chapName = chapterDisplayName(placement.chapter_id);
+  const actName = actDisplayName(placement.chapter_id, placement.act_id);
+  const sourceBadge = placement.source === 'sidecar'
+    ? '<span class="badge badge-pass" title="from dep_index sidecar">sidecar</span>'
+    : '<span class="badge badge-info" title="ontology included_scenes lookup via scene_anchor">ontology</span>';
   link.hidden = false;
   link.innerHTML =
     `属 chapter <a href="#" data-chapter="${escapeHtml(placement.chapter_id)}">${escapeHtml(placement.chapter_id)}</a> ` +
-    `／ act <code>${escapeHtml(placement.act_id || '')}</code> ` +
-    `<span class="advisory-note">${escapeHtml(placement.chapter_name || '')} · ${escapeHtml(placement.act_name || '')}</span>`;
+    `／ act <code>${escapeHtml(placement.act_id)}</code> ` +
+    `${sourceBadge} ` +
+    `<span class="advisory-note">${escapeHtml(chapName)} · ${escapeHtml(actName)}</span>`;
   const a = link.querySelector('a[data-chapter]');
   if (a) a.addEventListener('click', (e) => {
     e.preventDefault();

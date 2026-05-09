@@ -369,10 +369,123 @@ def fixture_ontology(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def fixture_batch_with_playtest(fixture_batch_dir: Path) -> Path:
+def fixture_batch_with_sidecar(fixture_batch_dir: Path) -> Path:
+    """Extend the MVP batch with a ``deps/s_alpha.deps.json`` sidecar so
+    the sidecar-primary visual / chapter-placement paths can be tested.
+    """
+    deps_dir = fixture_batch_dir / "deps"
+    deps_dir.mkdir(parents=True, exist_ok=True)
+    (deps_dir / "s_alpha.deps.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "0.3.0",
+                "scene_id": "s_alpha",
+                "generated_at": "2026-05-09T00:00:00Z",
+                "ontology_ids_read": ["char_x"],
+                "state_paths_read": [],
+                "state_paths_written": [],
+                "visual_asset_ids_referenced": ["img_char_x_neutral", "img_scene_alpha_bg"],
+                "clock_ids_referenced": [],
+                "chapter_id": "chap_intro",
+                "act_id": "act_arrival",
+                "prompt_template_hash": "sha256:" + "b" * 64,
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    return fixture_batch_dir
+
+
+@pytest.fixture
+def fixture_batch_with_playtest_at_experiments_root(tmp_path: Path) -> tuple[Path, Path]:
+    """Finding 4.2 — playtest_NNN/ lives at ``generator/experiments/``,
+    not nested in a batch directory.  Returns ``(batch_dir, experiments_root)``
+    so a test can verify the production-default path heuristic.
+    """
+    experiments_root = tmp_path / "generator" / "experiments"
+    batch_dir = experiments_root / "20260509T000000Z_baseline"
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    # Minimal scene_results.jsonl so the loader has something to list
+    (batch_dir / "scene_results.jsonl").write_text(
+        json.dumps(
+            {
+                "iter_id": 0,
+                "fixture_id": "fix",
+                "fixture": {
+                    "scene_setting": {"scene_anchor": "scene_x"},
+                    "target_beats": [],
+                    "participating_npcs": [],
+                },
+                "result": {
+                    "success": True,
+                    "graph": {
+                        "schema_version": "0.1.1",
+                        "graph_id": "s_x",
+                        "entry_node_id": "n0",
+                        "scene_anchor": "scene_x",
+                        "character_refs": [],
+                        "nodes": {
+                            "n0": {"node_id": "n0", "type": "end", "narration": "x", "speaker_ref": None, "options": []}
+                        },
+                    },
+                    "total_cost_usd": 0.0,
+                    "inner_attempt_count": 1,
+                },
+                "validator_summaries": {
+                    "mechanical": {"pass": True, "error_node_count": 0, "error_count": 0, "error_codes": []},
+                    "topology": {"pass": True, "pure_topology_pass": True, "condition_form_pass": True, "error_count": 0, "warning_count": 0, "error_codes": []},
+                    "sampling": {"sample_count": 1, "reached_end_count": 1, "deadlock_count": 0, "avg_path_length": 1.0},
+                },
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    # Playtest run lives at the SIBLING level (the real T-3.4 layout).
+    run_dir = experiments_root / "playtest_001"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "playtest_id": "playtest_001",
+                "scenes_played": ["s_x"],
+                "started_at": "2026-05-09T00:00:00Z",
+                "completed_at": "2026-05-09T00:01:00Z",
+                "model_id": "stub",
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "worst_scenes.json").write_text(
+        json.dumps(
+            {
+                "playtest_id": "playtest_001",
+                "rubric_version": "test",
+                "scenes": [{"scene_id": "s_x", "n_paths": 1, "critical_count": 0, "scene_quality_score": 8.0, "mean_path_score": 8.0, "min_path_score": 8.0, "max_path_score": 8.0, "n_paths_judged": 1, "n_paths_failed": 0, "major_count": 0, "minor_count": 0, "worst_path_summaries": [], "critical_findings": []}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "worst_paths.jsonl").write_text(
+        json.dumps({"path_id": "p1", "scene_id": "s_x", "persona_id": "speedrunner", "judge_score": 8.0, "critical_count": 0, "major_count": 0, "minor_count": 0, "reached_end": True, "end_node_id": "n0", "failure_reason": None, "severity_findings": [], "judge_dimensions": {}, "judge_rationale": "ok", "steps": []}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return batch_dir, experiments_root
+
+
+@pytest.fixture
+def fixture_batch_with_playtest(fixture_batch_with_sidecar: Path) -> Path:
     """Add a ``playtest_001/`` directory under ``batch_dir`` with the
     three playtest artifacts (run_manifest + worst_scenes + worst_paths).
-    Honors the prompt's literal ``batch_dir/playtest_NNN/`` contract."""
+    Honors the prompt's literal ``batch_dir/playtest_NNN/`` contract;
+    finding 4.2's production-default path is exercised separately via
+    :func:`fixture_batch_with_playtest_at_experiments_root`.
+    """
+    fixture_batch_dir = fixture_batch_with_sidecar
     run_dir = fixture_batch_dir / "playtest_001"
     run_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
