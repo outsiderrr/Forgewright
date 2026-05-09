@@ -238,6 +238,21 @@ Schema 定稿后可并行三路：
 - 开源框架是否包含默认插件（Save the Cat 等）
 - 社区如何贡献插件
 
+### 阶段 4 切换协议（2026-05-09 战略校准 v0.1 吸收）
+
+> 来源：`/docs/reviews/master_plan/2026-05-09_strategy_calibration_v0.1.md` §2 Q1.4 + Q1.5。给 L2 阶段 4 规划师起手时阅读。
+
+- **北极星指标**：A 完成度（作者本人 RPG 作品完成）
+- **工具改进合法触发条件**：写内容时遇到瓶颈 + 改进能加速 A
+  - 评估问句：这个工具改进会让 A 完成时间缩短吗？
+  - 答案 = no → 推到 TODOS / 阶段 4 之后
+  - 答案 = yes → 在最小可行范围内做
+- **Scope 弹性**：MVP 场景数量从硬性数字改为 10–100 弹性区间，从 10 起步阶梯扩张（10 → 30 → 50 → 100，按需）。见 ADR-010 v0.2 修订
+- **完成定义三档**：(b) 作者本人玩通 → (c) 3–5 朋友玩通 → (d) itch.io 免费发布
+- **(e) Steam 上架**：跳过，除非 itch.io 反响足够好后再决定
+  - 理由：Steam 真实成本 = $100 USD Steam Direct 沉没 + 8 种胶囊规格 + IARC 强制评级 + Valve 审核 2–5 工作日 + 必须 Win/Mac binary 通过测试 + 中国作者 W-8BEN 税务流程 + 首次上架 2–4 周；vs itch.io 1–3 小时无审核
+- **失败模式警示**：警惕"做工具滑回继续做工具"的失败模式（很多独立创作者最终成了引擎/工具开发者而没做出游戏）。北极星指标 + 工具改进必须服务 A 完成时间 = 这个失败模式的防御机制
+
 ---
 
 ## 更新记录
@@ -250,6 +265,7 @@ Schema 定稿后可并行三路：
 - **2026-05-02**：阶段 1.5 验收**部分通过 / 有条件通过**（见 `/docs/STAGE_1.5_ACCEPTANCE.md`）。10 任务 ABC 全闭环 + 工具链端到端实证（mini probe vellin 5 张入库 PASS）；R1.5-1~6 遗留（剩余 14 立绘 + 1 background 全 batch 生图作者主动跳过 / 接受率未测 / AI 判官 vs 作者 kappa 未算 / C4 parity smoke 未跑 / alpha 形式合规但实际不透明 / mini probe 工作流 ergonomic）。ADR-015 串行卡口解锁——阶段 2 schema commit 现可启动
 - **2026-05-03**：§阶段 2 完成标志措辞从"证明任意合法状态组合下至少有 1 个结局可达"修订为"抽样验证 N=100 路径 + 有界符号执行下未发现反例"，与 ADR-021（待立项）实际口径对齐。来源：STAGE_2_TASKS_v1.0_draft §13 X1（GPT-5.5 critique 5.4 整合）。
 - **2026-05-07**：阶段 2 验收**通过**（见 `/docs/STAGE_2_ACCEPTANCE.md`）。baseline_011 N=15 gross_pass_rate **100%**（schema / topology / sampling / mechanical 全 100%）；ADR-016/017/018/019/020/021 立项 + 落地；R2.X follow-up 修复链路 7 项（R2.2 → R2.6 → R2.7 → R2.8 → R2.9 → R2.10a → R2.10b）；R2-5 / R2-10c / R2-iter-逃逸 / R2-cyclic / R2-1 / X4 六条遗留（不阻塞阶段 3 启动）。审美层（[A]/[R]/[S]）评估推迟到阶段 4——feedback memory 锁定，X4 ADR-020 v0.2 修订属未来 L1 文档级元任务。`/docs/HANDOFF_STAGE_2_TO_3.md` v0.1 草稿同期产出。
+- **2026-05-09**：阶段 4 切换协议子段插入（北极星 = A 完成度 / Scope 弹性 10–100 / 完成定义三档 / 跳过 Steam (e) / 失败模式警示）；联动 ADR-010 v0.2 修订（MVP 场景从硬性 50–100 改为弹性 10–100）+ ADR-027 立项（World-Agnostic Principle）。来源：`/docs/reviews/master_plan/2026-05-09_strategy_calibration_v0.1.md` v0.1。
 
 ## 版本
 
