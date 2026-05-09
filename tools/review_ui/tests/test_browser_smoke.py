@@ -1,26 +1,26 @@
 """Browser smoke test (T-3.6a / v1.0 F16 mandatory).
 
 Boots the FastAPI app on a real ephemeral port via uvicorn, drives it
-with Playwright headless Chromium, and verifies:
+with Playwright headless Chromium, and verifies the four MVP views plus
+the review C-phase regression matrix:
 
-  * the index page renders
-  * ``/api/scenes`` populates the left nav
-  * a click selects a scene and renders the mermaid graph as ``<svg>``
-  * the validator panel + A/R/S buttons are present
+  * mermaid SVG actually renders (DOM ``<svg>``)
+  * vendor + ASCII fallback paths both reachable
+  * `[A]` / `[R]` / `[S]` all round-trip into ``scene_review_log.jsonl``
+  * content/ scenes leave A/R/S disabled (review C-3.1 read-only gate)
 
 Skipped (not failed) if Playwright isn't installed — local dev opt-in.
 For the A-phase deliverable, install with:
 
     pip install playwright
-    python -m playwright install chromium
+    python -m playwright install chromium-headless-shell
 
-Screenshots are saved under ``--screenshot-dir`` (default
-``tools/review_ui/tests/_screenshots/``) for the PR description.
+Screenshots are saved under ``tools/review_ui/tests/_screenshots/`` for
+the PR description.
 """
 from __future__ import annotations
 
 import json
-import os
 import socket
 import threading
 import time
@@ -80,14 +80,18 @@ def _ensure_screenshot_dir() -> Path:
     return SCREENSHOT_DIR
 
 
+def _launch(p):
+    try:
+        return p.chromium.launch(headless=True)
+    except Exception as exc:  # pragma: no cover — env-dependent
+        pytest.skip(f"chromium not installed for playwright: {exc}")
+
+
 def test_browser_smoke_full_walk(live_server: str) -> None:
     """End-to-end smoke: load index, click scene, verify mermaid SVG, screenshot."""
     out = _ensure_screenshot_dir()
     with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(headless=True)
-        except Exception as exc:  # pragma: no cover — env-dependent
-            pytest.skip(f"chromium not installed for playwright: {exc}")
+        browser = _launch(p)
         context = browser.new_context(viewport={"width": 1440, "height": 900})
         page = context.new_page()
         console_msgs: list[str] = []
@@ -101,11 +105,7 @@ def test_browser_smoke_full_walk(live_server: str) -> None:
 
         # View 2: graph view — click the s_alpha row, wait for mermaid SVG
         page.click("text=s_alpha")
-        page.wait_for_selector(
-            "#graph-container svg", timeout=10_000,
-            state="attached",
-        )
-        # mermaid badge should reflect render source
+        page.wait_for_selector("#graph-container svg", timeout=10_000, state="attached")
         badge_text = page.text_content("#graph-source-badge")
         assert badge_text and "graph:" in badge_text, badge_text
         assert "vendor" in badge_text or "cdn" in badge_text or "fallback" in badge_text, badge_text
@@ -121,38 +121,103 @@ def test_browser_smoke_full_walk(live_server: str) -> None:
         page.fill("#reject-reason", "smoke test reject reason (not submitted)")
         page.screenshot(path=str(out / "04_review_ars.png"), full_page=True)
 
-        # Bonus: ASCII fallback view also renders (covers F17 fallback path)
+        # F17 fallback: ASCII view also renders
         page.click(".format-btn[data-format='ascii']")
         page.wait_for_selector("#graph-container pre", timeout=5_000)
         page.screenshot(path=str(out / "05_graph_ascii_fallback.png"), full_page=True)
 
-        # Persist the console log alongside the screenshots for the PR description.
         (out / "console.log").write_text("\n".join(console_msgs), encoding="utf-8")
-
         browser.close()
 
 
-def test_browser_smoke_review_post_persists(live_server: str, fixture_batch_dir: Path) -> None:
-    """Drive the A button end-to-end and verify the JSONL log gains a row."""
+def test_browser_smoke_arsk_round_trips(live_server: str, fixture_batch_dir: Path) -> None:
+    """Review C-3.2 + C-4.1 — `[A]`, `[R]`, `[S]` all persist + status reflects.
+
+    Walks the matrix in one session so the test enumerates every button
+    that the prior smoke skipped (only `[A]` was covered before).
+    """
     log_path = fixture_batch_dir / "scene_review_log.jsonl"
     assert not log_path.exists()
     with sync_playwright() as p:
-        try:
-            browser = p.chromium.launch(headless=True)
-        except Exception as exc:  # pragma: no cover
-            pytest.skip(f"chromium not installed for playwright: {exc}")
+        browser = _launch(p)
         page = browser.new_page()
         page.goto(live_server)
         page.wait_for_selector("#scene-list .scene-row")
+
+        # 1. Accept s_alpha
         page.click("text=s_alpha")
         page.wait_for_selector("#btn-accept:not([disabled])")
         page.click("#btn-accept")
-        # The flash message becomes "已写入 scene_review_log.jsonl" once the POST round-trips.
         page.wait_for_selector("#review-flash.success", timeout=5_000)
+        # The auto-advance flips selection; reselect s_alpha to issue [R].
+        page.wait_for_timeout(900)  # let the 700ms setTimeout(nextScene) settle
+        page.click("text=s_alpha")
+        page.wait_for_selector("#btn-reject:not([disabled])")
+
+        # 2. Reject s_alpha
+        page.fill("#reject-reason", "smoke: reject pacing")
+        page.click("#btn-reject")
+        page.wait_for_selector("#review-flash.success", timeout=5_000)
+        page.wait_for_timeout(900)
+        page.click("text=s_alpha")
+        page.wait_for_selector("#btn-skip:not([disabled])")
+
+        # 3. Skip s_alpha (review C-3.2: must POST + persist accepted=null)
+        page.fill("#reject-reason", "smoke: defer to next session")
+        page.click("#btn-skip")
+        page.wait_for_selector("#review-flash.success", timeout=5_000)
+        page.wait_for_timeout(900)
+
         browser.close()
-    rows = [
-        json.loads(line)
-        for line in log_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    assert any(r.get("scene_id") == "s_alpha" and r.get("accepted") is True for r in rows)
+
+    rows = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    accepted = [r for r in rows if r.get("scene_id") == "s_alpha" and r.get("accepted") is True]
+    rejected = [r for r in rows if r.get("scene_id") == "s_alpha" and r.get("accepted") is False]
+    skipped = [r for r in rows if r.get("scene_id") == "s_alpha" and r.get("accepted") is None]
+    assert accepted and accepted[-1]["scene_id"] == "s_alpha"
+    assert rejected and rejected[-1]["reason"] == "smoke: reject pacing"
+    assert skipped and skipped[-1]["reason"] == "smoke: defer to next session"
+
+
+def test_browser_smoke_unreviewable_disables_buttons(live_server: str) -> None:
+    """Review C-3.1 — UI must disable A/R/S for content scenes + failed batch rows."""
+    out = _ensure_screenshot_dir()
+    with sync_playwright() as p:
+        browser = _launch(p)
+        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        page = context.new_page()
+        page.goto(live_server)
+        page.wait_for_selector("#scene-list .scene-row")
+
+        def open_scene_via_nav(scene_id: str) -> None:
+            page.click(f".scene-row[data-scene-id='{scene_id}']")
+            # Wait for the detail panel to swap to the new scene_id; the title
+            # reflects what's actually loaded, so we poll on it.
+            page.wait_for_function(
+                "id => document.getElementById('scene-title').textContent.includes(id)",
+                arg=scene_id,
+                timeout=5_000,
+            )
+
+        # Content scene: demo_scene
+        open_scene_via_nav("demo_scene")
+        page.wait_for_selector("#not-reviewable-note:not([style*='display: none'])", timeout=5_000)
+        for sel in ("#btn-accept", "#btn-reject", "#btn-skip"):
+            assert page.get_attribute(sel, "disabled") is not None, sel
+        note = page.text_content("#not-reviewable-note") or ""
+        assert "content/" in note, note
+        page.screenshot(path=str(out / "06_review_disabled_content.png"), full_page=True)
+
+        # Failed batch row: iter_1 (fixture_batch_dir failure envelope)
+        open_scene_via_nav("iter_1")
+        page.wait_for_function(
+            "() => (document.getElementById('not-reviewable-note').textContent || '').includes('failed batch row')",
+            timeout=5_000,
+        )
+        for sel in ("#btn-accept", "#btn-reject", "#btn-skip"):
+            assert page.get_attribute(sel, "disabled") is not None, sel
+        note = page.text_content("#not-reviewable-note") or ""
+        assert "failed batch row" in note, note
+        page.screenshot(path=str(out / "07_review_disabled_failed.png"), full_page=True)
+
+        browser.close()

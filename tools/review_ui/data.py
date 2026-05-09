@@ -78,7 +78,7 @@ class SceneSummary:
     source: str  # "batch" | "content"
     success: bool | None
     failure_reason: str | None
-    review_status: str  # "unreviewed" | "accepted" | "rejected"
+    review_status: str  # "unreviewed" | "accepted" | "rejected" | "skipped"
     review_reason: str | None
     advisory: str | None
     schema_pass: bool | None
@@ -88,6 +88,8 @@ class SceneSummary:
     cost_usd: float | None
     node_count: int | None
     has_deps_sidecar: bool
+    reviewable: bool = False
+    not_reviewable_reason: str | None = None
     graph_views_available: list[str] = field(default_factory=list)
 
 
@@ -186,6 +188,11 @@ class ReviewDataLoader:
                 "review": None,
                 "deps": _read_json_or_none(deps_path),
                 "cost_usd": None,
+                "reviewable": False,
+                "not_reviewable_reason": (
+                    "content/ scene already accepted; edits live in JSON + git, "
+                    "not in scene_review_log.jsonl (ADR-025)"
+                ),
                 "graph_views_available": [],
                 "scene_path": str(path),
             }
@@ -193,24 +200,49 @@ class ReviewDataLoader:
 
     # -- graph view file ---------------------------------------------------
 
+    def _graph_views_root(self) -> Path | None:
+        if not self.batch_dir:
+            return None
+        return (self.batch_dir / "graph_views").resolve()
+
+    def _safe_view_dir(self, scene_id: str) -> Path | None:
+        """Resolve ``graph_views/<scene_id>/`` and reject path traversal.
+
+        Without the ``is_relative_to`` guard, a URL-encoded ``..`` in
+        ``scene_id`` could escape the graph_views root and read arbitrary
+        files under ``batch_dir``.  ``review C-4.2`` tightens this even
+        though ``cli.py`` defaults to ``--host 127.0.0.1`` — the CLI lets
+        the operator override it, so we don't trust the network boundary.
+        """
+        root = self._graph_views_root()
+        if root is None:
+            return None
+        view_dir = (root / scene_id).resolve()
+        try:
+            view_dir.relative_to(root)
+        except ValueError:
+            return None
+        return view_dir
+
     def get_graph_file(self, scene_id: str, fmt: str) -> tuple[str, str] | None:
-        if fmt not in GRAPH_FORMATS or not self.batch_dir:
+        if fmt not in GRAPH_FORMATS:
+            return None
+        view_dir = self._safe_view_dir(scene_id)
+        if view_dir is None or not view_dir.is_dir():
             return None
         filename, content_type = GRAPH_FORMATS[fmt]
-        path = self.batch_dir / "graph_views" / scene_id / filename
-        if not path.exists():
+        path = view_dir / filename
+        if not path.is_file():
             return None
         return path.read_text(encoding="utf-8"), content_type
 
     def graph_views_available(self, scene_id: str) -> list[str]:
-        if not self.batch_dir:
-            return []
-        view_dir = self.batch_dir / "graph_views" / scene_id
-        if not view_dir.is_dir():
+        view_dir = self._safe_view_dir(scene_id)
+        if view_dir is None or not view_dir.is_dir():
             return []
         out: list[str] = []
         for fmt, (filename, _) in GRAPH_FORMATS.items():
-            if (view_dir / filename).exists():
+            if (view_dir / filename).is_file():
                 out.append(fmt)
         return out
 
@@ -221,6 +253,29 @@ class ReviewDataLoader:
             return None
         return self.batch_dir / "scene_review_log.jsonl"
 
+    def is_reviewable(self, scene_id: str, iter_id: int | None) -> tuple[bool, str | None]:
+        """Return (reviewable?, blocking_reason).
+
+        Acceptance-truth-source guard (review C-3.1): only batch envelopes
+        that succeeded AND passed mechanical pre-check can carry an A/R/S
+        decision.  ``content/`` scenes are already accepted and live under
+        author-managed git, not the review log.  Failed-batch rows must
+        be rerun, not annotated.
+        """
+        env = self._lookup_envelope(scene_id, iter_id)
+        if env is None:
+            return False, f"scene_id not found in batch_dir: {scene_id!r}"
+        result = env.get("result") or {}
+        if result.get("success") is not True:
+            return False, (
+                f"failed batch row (failure_reason={result.get('failure_reason')!r}); "
+                "rerun rather than annotate"
+            )
+        passes = _validator_passes(env)
+        if passes["mechanical_pass"] is not True:
+            return False, "scene failed mechanical pre-check (T-2.4); not reviewable"
+        return True, None
+
     def append_review(
         self,
         *,
@@ -229,25 +284,39 @@ class ReviewDataLoader:
         decision: str,
         reason: str | None,
     ) -> dict[str, Any]:
-        if decision not in ("accept", "reject"):
-            raise ValueError(f"decision must be 'accept' or 'reject', got {decision!r}")
+        if decision not in ("accept", "reject", "skip"):
+            raise ValueError(
+                f"decision must be 'accept', 'reject', or 'skip', got {decision!r}"
+            )
+        if decision in ("reject", "skip") and not (reason or "").strip():
+            raise ValueError(f"{decision!r} requires a non-empty reason")
         log_path = self.review_log_path()
         if log_path is None:
             raise RuntimeError("batch_dir is required for review submissions")
+        ok, why = self.is_reviewable(scene_id, iter_id)
+        if not ok:
+            raise ValueError(f"scene not reviewable: {why}")
         env = self._lookup_envelope(scene_id, iter_id)
-        passes = _validator_passes(env or {})
-        topo = ((env or {}).get("validator_summaries") or {}).get("topology") or {}
+        assert env is not None  # is_reviewable just confirmed
+        passes = _validator_passes(env)
+        topo = (env.get("validator_summaries") or {}).get("topology") or {}
+        if decision == "accept":
+            accepted: bool | None = True
+        elif decision == "reject":
+            accepted = False
+        else:
+            accepted = None  # skip
         record = {
-            "iter_id": iter_id if iter_id is not None else (env or {}).get("iter_id"),
+            "iter_id": iter_id if iter_id is not None else env.get("iter_id"),
             "scene_id": scene_id,
-            "schema_pass": passes["schema_pass"] if passes["schema_pass"] is not None else True,
+            "schema_pass": passes["schema_pass"] is True,
             "topology_pass": topo.get("pass"),
             "pure_topology_pass": topo.get("pure_topology_pass"),
             "condition_form_pass": topo.get("condition_form_pass"),
             "sampling_pass": passes["sampling_pass"],
             "mechanical_pass": passes["mechanical_pass"],
-            "accepted": decision == "accept",
-            "reason": reason if decision == "reject" else None,
+            "accepted": accepted,
+            "reason": reason.strip() if decision in ("reject", "skip") else None,
             "reviewed_at": _now_iso(),
         }
         with self._review_lock:
@@ -268,14 +337,19 @@ class ReviewDataLoader:
         review = self._review_index().get((env.get("iter_id"), scene_id))
         if review is None:
             status, review_reason = "unreviewed", None
-        elif review.get("accepted"):
+        elif review.get("accepted") is True:
             status, review_reason = "accepted", review.get("reason")
-        else:
+        elif review.get("accepted") is False:
             status, review_reason = "rejected", review.get("reason")
+        else:  # accepted is None → review C-3.2 [S] skip persisted
+            status, review_reason = "skipped", review.get("reason")
         deps_path = (
             self.batch_dir / "deps" / f"{scene_id}.deps.json"
             if self.batch_dir
             else None
+        )
+        reviewable, not_reviewable_reason = self.is_reviewable(
+            scene_id, env.get("iter_id")
         )
         return SceneSummary(
             scene_id=scene_id,
@@ -294,6 +368,8 @@ class ReviewDataLoader:
             cost_usd=result.get("total_cost_usd"),
             node_count=len(graph.get("nodes") or {}),
             has_deps_sidecar=bool(deps_path and deps_path.exists()),
+            reviewable=reviewable,
+            not_reviewable_reason=not_reviewable_reason,
             graph_views_available=self.graph_views_available(scene_id),
         )
 
@@ -306,6 +382,9 @@ class ReviewDataLoader:
         if self.batch_dir:
             deps_path = self.batch_dir / "deps" / f"{scene_id}.deps.json"
             deps = _read_json_or_none(deps_path)
+        reviewable, not_reviewable_reason = self.is_reviewable(
+            scene_id, env.get("iter_id")
+        )
         return {
             "scene_id": scene_id,
             "source": "batch",
@@ -322,6 +401,8 @@ class ReviewDataLoader:
             "inner_attempt_count": result.get("inner_attempt_count"),
             "failure_reason": result.get("failure_reason"),
             "failure_node_id": result.get("failure_node_id"),
+            "reviewable": reviewable,
+            "not_reviewable_reason": not_reviewable_reason,
             "graph_views_available": self.graph_views_available(scene_id),
         }
 
@@ -346,6 +427,11 @@ class ReviewDataLoader:
                 advisory=None,
                 schema_pass=None,
                 mechanical_pass=None,
+                reviewable=False,
+                not_reviewable_reason=(
+                    "content/ scene already accepted; edits live in JSON + git, "
+                    "not in scene_review_log.jsonl (ADR-025)"
+                ),
                 topology_pass=None,
                 sampling_pass=None,
                 cost_usd=None,

@@ -13,6 +13,7 @@ const state = {
     unreviewed: true,
     accepted: true,
     rejected: true,
+    skipped: true,
     failed: true,
   },
 };
@@ -58,7 +59,10 @@ async function ensureMermaid() {
     console.warn('[mermaid] vendor bundle missing; trying CDN', e);
   }
   try {
-    await loadScript('https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js');
+    // Pin to the same version as the vendor bundle (review C-5.1) so the
+    // CDN fallback can't drift to a different rendering between A and B
+    // phase screenshots.  Refresh both sites in lockstep — see vendor/README.
+    await loadScript('https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js');
     if (window.mermaid) {
       window.mermaid.initialize({ startOnLoad: false, theme: 'default', securityLevel: 'strict' });
       state.mermaidStatus = 'cdn';
@@ -98,6 +102,7 @@ function statusLabel(scene) {
   if (scene.success === false) return { text: '失败', cls: 'badge-fail' };
   if (scene.review_status === 'accepted') return { text: '[A]', cls: 'badge-pass' };
   if (scene.review_status === 'rejected') return { text: '[R]', cls: 'badge-fail' };
+  if (scene.review_status === 'skipped') return { text: '[S]', cls: 'badge-warn' };
   if (scene.source === 'content') return { text: 'content', cls: 'badge-info' };
   return { text: '未审', cls: 'badge-muted' };
 }
@@ -121,6 +126,7 @@ function applyFilters() {
     if (s.success === false && !state.filters.failed) return false;
     if (s.review_status === 'accepted' && !state.filters.accepted) return false;
     if (s.review_status === 'rejected' && !state.filters.rejected) return false;
+    if (s.review_status === 'skipped' && !state.filters.skipped) return false;
     if (s.review_status === 'unreviewed' && s.success !== false && !state.filters.unreviewed) return false;
     return true;
   });
@@ -143,6 +149,7 @@ function renderSceneList() {
     if (scene.success === false) li.classList.add('failed');
     if (scene.review_status === 'accepted') li.classList.add('accepted');
     if (scene.review_status === 'rejected') li.classList.add('rejected');
+    if (scene.review_status === 'skipped') li.classList.add('skipped');
     li.dataset.sceneId = scene.scene_id;
 
     const id = document.createElement('span');
@@ -303,18 +310,29 @@ function renderAdvisory(advisory, rationale) {
 function renderReviewSection(detail) {
   const review = detail.review;
   if (review) {
-    const verdict = review.accepted ? '[A] accepted' : '[R] rejected';
+    let verdict;
+    if (review.accepted === true) verdict = '[A] accepted';
+    else if (review.accepted === false) verdict = '[R] rejected';
+    else verdict = '[S] skipped';
     const reason = review.reason ? ` · reason: ${review.reason}` : '';
     els.reviewStatus.textContent = `已审：${verdict} @ ${review.reviewed_at}${reason}（提交新决策会追加新行）`;
   } else {
     els.reviewStatus.textContent = '未审。';
   }
-  const isContent = detail.source === 'content';
-  els.btnAccept.disabled = isContent;
-  els.btnReject.disabled = isContent;
-  els.btnSkip.disabled = false;
-  if (isContent) {
-    els.reviewStatus.textContent = 'content 来源场景不可在此 UI 提交审阅（请改 batch_dir 来源场景）。';
+  // Acceptance-truth-source guard (review C-3.1): only batch envelopes that
+  // succeeded + passed mechanical pre-check carry an A/R/S decision.  The
+  // server is authoritative; the UI mirrors `detail.reviewable` so the
+  // button is disabled for failed/content rows even before the POST round-trips.
+  const reviewable = detail.reviewable === true;
+  els.btnAccept.disabled = !reviewable;
+  els.btnReject.disabled = !reviewable;
+  els.btnSkip.disabled = !reviewable;
+  if (!reviewable && detail.not_reviewable_reason) {
+    els.notReviewableNote.style.display = '';
+    els.notReviewableNote.textContent = `不可审：${detail.not_reviewable_reason}`;
+  } else {
+    els.notReviewableNote.style.display = 'none';
+    els.notReviewableNote.textContent = '';
   }
 }
 
@@ -385,13 +403,13 @@ async function loadAndRenderGraph() {
 async function submitReview(decision) {
   const detail = state.currentDetail;
   if (!detail) return;
-  if (decision === 'skip') {
-    nextScene();
+  if (detail.reviewable !== true) {
+    setReviewFlash(`不可审：${detail.not_reviewable_reason || '场景不在 batch_dir 或未通过 mechanical 预检'}`, 'error');
     return;
   }
   const reason = els.rejectReason.value.trim();
-  if (decision === 'reject' && !reason) {
-    setReviewFlash('Reject 必须填 reason。', 'error');
+  if ((decision === 'reject' || decision === 'skip') && !reason) {
+    setReviewFlash(`${decision === 'reject' ? 'Reject' : 'Skip'} 必须填 reason。`, 'error');
     els.rejectReason.focus();
     return;
   }
@@ -400,14 +418,15 @@ async function submitReview(decision) {
       scene_id: detail.scene_id,
       iter_id: detail.iter_id,
       decision,
-      reason: decision === 'reject' ? reason : null,
+      reason: decision === 'accept' ? null : reason,
     };
     const res = await api('/api/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    setReviewFlash(`已写入 scene_review_log.jsonl（${res.record.reviewed_at}）`, 'success');
+    const verdict = decision === 'accept' ? '[A]' : decision === 'reject' ? '[R]' : '[S]';
+    setReviewFlash(`已写入 ${verdict} → scene_review_log.jsonl（${res.record.reviewed_at}）`, 'success');
     // Refresh the left nav so the row's status reflects the new decision.
     // The flash is short-lived: keep it visible for ~700ms so the author
     // sees the confirmation before we auto-jump to the next unreviewed scene.
@@ -476,6 +495,7 @@ function bindFilters() {
     'filter-unreviewed': 'unreviewed',
     'filter-accepted': 'accepted',
     'filter-rejected': 'rejected',
+    'filter-skipped': 'skipped',
     'filter-failed': 'failed',
   };
   for (const [id, key] of Object.entries(map)) {
@@ -522,6 +542,7 @@ function cacheElements() {
   els.btnSkip = document.getElementById('btn-skip');
   els.rejectReason = document.getElementById('reject-reason');
   els.reviewFlash = document.getElementById('review-flash');
+  els.notReviewableNote = document.getElementById('not-reviewable-note');
 }
 
 async function boot() {

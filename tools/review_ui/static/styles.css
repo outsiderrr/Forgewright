@@ -146,7 +146,8 @@ html, body {
 
 .scene-row.failed { border-left: 3px solid var(--fail); }
 .scene-row.accepted { border-left: 3px solid var(--pass); }
-.scene-row.rejected { border-left: 3px solid var(--warn); }
+.scene-row.rejected { border-left: 3px solid var(--fail); }
+.scene-row.skipped { border-left: 3px solid var(--warn); }
 
 /* ----- main pane ----- */
 

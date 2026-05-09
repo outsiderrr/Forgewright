@@ -83,10 +83,26 @@ def main() -> None:
         page.wait_for_timeout(150)
         page.screenshot(path=str(OUT / "06_nodes.png"), full_page=False)
 
+        # 7. content scene — review C-3.1 read-only gate (A/R/S disabled)
+        scenes_payload = page.evaluate("fetch('/api/scenes').then(r => r.json())")
+        content_scene = next(
+            (s for s in scenes_payload["scenes"] if s["source"] == "content"),
+            None,
+        )
+        if content_scene:
+            page.click(f".scene-row[data-scene-id='{content_scene['scene_id']}']")
+            page.wait_for_function(
+                "() => (document.getElementById('not-reviewable-note').textContent || '').includes('content/')",
+                timeout=5_000,
+            )
+            page.click("#main-tabs .tab[data-tab='graph']")  # show the empty/placeholder graph
+            page.wait_for_timeout(200)
+            page.screenshot(path=str(OUT / "07_review_disabled_content.png"), full_page=False)
+
         browser.close()
 
     server.should_exit = True
-    print(f"wrote 6 screenshots to {OUT}")
+    print(f"wrote screenshots to {OUT}")
 
 
 if __name__ == "__main__":

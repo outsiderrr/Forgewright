@@ -23,6 +23,7 @@
         <label><input type="checkbox" id="filter-unreviewed" checked> 未审</label>
         <label><input type="checkbox" id="filter-accepted" checked> [A]</label>
         <label><input type="checkbox" id="filter-rejected" checked> [R]</label>
+        <label><input type="checkbox" id="filter-skipped" checked> [S]</label>
         <label><input type="checkbox" id="filter-failed" checked> 失败</label>
       </div>
       <ul id="scene-list"></ul>
@@ -96,8 +97,9 @@
           <button id="btn-reject" class="btn btn-reject" disabled>[R] Reject</button>
           <button id="btn-skip" class="btn btn-skip" disabled>[S] Skip</button>
         </div>
-        <label class="reason-label" for="reject-reason">Reject reason（拒收时必填）</label>
-        <textarea id="reject-reason" rows="3" placeholder="（拒收原因，提交时必填）"></textarea>
+        <label class="reason-label" for="reject-reason">Reject / Skip reason（[R] 与 [S] 都必填）</label>
+        <textarea id="reject-reason" rows="3" placeholder="（[R] 写拒收理由；[S] 写为何跳过——例如"先看全集再决定"。[A] 不需要。）"></textarea>
+        <p id="not-reviewable-note" class="advisory-note" style="display:none"></p>
         <p id="review-flash" class="flash" role="status" aria-live="polite"></p>
       </section>
     </aside>

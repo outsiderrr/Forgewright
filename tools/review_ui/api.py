@@ -35,7 +35,7 @@ def get_loader(request: Request) -> ReviewDataLoader:
 class ReviewRequest(BaseModel):
     scene_id: str = Field(..., min_length=1)
     iter_id: int | None = None
-    decision: Literal["accept", "reject"]
+    decision: Literal["accept", "reject", "skip"]
     reason: str | None = None
 
 
@@ -90,8 +90,8 @@ def build_router() -> APIRouter:
         body: ReviewRequest,
         loader: ReviewDataLoader = Depends(get_loader),
     ) -> dict:
-        if body.decision == "reject" and not (body.reason or "").strip():
-            raise HTTPException(400, "reject requires a reason")
+        if body.decision in ("reject", "skip") and not (body.reason or "").strip():
+            raise HTTPException(400, f"{body.decision} requires a reason")
         try:
             record = loader.append_review(
                 scene_id=body.scene_id,

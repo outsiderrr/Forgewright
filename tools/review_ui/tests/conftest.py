@@ -116,7 +116,37 @@ def fixture_batch_dir(tmp_path: Path) -> Path:
         },
         "validator_summaries": {},
     }
-    _write_jsonl(batch / "scene_results.jsonl", [success_envelope, failure_envelope])
+    # success=True but failed mechanical pre-check — must still be unreviewable.
+    mech_fail_envelope = {
+        "iter_id": 2,
+        "fixture_id": "fix_gamma",
+        "fixture": {"scene_setting": {"scene_anchor": "scene_gamma"}, "target_beats": [], "participating_npcs": []},
+        "result": {
+            "success": True,
+            "failure_reason": None,
+            "failure_node_id": None,
+            "failure_metadata": None,
+            "total_cost_usd": 0.07,
+            "inner_attempt_count": 1,
+            "graph": {
+                "schema_version": "0.1.1",
+                "graph_id": "s_gamma",
+                "entry_node_id": "g0",
+                "scene_anchor": "scene_gamma",
+                "character_refs": [],
+                "nodes": {"g0": {"node_id": "g0", "type": "end", "narration": "g", "speaker_ref": None, "options": []}},
+            },
+        },
+        "validator_summaries": {
+            "mechanical": {"pass": False, "error_node_count": 1, "error_count": 1, "error_codes": ["E_MECH_001"]},
+            "topology": {"pass": True, "pure_topology_pass": True, "condition_form_pass": True, "error_count": 0, "warning_count": 0, "error_codes": []},
+            "sampling": {"sample_count": 100, "reached_end_count": 100, "deadlock_count": 0, "avg_path_length": 1.0},
+        },
+    }
+    _write_jsonl(
+        batch / "scene_results.jsonl",
+        [success_envelope, failure_envelope, mech_fail_envelope],
+    )
     _write_text(
         batch / "graph_views" / "s_alpha" / "mermaid.mmd",
         "flowchart TD\n  n_start[\"n_start\"]\n  n_end([\"n_end\"]):::endNode\n  n_start --> n_end\n  classDef endNode fill:#fce4ec,stroke:#ad1457;\n",
