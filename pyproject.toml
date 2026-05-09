@@ -15,11 +15,14 @@ dependencies = [
     "datamodel-code-generator>=0.56",
     "python-dotenv>=1.0",
     "Pillow>=10",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.23",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7",
+    "httpx>=0.24",
 ]
 
 [tool.setuptools]
@@ -37,6 +40,7 @@ packages = [
     "generator.models",
     "generator.models._generated",
     "tools",
+    "tools.review_ui",
     "generator.playtest",
 ]
 
@@ -44,3 +48,4 @@ packages = [
 "generator.prompts.visual" = ["*.md"]
 "generator.prompts.scene" = ["*.md"]
 "generator.playtest" = ["personas/*.json"]
+"tools.review_ui" = ["static/*.html", "static/*.css", "static/*.js", "static/vendor/*.js"]
