@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Forgewright Review UI · T-3.6a MVP</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Forgewright Review UI <small>T-3.6a MVP · ADR-025</small></h1>
+    <div class="topbar-meta">
+      <span id="batch-dir">batch: …</span>
+      <span id="scenes-dir">scenes: …</span>
+      <span id="graph-source-badge" class="badge badge-muted">graph: —</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="pane scene-list" aria-label="场景列表">
+      <h2>场景</h2>
+      <div class="filter-row">
+        <label><input type="checkbox" id="filter-unreviewed" checked> 未审</label>
+        <label><input type="checkbox" id="filter-accepted" checked> [A]</label>
+        <label><input type="checkbox" id="filter-rejected" checked> [R]</label>
+        <label><input type="checkbox" id="filter-failed" checked> 失败</label>
+      </div>
+      <ul id="scene-list"></ul>
+    </aside>
+
+    <section class="pane scene-main" aria-label="场景主视图">
+      <header class="scene-header">
+        <h2 id="scene-title">选择左侧场景</h2>
+        <div id="scene-meta" class="scene-meta"></div>
+      </header>
+
+      <nav class="tab-bar" id="main-tabs">
+        <button data-tab="graph" class="tab active">Graph</button>
+        <button data-tab="setting" class="tab">Setting / Beats</button>
+        <button data-tab="nodes" class="tab">Nodes</button>
+        <button data-tab="deps" class="tab">Dependencies</button>
+      </nav>
+
+      <div class="tab-panels">
+        <div class="tab-panel active" data-panel="graph">
+          <div class="graph-controls">
+            <span>format:</span>
+            <button class="format-btn active" data-format="mermaid">mermaid</button>
+            <button class="format-btn" data-format="dot">dot</button>
+            <button class="format-btn" data-format="ascii">ascii</button>
+          </div>
+          <div id="graph-container" class="graph-container">
+            <p class="placeholder">未加载场景。</p>
+          </div>
+        </div>
+        <div class="tab-panel" data-panel="setting">
+          <pre id="scene-setting" class="json-block">未加载场景。</pre>
+        </div>
+        <div class="tab-panel" data-panel="nodes">
+          <div id="scene-nodes" class="nodes-list">未加载场景。</div>
+        </div>
+        <div class="tab-panel" data-panel="deps">
+          <pre id="scene-deps" class="json-block">未加载场景。</pre>
+        </div>
+      </div>
+    </section>
+
+    <aside class="pane scene-side" aria-label="校验 + 审阅">
+      <section class="validator-section">
+        <h2>Validator</h2>
+        <nav class="tab-bar tab-bar-small" id="validator-tabs">
+          <button data-tab="schema" class="tab active">schema</button>
+          <button data-tab="topology" class="tab">topology</button>
+          <button data-tab="sampling" class="tab">sampling</button>
+          <button data-tab="mechanical" class="tab">mechanical</button>
+        </nav>
+        <div class="tab-panels">
+          <div class="tab-panel active" data-panel="schema"><pre id="validator-schema" class="json-block small">—</pre></div>
+          <div class="tab-panel" data-panel="topology"><pre id="validator-topology" class="json-block small">—</pre></div>
+          <div class="tab-panel" data-panel="sampling"><pre id="validator-sampling" class="json-block small">—</pre></div>
+          <div class="tab-panel" data-panel="mechanical"><pre id="validator-mechanical" class="json-block small">—</pre></div>
+        </div>
+      </section>
+
+      <section class="advisory-section">
+        <h2>AI judge advisory</h2>
+        <p class="advisory-note">informational only · ADR-020 §6</p>
+        <div id="advisory-content" class="advisory-content">—</div>
+      </section>
+
+      <section class="review-section">
+        <h2>审阅 [A] / [R] / [S]</h2>
+        <p id="review-status" class="review-status">未加载场景。</p>
+        <div class="review-buttons">
+          <button id="btn-accept" class="btn btn-accept" disabled>[A] Accept</button>
+          <button id="btn-reject" class="btn btn-reject" disabled>[R] Reject</button>
+          <button id="btn-skip" class="btn btn-skip" disabled>[S] Skip</button>
+        </div>
+        <label class="reason-label" for="reject-reason">Reject reason（拒收时必填）</label>
+        <textarea id="reject-reason" rows="3" placeholder="（拒收原因，提交时必填）"></textarea>
+        <p id="review-flash" class="flash" role="status" aria-live="polite"></p>
+      </section>
+    </aside>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

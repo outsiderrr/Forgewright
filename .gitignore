@@ -66,3 +66,7 @@ coverage.xml
 /content/visuals/_pending/
 /generator/image_cost_log.jsonl
 /generator/import_log.jsonl
+
+# T-3.6a review UI — generated smoke-test screenshots (PR description carries copies)
+/tools/review_ui/tests/_screenshots/
+/tools/review_ui/tests/_screenshots_pr/
