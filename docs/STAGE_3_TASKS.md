@@ -79,6 +79,7 @@
 | 版本控制集成 | **每个入库 scene 必须有 version sidecar，T-3.10 验收审计无缺失**（F7 修订；放弃 scene 内 version 字段 + 放弃自动 git commit）| F7 |
 | 实测吞吐 | 1 周 ≥ 10 场景 | ROADMAP 字面 |
 | **logic regression gate** | **0 critical validator failures**（schema / topology / sampling / mechanical 任一 critical 级失败 = 阶段 3 不达标）；warning / minor 级失败允许在 R3.X follow-up 闭环修复 | **F8 方案 A** |
+| **审美层 review 激活前置（2026-05-09 v0.2 新增）** | T-3.X0 AESTHETIC_PREFERENCES.md v0.1 已 commit + T-3.X1 ADR-030 立项 + schema + prompt hook 已 merge | 决策档 v0.2 §6.2 |
 | 审美层 [A]ccept rate（pilot）| **≥ 60%（N=10 场景；附 Wilson 95% CI 报告，如 6/10 → CI 27%-86%）；不用单点百分比伪装稳定** | **F8 方案 A** |
 | playtest bots 完整性 | 至少 5 场景跑过完整 100 paths/scene；worst-10% 清单产出 + 0 critical issue 或全部修复（critical 定义见 ADR-022 severity taxonomy）| D1 + F9 + F10 |
 | 长对话一致性 | C 起步：prompt SceneGraphContext 注入 `prior_scene_summaries` 字段（F3）；A/B hook 留：content_dependency_index.scene_history_referenced + token/prompt metrics hook（每 scene 记 prompt token estimate / summaries injected count / summary source hashes / truncation reason）| D4 + F3 |
@@ -213,6 +214,12 @@ L2 拿 ABC 全部产出判断；过关 → 通知作者 merge PR + 进下一个 
 - **完成标志**：至少 5 场景跑过完整 playtest（5×20=100 paths/scene），worst-10% 清单产出 + 0 critical issue 或全部修复
 - **后果**：T-3.4 落地 `/generator/playtest/`；playtest cost log 独立 `/generator/playtest_cost_log.jsonl`；run_manifest.json 写入元数据
 
+**2026-05-09 修订（审美层决策 v0.2 §6.2 §3.1 联动）**：
+
+- ADR-022 决策核心**不动**（playtest bots 完成标志阈值原 gate 保留；决策档 v0.2 §6.6）
+- T-3.10 启动前置 T-3.X0/X1 落地（AESTHETIC_PREFERENCES.md + ADR-030 schema + prompt hook）；详 [/docs/DECISIONS.md](DECISIONS.md) ADR-030 + ADR-020 v0.2（PR-A 已落地）+ [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2
+- 审美层 [A]ccept rate gate（≥ 60% pilot + Wilson CI）基于已结构化 AESTHETIC_PREFERENCES.md + ADR-030 schema 字段集**真作 gate**（不再是"假设作者锚点已建立"的悬空阈值）
+
 ### 3.2 ADR-023 决策核心 — content_dependency_index sidecar 形态（v1.0）
 
 - **形态**：per-scene sidecar `<scene>.deps.json`（与 scene.json 同目录；与 visual manifest 哲学一致）
@@ -306,11 +313,12 @@ L2 拿 ABC 全部产出判断；过关 → 通知作者 merge PR + 进下一个 
 ## 6. 工作 wave 与依赖图（v1.0 修订；F12 / F13 / F6 整合）
 
 ```
-Wave 0（独立可并行；不阻塞下游）:
+Wave 0（独立可并行；不阻塞下游工程任务）:
    T-3.0    [A]   起手清理 PATCH（R3.0/3.1/3.2 阶段 2 三遗留 + R3.3 mini calibration 并入）
    T-3.11   [A]   开源剥离边界清单 v0.2 增量（C5）
    T-3.8a   [A]   version_recorder.py 独立模块（F12 修订；与 batch_scheduler 解耦）
-   ↓ 不阻塞下游
+   T-3.X0   [非工程] 作者审美锚点工程（2026-05-09 v0.2 新增；不走 ABC；作者本人；时长 1-3 周；不阻塞其他工程任务）
+   ↓ 不阻塞下游工程
 
 Wave 1（串行关键路径起点）:
    T-3.1    [B]   ADR-022 ~ 026 立项（5 条 ADR 一次性 commit）
@@ -338,10 +346,14 @@ Wave 5（依赖 T-3.5）:
 
 Wave 6（依赖 T-3.5 + T-3.4 + T-3.6a）:
    T-3.6b   [A]   审阅 UI integrations（visual asset / playtest worst / stale / chapter；degrade if absent）
+   ↓ PR merge 后 Wave 6.5 才能启动
+
+Wave 6.5（2026-05-09 v0.2 新增；T-3.X0 完成后启动；T-3.10 前置）:
+   T-3.X1   [B]   ADR-030 立项 + AestheticPreference schema 落地 + prompt hook（依赖 T-3.X0 产出 AESTHETIC_PREFERENCES.md v0.1）
    ↓ PR merge 后 Wave 7 才能启动
 
 Wave 7（实测期；A 阶段实测；不走完整 ABC，只走"实测 + 验收报告"）:
-   T-3.10   [A]   完成标志实测（作者跑一周 ≥ 10 场景；0 critical + [A] ≥ 60% + Wilson CI + 场景集声明依赖图；R3.X 不强制）
+   T-3.10   [A]   完成标志实测（作者跑一周 ≥ 10 场景；0 critical + [A] ≥ 60% + Wilson CI + 场景集声明依赖图；R3.X 不强制；**v1.0.1 新增依赖 T-3.X1 PR merge + T-3.X0 commit**）
    ↓ PR merge 后 Wave 8 才能启动
 
 Wave 8（验收）:
@@ -354,6 +366,12 @@ Wave 8（验收）:
 - **T-3.8 拆 a/b**（F12）：T-3.8a version_recorder.py 独立 Wave 0；T-3.8b batch_scheduler hook 合并入 T-3.5（不再独立任务）
 - **T-3.6 拆 a/b**（F16）：T-3.6a MVP 在 Wave 5；T-3.6b integrations 在 Wave 6
 - **T-3.9 改先 helper 库交付**（F6）：T-3.9 在 Wave 3 与 T-3.3 / T-3.4 / T-3.7 并行；T-3.5 调用 T-3.9 helper（写入顺序 = write scene → assign chapter → write deps → record version）
+
+**v1.0.1 修订要点（2026-05-12 审美层决策 v0.2 §6.2 联动）**：
+
+- **Wave 0 加 T-3.X0**：非工程任务（作者审美锚点工程；不走 ABC；时长 1-3 周；不阻塞其他工程任务）
+- **新增 Wave 6.5**：T-3.X1 工程（ADR-030 立项 + schema + prompt hook 基于 T-3.X0 实证归纳；走 ABC）
+- **Wave 7 T-3.10 依赖追加**：T-3.X1 PR merge + T-3.X0 commit（AESTHETIC_PREFERENCES.md v0.1）；审美层 [A] gate 真作 gate
 
 ---
 
@@ -375,10 +393,14 @@ Wave 8（验收）:
 | **T-3.10** | [A-execute] | 完成标志实测（作者跑一周 ≥ 10 场景；0 critical + [A] ≥ 60% Wilson CI；F19 R3.X 不强制）| 跑批次 + 写实测报告（不动代码）；场景集声明依赖图（F4）| T-3.5 + T-3.6a + T-3.6b + T-3.4 | ✅ 第 5 类近亲（实测报告作者签字）|
 | **T-3.11** | [A-execute] | 开源剥离边界清单 v0.2 增量（C5）| `/docs/OPEN_SOURCE_CARVE_OUT_INDEX.md` | 无 | ❌ 默认 ABC |
 | **T-3.12** | [B-author-gate] | 阶段 3 验收报告 | `/docs/STAGE_3_ACCEPTANCE.md`（新建）、`/docs/HANDOFF_STAGE_3_TO_4.md`（新建）| T-3.10 | ✅ 第 5 类（验收报告）|
+| **T-3.X0** | **非工程任务**（作者本人；不走 ABC；不需要 L3 执行会话）| 作者审美锚点工程 — 读 3 部经典（Deadlight + Crimson Letters + 极乐迪斯科原版）+ 填阅读对照表 + 产出 /docs/AESTHETIC_PREFERENCES.md v0.1；指引详 决策档 v0.2 §7 | `/docs/AESTHETIC_PREFERENCES.md`（新建）+ `/docs/reviews/aesthetic/T-3.X0_<work>_reading.md`（三份）| 无 | N/A（非工程；不走 ABC）|
+| **T-3.X1** | [B-author-gate] | ADR-030 立项 + AestheticPreference schema 落地 + prompt hook（基于 T-3.X0 实证归纳字段集；不预定）| `/schema/aesthetic_preference.schema.json`（新建首版 0.4.0）+ `/generator/scene_strategies.py`（aesthetic_preference_context 注入段）+ `/generator/prompts/scene/`（注入段）+ `/generator/tests/` | T-3.X0 完成（AESTHETIC_PREFERENCES.md v0.1 已 commit）| ❌ 默认 ABC |
 
 **任务总数**：**14 条编号槽位** = 11 个 paste-ready prompt（T-3.0/3.3/3.4/3.5/3.6a/3.6b/3.7/3.8a/3.9/3.10/3.11）+ T-3.1 ADR 立项 + T-3.2 schema + T-3.12 验收报告。
 
 > **注**：T-3.8b 不单独编号——其范围（batch_scheduler hook 写入 version sidecar）合并入 T-3.5（详 §6 wave 4 + §8 T-3.5 prompt）。
+
+> **T-3.X / T-3.X 系列（2026-05-09 审美层决策 v0.2 §6.2 新增）**：T-3.X0（非工程；作者本人审美锚点工程）+ T-3.X1（工程；ADR-030 + schema + prompt hook 基于 T-3.X0 实证归纳）共同作为 T-3.10 前置任务。命名 "T-3.X" 是 L2 校准会话标签（T-3X L2 校准产出），**并列于 T-3 主线工程任务**（不是 T-3.X 子集；与 T-3.6a / T-3.6b 拆任务的子级语义不同）。详 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §5 关键决策点 8 + §6.2。
 
 ---
 
@@ -440,12 +462,14 @@ Wave 8（验收）:
   - ADR 决策核心 ADR-022 ~ ADR-026 修订见 §3.1 ~ §3.5
   - wave 图修订见 §6
   - paste-ready prompts §8 待逐个 Edit 追加（v1.0 分段落盘策略，与 v0.1 草稿同款；规避 ECONNRESET 风险）
+- **2026-05-12 v1.0.1**：审美层决策 v0.2 §6.2 吸收。修订点：§1 完成标志表新增 T-3.X0/X1 前置条件行（保留 [A] ≥ 60% pilot + Wilson CI 原阈值）+ §3.1 ADR-022 决策核心追加 2026-05-09 联动修订段（不动 ADR-022 决策核心）+ §6 wave 图新增 Wave 6.5（T-3.X1）+ T-3.X0 进 Wave 0 + §7 任务清单新增 T-3.X0（非工程；不走 ABC）+ T-3.X1（[B-author-gate]；走 ABC）+ T-3.10 paste-ready prompt 修订为基于 AESTHETIC_PREFERENCES.md + ADR-030 跑。来源：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.2。联动 PR-A（已 merge；PR #51 dd82131）+ PR-B（ROADMAP + HANDOFF；后续启动）。L1 fixation 执行会话产出（本 PR）。
 
 ---
 
 ## 11. 版本
 
-本文件版本：v1.0
-最后更新：2026-05-08
+本文件版本：v1.0.1
+最后更新：2026-05-12
 产出方：阶段 3 L2 整合规划师会话（claude/sweet-bardeen-863720 worktree）
+v1.0.1 修订产出方：L1 fixation 执行会话（本 PR；T-3X L2 校准产出 paste-ready prompt 落地）
 基于：v0.1 草稿 + GPT-5.5 cross-LLM critique + Claude round 2 response + 作者 2026-05-08 三议题拍板
