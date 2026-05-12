@@ -490,6 +490,24 @@
 - T-2.9 AI 判官 prompt 按本协议设计权重
 - T-2.12 实证 batch run 按 N=15 跑
 
+### v0.2（2026-05-09 审美层决策 v0.2 §6.5 吸收；X4 闭环）
+
+**修订内容**：接受率分子 + 完成判定阶段口径细化为**阶段 2 / 阶段 3 / 阶段 4 三阶段**：
+
+- **阶段 2 期间**：完成判定 = `gross_pass_rate ≥ 70%` 作 logic-layer proxy（合规化阶段 2 验收已有破例；feedback_acceptance_review_deferred_to_stage_4 memory 真实建议正面吸收）
+- **阶段 3 期间**：T-3.X0（作者审美锚点工程）+ T-3.X1（ADR-030 立项 + schema + prompt hook）落地后激活 [A]ccept rate 标注；T-3.10 实测期 [A] ≥ 60% pilot + Wilson 95% CI（STAGE_3_TASKS v1.0 §1 阈值不动）
+- **阶段 4 期间**：完整 [A]/[R]/[S] 流程（基于 50-100 场景实测反馈迭代 AESTHETIC_PREFERENCES.md v0.2+ 与 ADR-030 v0.2+）
+
+**理由**：
+
+- 阶段 2 收官期实证 baseline_011 N=15 gross_pass_rate 100%（logic-layer 工程层完美），审美层完全跳过——`gross_pass_rate` 作 logic-layer proxy 已被实证认可
+- 审美层决策 v0.2 选项 5 通过精选 3 部经典剧本压缩"作者锚点工程"时长，使阶段 3 内激活可行；不需推到阶段 4 全量
+- 与 ADR-022 保持兼容（ADR-022 不修订；playtest bots 完成标志阈值原 gate 保留）
+
+**追溯**：见 /docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md（v0.2 同日修订）§6.5 + §8 兼容性表
+
+**对 STAGE_3_TASKS / ROADMAP / HANDOFF 的影响**：见 PR-B（ROADMAP + HANDOFF）+ PR-C（STAGE_3_TASKS）
+
 ---
 
 ## ADR-021：ADR-009 第二层方法论拆 2A 拓扑 + 2B 抽样验证 + 有界符号执行
@@ -822,6 +840,36 @@ Forgewright 引擎核心不预设任何技能列表、不预设任何技能数�
 
 ---
 
+## ADR-030：AestheticPreference schema（字段集预留）
+
+**状态**：已接受（2026-05-12）
+
+**背景**：审美层决策 v0.2 §6.4 落地。T-3.10 实测期前作者反思三 gap：作者审美锚点未建立 + 结构化审美偏好档 0 进度 + AI 多维审美能力未验证；v0.2 选项 5 用 3 部经典剧本（Deadlight + Crimson Letters + 极乐迪斯科原版）反向归纳抽象层 + 同步建立锚点（T-3.X0 非工程任务），落地 ADR-030 schema 容器 + prompt hook（T-3.X1 工程任务）。本 ADR **不预定**字段集——字段集**待 T-3.X1 L3 基于 T-3.X0 实证归纳**，避免 v0.1 凭直觉立 schema → 阶段 4 起手必然 v0.2 修订的失败模式。
+
+**决策**：
+
+- **schema 文件**：`/schema/aesthetic_preference.schema.json` 首版 `0.4.0`（与 ADR-016 §schema 版本号策略一致；阶段 3 schema 增量同源）
+- **字段集 MVP（v0.1）**：**留空预留** — 待 T-3.X0（作者读 3 部经典 + 填阅读对照表 + 产出 AESTHETIC_PREFERENCES.md v0.1）完成后由 T-3.X1 L3 实证归纳字段集
+  - **候选起点**（**T-3.X0 归纳产出可推翻**；不预定）：四维 `temperature` / `pacing` / `character_arc` / `value_judgment` + `reference_works` + `enabled` + `schema_version`
+  - **实际字段集**：取决于 T-3.X0 阅读对照表 §5 新发现维度 + §6 总结归纳产出
+- **prompt 注入**：`/generator/scene_strategies.py`（skeleton + fill prompt 渲染段）+ 节点级 prompt 加 `aesthetic_preference_context` 注入段（由 T-3.X1 落地）
+- **激活时机**：T-3.X1 落地后 T-3.10 实测期 [A]ccept rate gate 真可兑现（基于已结构化 AESTHETIC_PREFERENCES.md + ADR-030 schema 字段）
+
+**替代方案及否决理由**：
+
+- 不立 schema：Gap 1 + Gap 3 推阶段 4 起手期集中爆发（决策档 v0.2 §2 + §4 选项 1 否决）
+- 凭直觉立 schema 字段集（v0.1 选项 4）：字段集质量不可控，几乎必然 v0.2 修订（决策档 v0.2 §4.5 优点 1）
+- ADR-030 含进阶 schema v0.2+（如新发现维度 / 子字段拆分）：推到阶段 4 基于 50-100 场景实测反馈迭代（决策档 v0.2 §4 选项 5 "阶段 3 不做"段）
+
+**后果**：
+
+- T-3.X1 L3 执行会话基于 T-3.X0 产出 `/docs/AESTHETIC_PREFERENCES.md` v0.1 落地 schema 文件 + prompt hook
+- T-3.10 实测期 [A]ccept rate gate（≥ 60% pilot + Wilson 95% CI）真可兑现，**不需降级** STAGE_3_TASKS v1.0 §1 原阈值（决策档 v0.2 §3 + §4 选项 5）
+- 字段集仍可能阶段 4 起手期 v0.2 修订（基于 50-100 场景实测反馈），但首版质量已远超凭直觉立项
+- 与 ADR-005（编剧理论可替换插件）+ ADR-027（World-Agnostic Principle）+ ADR-028（引擎与宿主分离原则）+ ADR-029（技能体系作为项目配置层）同源——AestheticPreference 偏好档作用于**生成期**（不在引擎运行时强制注入；引擎不感知偏好档），与 ADR-028 引擎与宿主分离不冲突；偏好档不绑定具体世界观（World-Agnostic；ADR-027）；偏好档不绑定具体技能体系（不在 ADR-029 项目配置层影响范围；偏好维度独立于 active_check / passive_injection 基础机制）；偏好档作为"作者审美维度词汇库"不是"编剧理论硬编码"，符合 ADR-005 插件精神
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -832,6 +880,7 @@ Forgewright 引擎核心不预设任何技能列表、不预设任何技能数�
 - 2026-05-09：作者明确授权新增 ADR-027（World-Agnostic Principle）+ 修订 ADR-010 v0.2（MVP 场景数量 50–100 → 10–100 弹性区间），属 CLAUDE.md 规则 10 的明示例外。整合自 2026-05-09 战略校准 v0.1（CEO Review 产物，gstack /plan-ceo-review 方法论 only-read 引导）+ §5 三条 L1 升格路径全部落实（含 ROADMAP §阶段 4 切换协议子段）。L1 续接执行会话产出。
 - 2026-05-10：作者明确授权新增 ADR-028（引擎与宿主分离原则），属 CLAUDE.md 规则 10 的明示例外。原稿编号 ADR-011 与既有 ADR-011（LLM 提供商）撞号，落地时改为下一个空闲编号 ADR-028。
 - 2026-05-11：作者明确授权新增 ADR-029（技能体系作为项目配置层），属 CLAUDE.md 规则 10 的明示例外。落地时按 ADR-028 风格统一删除原稿底部"版本/引入时间"两行；"关联讨论"段"ADR-011 / ADR-028（引擎与宿主分离原则）"占位修正为"ADR-028"（ADR-011 实为 LLM 提供商，非引擎与宿主分离）。
+- 2026-05-12：作者明确授权新增 ADR-030（AestheticPreference schema；字段集留空预留，待 T-3.X1 实证归纳）+ 修订 ADR-020 v0.2（X4 闭环；阶段 2/3/4 三阶段口径），属 CLAUDE.md 规则 10 的明示例外。审美层决策于 2026-05-09 签字（v0.2）；ADR-028 + ADR-029 同期由产品线讨论起草并于 2026-05-10/11 push 到 main，占用编号 028/029；本 ADR 顺延为 ADR-030。整合自 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.4 + §6.5。T-3X L2 校准会话起草 L3 fixation PR paste-ready prompt（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2 修订包含产品线 ADR-028/029 联动校准）→ L1 fixation 执行会话（本 PR）落地。
 
 ## 版本
 
