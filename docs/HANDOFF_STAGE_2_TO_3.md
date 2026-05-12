@@ -5,7 +5,7 @@
 >
 > **本文件是阶段 2 → 3 交接草稿**；阶段 3 L2 规划师启动后由其自定 STAGE_3_TASKS_draft 并按需修订本文。
 
-**日期**：2026-05-07 · **版本**：v0.1 · **产出方**：阶段 2 验收会话（T-2.13）
+**日期**：2026-05-12 · **版本**：v0.2 · **产出方**：阶段 2 验收会话（T-2.13；v0.1）+ L1 fixation 执行会话（v0.2 修订；本 PR）
 
 ---
 
@@ -72,15 +72,19 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 - **U-CL-5**：长对话一致性缓解策略 ADR / 任务 —— DEBATE_NOTES §9.2 列为未解问题但路线图当前无任何缓解任务；记忆流机制（Generative Agents 风格）或上下文管理策略需要显式规划
 - **U-GPT-7**：审阅 UI 第一版含图视图 —— graph/mermaid/dot 视图 + 路径列表 + validator issues 面板 + visual asset thumbnail；避免后期重做审阅心智模型
 
-## 阶段 3 审美层 review 激活（重要）
+## 阶段 3 审美层 review 激活（重要；2026-05-09 审美层决策 v0.2 §6.3 校准）
 
-**feedback memory 锁定**：阶段 2 期间跳过 `scene_review_cli` 作者 [A]/[R]/[S] 流程；用 `gross_pass_rate ≥ 70%` 作完成判定 logic-layer proxy；**审美层评估激活在阶段 3** —— 作者那时有具体剧本上下文 + 角色弧线锚点。
+**feedback memory 真实建议被正面吸收 + 阶段 3 内压缩锚点工程时长**：阶段 2 期间跳过 `scene_review_cli` 作者 [A]/[R]/[S] 流程；用 `gross_pass_rate ≥ 70%` 作完成判定 logic-layer proxy（ADR-020 v0.2 阶段 2 期间口径，PR-A 已落地）；**审美层 review 激活路径**：T-3.X0（作者读 3 部经典 + 反向归纳抽象层 → AESTHETIC_PREFERENCES.md v0.1）+ T-3.X1（ADR-030 立项 + schema + prompt hook，基于 PR-A 已立 ADR-030 容器）落地后激活 T-3.10 [A]ccept rate gate（PR-C 已落地 STAGE_3_TASKS §1 + T-3.10.md 修订）。
+
+**与 feedback memory 真实建议关系**：feedback memory 推荐"推迟阶段 4"被 v0.2 选项 5 部分前置——经典剧本反向归纳压缩了"作者锚点工程"时长（从读 30 本经典 1-3 个月压缩到读 3 部经典 1-3 周），使阶段 3 内激活可行；阶段 4 仍可基于 50-100 场景实测迭代 AESTHETIC_PREFERENCES.md v0.2+ 与 ADR-030 v0.2+（ADR-020 v0.2 阶段 4 期间完整 [A]/[R]/[S] 流程，PR-A 已落地）。
 
 **对阶段 3 规划师的影响**：
-- 阶段 3 起手必读 `~/.claude/projects/-Users-outsider-Desktop-Forgewright/memory/feedback_acceptance_review_deferred_to_stage_4.md`
+- 阶段 3 起手必读 `~/.claude/projects/-Users-outsider-Desktop-Forgewright/memory/feedback_acceptance_review_deferred_to_stage_4.md` + 本节校准
 - `scene_review_cli` 工具链已落地（T-2.8），阶段 3 复活使用即可（无需重建）
 - AI 判官 advisory（每场景 21 维节点 + 10 维场景）已落地（T-2.9）但 dimensions 全空 bug（R2-5）需先修
-- 阶段 3 完成标志 U-CL-1 真实接受率（含审美层）阈值由阶段 3 规划师拍板
+- 阶段 3 完成标志 U-CL-1 真实接受率（含审美层）阈值由 STAGE_3_TASKS v1.0.1 §1 拍板（[A] ≥ 60% pilot + Wilson 95% CI；不修订；PR-C 已落地）
+
+**追溯**：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.3
 
 ## ⚠️ Schema 扩展警示（CLAUDE.md 规则 2 + 9 的特殊情况）
 
@@ -202,7 +206,7 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 
 | 编号 | 内容 | 处理时机 |
 |---|---|---|
-| **X4** | ADR-020 v0.2 修订（审美层推迟到阶段 4 + gross_pass_rate 作 logic-layer proxy） | 阶段 3 起手期 L1 元任务；作者另起会话立 |
+| **X4** | ADR-020 v0.2 修订（阶段 2/3/4 三阶段口径）| ✅ 2026-05-12 已闭合（PR-A merged #51；参 ADR-020 v0.2 + /docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md v0.2 §6.5）|
 | **X1 衍生** | ROADMAP §阶段 2 「单次生成人工可接受率 ≥ 70%」字面措辞 与 feedback memory（推迟到阶段 4）冲突 | 同 X4，作者另起会话同步修订 |
 | **ADR-011 / 013** | "google.genai 是唯一 Gemini 入口"假设随 R2.7 PoloAIProvider 接入实质破裂；待修订 | 阶段 3 / 4 视需要立 X 级元任务 |
 
@@ -210,5 +214,10 @@ Forgewright 是一条 AI 辅助的分支叙事 RPG 内容生产流水线。短�
 
 ## 版本
 
-本文件版本：v0.1（阶段 2 → 3 交接草稿）
-最后更新：2026-05-07
+本文件版本：v0.2（阶段 2 → 3 交接草稿；2026-05-09 审美层决策 v0.2 §6.3 + §6.5 吸收）
+最后更新：2026-05-12
+
+## 修订记录
+
+- **2026-05-12 v0.2**：审美层决策 v0.2 §6.3 + §6.5 吸收。修订点：§阶段 3 审美层 review 激活段措辞校准为 "T-3.X0+X1 落地后激活"（feedback memory 真实建议正面吸收 + 阶段 3 内压缩锚点工程时长）+ §跨阶段提醒 X4 行同步更新为已闭合状态（与 PR-A ADR-020 v0.2 联动）+ 文件顶部时间戳 / §版本时间戳更新。来源：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.3 + §6.5。联动 PR-A（ADR-030 + ADR-020 v0.2；PR #51 merged 2026-05-12）+ PR-C（STAGE_3_TASKS v1.0.1 + T-3.10.md；PR #52 merged 2026-05-12）。L1 fixation 执行会话产出（本 PR；T-3X L2 校准产出 paste-ready prompt 落地）。
+- **2026-05-07 v0.1**：初版（阶段 2 验收会话 T-2.13 产出）。

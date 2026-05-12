@@ -16,7 +16,7 @@
 | 1 | 单节点 AI 生成 | 2–3 周 | 是（首次） |
 | 1.5 | 视觉资产生成 | 2–3 周 | 是 |
 | 2 | 场景级 AI 生成 + 图校验 | 3–4 周 | 是 |
-| 3 | 完整内容生产流水线 + 审阅工具 | 4–6 周 | 是 |
+| 3 | 完整内容生产流水线 + 审阅工具 | 5–9 周（含 T-3.X0 1-3 周作者锚点工程） | 是 |
 | 4 | 游戏内容填充 + 开源框架剥离 | 6–8 周+ | 是 |
 
 **总估计**：约 4.5–7 个月单人开发到 MVP + 开源 v0.1。实际时长取决于作者审阅带宽。
@@ -184,6 +184,24 @@ Schema 定稿后可并行三路：
 
 ## 阶段 3：完整内容生产流水线 + 审阅工具
 
+### 工具第一版 scope（2026-05-09 作者拍板；2026-05-12 与 ADR-029 联动校准）
+
+不做：
+- 战斗系统（schema 不强制有；不阻止未来 plugin 扩展）
+- 极乐迪斯科风格"思维内阁"（独特机制）
+- 极乐迪斯科风格"内心独白"段落
+
+主做：
+- 对话多选项推进
+- 调查 + 物品互动
+- NPC 互动
+- **技能体系**（具体技能数 / 列表 / 性格化或功能化 / 骰子规则 NdM + modifier vs DC **由项目配置层定义**；引擎只规范 `active_check`（选项级主动检定）+ `passive_injection`（节点级被动注入）基础机制；详 ADR-029）
+- 检定（扔骰子 / SAN / 技能判定；具体骰子规则同上由项目配置层定义）
+
+风格主导：CoC（结构化调查驱动）；补充：极乐迪斯科对话技法 + 技能驱动 + 世界观信息密度
+
+追溯：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §5 + §6.1；ADR-029（技能体系作为项目配置层；2026-05-11 已 push）；T-3X L2 校准 2026-05-12 联动修订（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2）
+
 ### 目标
 
 作者能每天稳定产出几千字质量达标的剧情内容。
@@ -210,6 +228,18 @@ Schema 定稿后可并行三路：
 - **U-CL-1**：完成标志加质量门槛指标 —— 在 ≥ X% 单次接受率下作者每周稳定吞吐 Y 场景（具体数字待阶段 3 规划师拍板，参考阶段 2 70% 接受率）；当前"一周 10 场景"是过程指标而非产品指标
 - **U-CL-5**：长对话一致性缓解策略 ADR / 任务 —— DEBATE_NOTES §9.2 列为未解问题但路线图当前无任何缓解任务；记忆流机制（Generative Agents 风格）或上下文管理策略需要显式规划
 - **U-GPT-7**（建议）：审阅 UI 第一版含图视图 —— graph/mermaid/dot 视图 + 路径列表 + validator issues 面板 + visual asset thumbnail；避免后期重做审阅心智模型
+
+### 审美层 review 激活前置（2026-05-09 审美层决策 v0.2 §6.1.b 吸收）
+
+**完成标志强化项保留**：[A]ccept rate ≥ 60% pilot + Wilson 95% CI 报告（STAGE_3_TASKS v1.0 §1 原阈值不修订；决策档 v0.2 §4 选项 5 保留；PR-C 已落地）
+
+**新增 T-3.10 前置条件**：
+- **T-3.X0 作者审美锚点工程**（非工程任务；作者本人完成；不走 ABC）—— 读 3 部经典（Deadlight + Crimson Letters + 极乐迪斯科原版）+ 填阅读对照表 + 产出 `/docs/AESTHETIC_PREFERENCES.md` v0.1；时长 1-3 周（作者节奏决定）；指引详 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §7
+- **T-3.X1 ADR-030 立项 + schema 落地 + prompt hook**（工程任务；[B-author-gate]；走 ABC）—— 基于 T-3.X0 产出实证归纳字段集；schema 落 `/schema/aesthetic_preference.schema.json` 首版 `0.4.0`（PR-A 已立 ADR-030 容器）
+
+**时长加 1-3 周**：阶段 3 估时 4-6 周（不变）；T-3.X0 非工程任务延期 1-3 周（作者节奏决定；不计入工程估时；阶段概览表阶段 3 行同步更新为 "5-9 周（含 T-3.X0 1-3 周作者锚点工程）"）
+
+追溯：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.1 + §4 选项 5
 
 ### 禁止事项
 
@@ -266,6 +296,7 @@ Schema 定稿后可并行三路：
 - **2026-05-03**：§阶段 2 完成标志措辞从"证明任意合法状态组合下至少有 1 个结局可达"修订为"抽样验证 N=100 路径 + 有界符号执行下未发现反例"，与 ADR-021（待立项）实际口径对齐。来源：STAGE_2_TASKS_v1.0_draft §13 X1（GPT-5.5 critique 5.4 整合）。
 - **2026-05-07**：阶段 2 验收**通过**（见 `/docs/STAGE_2_ACCEPTANCE.md`）。baseline_011 N=15 gross_pass_rate **100%**（schema / topology / sampling / mechanical 全 100%）；ADR-016/017/018/019/020/021 立项 + 落地；R2.X follow-up 修复链路 7 项（R2.2 → R2.6 → R2.7 → R2.8 → R2.9 → R2.10a → R2.10b）；R2-5 / R2-10c / R2-iter-逃逸 / R2-cyclic / R2-1 / X4 六条遗留（不阻塞阶段 3 启动）。审美层（[A]/[R]/[S]）评估推迟到阶段 4——feedback memory 锁定，X4 ADR-020 v0.2 修订属未来 L1 文档级元任务。`/docs/HANDOFF_STAGE_2_TO_3.md` v0.1 草稿同期产出。
 - **2026-05-09**：阶段 4 切换协议子段插入（北极星 = A 完成度 / Scope 弹性 10–100 / 完成定义三档 / 跳过 Steam (e) / 失败模式警示）；联动 ADR-010 v0.2 修订（MVP 场景从硬性 50–100 改为弹性 10–100）+ ADR-027 立项（World-Agnostic Principle）。来源：`/docs/reviews/master_plan/2026-05-09_strategy_calibration_v0.1.md` v0.1。
+- **2026-05-12**：阶段 3 §scope 声明段新增（不做战斗 / 思维内阁 / 内心独白；主做对话 + 调查 + 物品 + NPC + 技能体系（项目配置层定义）+ 检定；CoC 主导）+ 审美层 review 激活前置子段新增（保留 [A] ≥ 60% pilot + Wilson CI；新增 T-3.X0/X1 作 T-3.10 前置）+ 阶段概览表阶段 3 时长加 1-3 周（5-9 周；含 T-3.X0 作者锚点工程）。来源：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.1。联动 PR-A（ADR-030 + ADR-020 v0.2；PR #51 merged 2026-05-12）+ PR-C（STAGE_3_TASKS v1.0.1 + T-3.10.md；PR #52 merged 2026-05-12）。L1 fixation 执行会话产出（本 PR）。
 
 ## 版本
 
