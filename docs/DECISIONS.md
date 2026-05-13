@@ -880,7 +880,7 @@ T-3X-0 阅读伴侣会话（2026-05-13；PR #55 merged）作者本人听完 Crim
 
 **CoC 模组（骨架式作品）是为守秘人（GM）跑团时即兴用，留白大量"GM 抉择空间"；而 Forgewright 引擎要求确定性 JSON 对话图（ADR-002 + ADR-004 极简运行时）——所有"GM 抉择"必须预先压成数据或由确定性代码即时生成。两者之间存在结构鸿沟。**
 
-无论是 (场景一) 改编已有 CoC 模组 还是 (场景二) 原创，核心都是同一个工作流："叙事意图（人脑 / 模组）→ 确定性 JSON 对话图（引擎可执行）"的转换。差别只在输入端（已有材料库 vs 作者一句话）；输出端共用同一份 schema——所以抽象层一旦立起来，两种场景都能复用。
+无论是 (场景一) 改编已有 CoC 模组 还是 (场景二) 原创，核心都是同一个工作流："叙事意图（人脑 / 模组）→ 确定性 JSON 对话图（引擎可执行）"的转换。差别只在输入端（场景一 = 已有材料库；场景二 = 作者已有的半成品：世界观文档 + 章节大纲 + 人物本体 + 场景需求 → 流水线产出 dialogue_graph）；输出端共用同一份 schema——所以抽象层一旦立起来，两种场景都能复用。
 
 T-3X-0 对照表 §5 反向归纳出 7 种 GM 抉择空间形式：(F1) 真凶选择 / (F2) NPC 反应（多套行为按玩家行为切换）/ (F3) 威胁显现节奏 / (F4) 多解决路径 / (F5) 场景扩展 / (F6) 难度调整 / (F7) 即兴（⚠️ 不可完全结构化）。
 
@@ -900,7 +900,7 @@ T-3X-0 对照表 §5 反向归纳出 7 种 GM 抉择空间形式：(F1) 真凶�
 | F4 多解决路径 | dialogue_graph end nodes + state_paths_written（复用）|
 | F5 场景扩展 | 多 dialogue_graph 拼接 + chapter.acts.included_scenes（复用）|
 | F6 难度调整 | state path `world.difficulty` + active_check.dc + NPC 状态机的"警觉度" state |
-| F7 即兴 | 不结构化；预生成 multi-variant（每场景 6-10 options 中 3-5 个非线性入口）|
+| F7 即兴 | 不结构化；按 STAGE_3_TASKS §1.7 量化矩阵预生成（每节点 3-6 options 中 1-3 个 diverge 选项导向真正独立子树 + 每场景 1-3 个独立入口路线 + 每场景候选稿 1-3 可设置默认 1）|
 
 **NPC 状态机 schema 字段集（草案；具体由 T-3X-1b 实证落地，本 ADR 不预定）**：
 
@@ -911,11 +911,11 @@ T-3X-0 对照表 §5 反向归纳出 7 种 GM 抉择空间形式：(F1) 真凶�
   - 每 transition: `event` + `condition`（$ref state_condition）+ `target_state` + `effects`（$ref state_effect）
 - `additionalProperties: false`；schema_version const `0.4.0`
 
-**核心赌注（首次明文承认；详 DEBATE §10）**：
+**项目级可测目标（首次明文承认；详 DEBATE §10）**：
 
-> Forgewright 工具一期 = "AI 海量预生成 + 人工审阅 = 给玩家伪即兴体验"。如不成立，工具一期定位需重新审视。
+> Forgewright 工具一期 = 在 STAGE_3_TASKS §1.7 量化矩阵规模下产出作者审阅接受率 ≥ 60% 内容（阶段 3 T-3.10 实测；附 Wilson 95% CI）+ 阶段 4 实测玩家完成主线率 ≥ X%（具体 X 数字推到阶段 4 起手期）。如目标不达标，工具一期定位需重新审视。
 
-赌注的 4 档回退路径（轻 / 中 / 重 / 致命）+ 实测验证时机详 DEBATE_NOTES.md §10。
+4 档回退路径（轻 / 中 / 重 / 致命）+ 实测验证时机详 DEBATE_NOTES.md §10。
 
 **与 ADR-019 dramatic_triggers 协同语义**：
 
@@ -949,7 +949,7 @@ NPC 状态机运行时执行 = 查表（state × event → next_state + response
 
 **关联讨论**：
 
-- 与 ADR-001 玩家交互预生成选项式：✓ 强化（F7 即兴正是预生成 multi-variant 的实证）
+- 与 ADR-001 玩家交互预生成选项式：✓ 强化（F7 即兴正是按 STAGE_3_TASKS §1.7 量化矩阵预生成的实证）
 - 与 ADR-002 运行时无 LLM + ADR-004 运行时与生产期分离：✓ 严守（NPC 状态机运行时查表，不调 LLM）
 - 与 ADR-005 编剧理论可替换插件：✓ 兼容（本 ADR 是叙事**结构**契约，不是叙事**理论**）
 - 与 ADR-006 世界本体 SOT + ADR-008 LLM 不能直接写状态：✓ 严守（NPC 状态机 transition 通过 state effect 改 state path）

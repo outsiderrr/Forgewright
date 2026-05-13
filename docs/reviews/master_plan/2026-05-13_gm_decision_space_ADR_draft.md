@@ -1090,4 +1090,10 @@ git push -u origin claude/jovial-elion-c8d60c
 ### 修订记录
 
 - **v0.1（2026-05-13）**：L2 综合规划师起草初版。4 候选方案对比 + 推荐 D 混合 A+B + 赌注承认 + 4 档回退路径 + T-3X-1 拆分判断 + T-3X-1a/T-3X-1b paste-ready prompts + cross-LLM critique 建议 + 移交给作者签字 6 项。
+- **v0.1-postclarification（2026-05-13）**：L1 措辞清算执行会话（claude/bold-dubinsky-4b584a worktree）补丁——基于 PR #58 L1 fixation merged 后 blueprint-auditor 审计发现的 3 处 AI 修辞清算：「一句话」「伪即兴体验」「multi-variant / 海量预生成」。作者选项 A 拍板：删除赌注修辞，只留可测目标。措辞清算落地 L1 文档：
+    - `/docs/DECISIONS.md` ADR-031 §背景"一句话"段重写 + §核心赌注段重写为"项目级可测目标" + §F7 覆盖矩阵行措辞替换为 STAGE_3_TASKS §1.7 量化矩阵引用 + 关联讨论 ADR-001 行措辞替换
+    - `/docs/DEBATE_NOTES.md` §10 整段重写：标题 "核心赌注" → "项目级可测目标 + 风险回退路径"；6 子段全部清洗"伪即兴" / "multi-variant" / "海量预生成"措辞；4 档回退路径表格内容保留（替换 variant 等措辞为 diverge 选项 / 路线）
+    - `/docs/STAGE_3_TASKS.md` 新增 §1.7「量化矩阵」段：7 量化轴拍板值 + 3 新术语定义（选项 diverge 度 / 路线分支密度 / 候选稿数）+ 总节点数估算 + 替代措辞声明
+    - `/docs/AESTHETIC_PREFERENCES.md` §5.4 「核心赌注」改写为「项目级可测目标」+ §1 Crimson Letters 描述行 + §5.3 输入端表述行清洗
+  - **本草案 body 段未动**（仅追加本修订记录条目）——ADR-031 草案 body 内 "伪即兴 / multi-variant" 等措辞作为 L2 起草史保留（历史留档；L1 已立 ADR-031 为准）。后续 L2/L3 引用 ADR-031 时以已 merged L1 文档为准。
 
