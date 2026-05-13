@@ -870,6 +870,108 @@ Forgewright 引擎核心不预设任何技能列表、不预设任何技能数�
 
 ---
 
+## ADR-031：GM 抉择空间结构化方案
+
+**状态**：已接受（2026-05-13）
+
+**背景**：
+
+T-3X-0 阅读伴侣会话（2026-05-13；PR #55 merged）作者本人听完 Crimson Letters（CoC 模组）后识别一个核心架构问题：
+
+**CoC 模组（骨架式作品）是为守秘人（GM）跑团时即兴用，留白大量"GM 抉择空间"；而 Forgewright 引擎要求确定性 JSON 对话图（ADR-002 + ADR-004 极简运行时）——所有"GM 抉择"必须预先压成数据或由确定性代码即时生成。两者之间存在结构鸿沟。**
+
+无论是 (场景一) 改编已有 CoC 模组 还是 (场景二) 原创，核心都是同一个工作流："叙事意图（人脑 / 模组）→ 确定性 JSON 对话图（引擎可执行）"的转换。差别只在输入端（已有材料库 vs 作者一句话）；输出端共用同一份 schema——所以抽象层一旦立起来，两种场景都能复用。
+
+T-3X-0 对照表 §5 反向归纳出 7 种 GM 抉择空间形式：(F1) 真凶选择 / (F2) NPC 反应（多套行为按玩家行为切换）/ (F3) 威胁显现节奏 / (F4) 多解决路径 / (F5) 场景扩展 / (F6) 难度调整 / (F7) 即兴（⚠️ 不可完全结构化）。
+
+本 ADR 立"GM 抉择空间结构化方案"——决定如何把 GM 留白结构化为引擎可执行数据。详见草案 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（4 候选方案对比 + 推荐 D 混合 A+B + 6 维评分 + 与 ADR-001~030 关系陈述）。
+
+**决策**：
+
+采用**混合方案 D（A 基础层 + B 增强层）**——5 种 GM 抉择空间形式（F1/F3/F4/F5/F6）完全复用现有 schema 零工程成本；F2 NPC 反应引入 NPC 状态机新抽象；F7 即兴显式不结构化（核心赌注）。
+
+具体覆盖矩阵：
+
+| 形式 | D 覆盖方式 |
+|---|---|
+| F1 真凶选择 | state path `world.culprit_id` + option 路由 |
+| F2 NPC 反应 | **NPC 状态机**（新建 `/schema/npc_state_machine.schema.json` 首版 `0.4.0`）+ character.dramatic_triggers（保留 ADR-019）|
+| F3 威胁节奏 | ADR-017 clock + tick_effects（复用）|
+| F4 多解决路径 | dialogue_graph end nodes + state_paths_written（复用）|
+| F5 场景扩展 | 多 dialogue_graph 拼接 + chapter.acts.included_scenes（复用）|
+| F6 难度调整 | state path `world.difficulty` + active_check.dc + NPC 状态机的"警觉度" state |
+| F7 即兴 | 不结构化；预生成 multi-variant（每场景 6-10 options 中 3-5 个非线性入口）|
+
+**NPC 状态机 schema 字段集（草案；具体由 T-3X-1b 实证落地，本 ADR 不预定）**：
+
+- `character_ref` (string; pattern `^char_[a-z0-9_]{1,64}$`)
+- `initial_state` (string)
+- `states` (object; additionalProperties = state 定义对象)
+  - 每 state: `narration_variants` (array) + `transitions` (array)
+  - 每 transition: `event` + `condition`（$ref state_condition）+ `target_state` + `effects`（$ref state_effect）
+- `additionalProperties: false`；schema_version const `0.4.0`
+
+**核心赌注（首次明文承认；详 DEBATE §10）**：
+
+> Forgewright 工具一期 = "AI 海量预生成 + 人工审阅 = 给玩家伪即兴体验"。如不成立，工具一期定位需重新审视。
+
+赌注的 4 档回退路径（轻 / 中 / 重 / 致命）+ 实测验证时机详 DEBATE_NOTES.md §10。
+
+**与 ADR-019 dramatic_triggers 协同语义**：
+
+- ADR-019 dramatic_triggers = **触发器**（一次性事件按优先级排序；常态写作期 prompt 提示）
+- 本 ADR-031 NPC 状态机 = **持续状态**（多 event 路由 + 持久 state；运行时执行）
+- 协同关系：dramatic_triggers 触发后可写入 NPC 状态机的 event 队列；前者是事件发生器，后者是状态持久化器。两者协同，不替代。
+
+**与极简运行时严守**（ADR-002 + ADR-004 + DEBATE §5）：
+
+NPC 状态机运行时执行 = 查表（state × event → next_state + response）+ 应用 state effect + 切换 state；**不调 LLM**。运行时代码增量 ≤ 80 行（DEBATE §5 "500 行"上限充裕）。
+
+**替代方案及否决理由**：
+
+- **纯方案 A（纯枚举 + 元参数化）**：F2 NPC 反应表达力弱——CoC 模组"NPC 多层伪装"在节点级 narration 路由层笨重；全押 F7 核心赌注上失败模式可控性差
+- **纯方案 B（7 形式都用 NPC 状态机）**：F3/F4/F5 现有机制已足够；过度工程化；作者审阅负担 +50%；状态空间爆炸风险大
+- **纯方案 C（场景模板）**：模板"完整度陷阱"——原创流水线被模板约束；scenario_kind 枚举爆炸风险；模板 → dialogue_graph 转换器是新增大模块；与 ADR-027 World-Agnostic 有张力
+- **完全不立 ADR**：T-3X-0 已明示 "GM 抉择空间结构化是 T-3X-1 真正阻塞点"——不立等于把工程债推到 T-3X-1 工程会话现场拍板（违反 CLAUDE.md 规则 8）
+- **整合进 ADR-030 v0.2 修订**：ADR-030 = 字段集；本 ADR = 机制契约；范围不重叠；决策颗粒度独立；项目级赌注应独立 ADR 承载
+
+**后果**：
+
+- **新增 1 个 schema 文件**：`/schema/npc_state_machine.schema.json`（首版 const `0.4.0`；与 ADR-030 schema 同 epoch；由 T-3X-1b 落地）
+- **新增 engine 模块**：`/engine/npc_state_machine.py`（运行时查表执行器；预估 50-80 行；严守 DEBATE §5 极简；不调 LLM；由 T-3X-1b 落地）
+- **generator 增强**：prompt 模板新增 NPC 状态机生成段；skeleton-first 策略增强；generation_trace 新增 npc_state_machine_refs 字段（由 T-3X-1b 落地）
+- **validator 扩展**：NPC 状态机闭合性 + 不可达 state + 死锁检测 + 与 dialogue_graph 引用一致性（约 100-130 行；由 T-3X-1b 落地）
+- **不动既有 schema**：dialogue_graph / node / option / state_effect / state_condition / character / location / clock / chapter / image_asset / content_dependency_index / aesthetic_preference 全部不动
+- **content_dependency_index sidecar 可能扩展**（optional 字段 `npc_state_machine_ids_referenced`；missing-only；由 T-3X-1b 拍板是否落地）
+- **STAGE_3_TASKS 修订**：T-3X-1 拆分为 T-3X-1a（ADR-030 字段集）+ T-3X-1b（ADR-031 NPC 状态机）；详 v1.0.2
+- **ROADMAP §阶段 3 时长**：5-9 周 → 6-11 周（含 T-3X-1b NPC 状态机引入估时 +1-2 周）
+- **DEBATE_NOTES §10 核心赌注段同期立**：本 ADR 立项 + DEBATE §10 同期生效；首次明文承认项目级赌注 + 4 档回退路径
+
+**关联讨论**：
+
+- 与 ADR-001 玩家交互预生成选项式：✓ 强化（F7 即兴正是预生成 multi-variant 的实证）
+- 与 ADR-002 运行时无 LLM + ADR-004 运行时与生产期分离：✓ 严守（NPC 状态机运行时查表，不调 LLM）
+- 与 ADR-005 编剧理论可替换插件：✓ 兼容（本 ADR 是叙事**结构**契约，不是叙事**理论**）
+- 与 ADR-006 世界本体 SOT + ADR-008 LLM 不能直接写状态：✓ 严守（NPC 状态机 transition 通过 state effect 改 state path）
+- 与 ADR-009 评测分三层 + ADR-021 第二层 2A 拓扑 + 2B 抽样：✓ 增强（NPC 状态机闭合性 / 不可达 / 死锁 = 拓扑层新增校验维度）
+- 与 ADR-017 时钟系统：✓ 复用（F3 威胁节奏直接用现有 clock + tick_effects）
+- 与 ADR-018 关系层 narrative_weight：✓ 协同（character.relations 与 NPC 状态机正交；前者跨场景，后者场景内）
+- 与 ADR-019 角色槽位持久化 + dramatic_triggers：✓ 协同（详上方"协同语义"段）
+- 与 ADR-022 playtest bots：✓ 协同（5 persona × 20 paths 实测可包含 NPC 状态机 transition 覆盖率）
+- 与 ADR-023 content_dependency_index：✓ 可能扩展 optional 字段
+- 与 ADR-024 长对话一致性：✓ 不冲突（NPC 状态机 state 持久化天然有助跨场景一致性；但不替代长对话上下文管理）
+- 与 ADR-027 World-Agnostic + ADR-028 引擎与宿主分离 + ADR-029 项目配置层：✓ 严守（schema 字段命名中性；本 ADR 不引入宿主层字段；F6 难度调整复用 active_check + passive_injection）
+- 与 ADR-030 AestheticPreference schema 字段集预留：✓ 正交（ADR-030 = 质感词汇库；本 ADR = 结构契约）
+- 与 DEBATE §2 plot-centric 骨架 + character-centric 肌肉：✓ NPC 状态机正是 character-centric 肌肉的工程实现
+- 与 DEBATE §5 极简运行时：✓ 严守 500 行上限（NPC 状态机查表 ~50-80 行）
+- 与 DEBATE §6.1 PbtA 阵营时钟：F3 威胁节奏直接用 clock
+- 与 DEBATE §6.5 关系图谱：NPC 状态机 state 持久化到 character.relations 命名空间
+- 与 DEBATE §9.1 "谁来写那张图"：本 ADR F1-F7 抽象层是回答"AI 生成时按什么结构生成"的核心；解决"AI 生成几千节点无法保证没有逻辑死锁"的部分
+- 与 DEBATE §10 核心赌注（本 PR 同期立）：本 ADR 是核心赌注的工程落地体现；赌注成败决定本 ADR 价值
+- 与战略校准 v0.1 北极星 = A 完成度：✓ 工具改进合法性自检通过（F1-F5 用现有机制让 A 立即可写；F2 NPC 状态机避免未来"散落 NPC 反应"债务爆炸）
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -881,6 +983,7 @@ Forgewright 引擎核心不预设任何技能列表、不预设任何技能数�
 - 2026-05-10：作者明确授权新增 ADR-028（引擎与宿主分离原则），属 CLAUDE.md 规则 10 的明示例外。原稿编号 ADR-011 与既有 ADR-011（LLM 提供商）撞号，落地时改为下一个空闲编号 ADR-028。
 - 2026-05-11：作者明确授权新增 ADR-029（技能体系作为项目配置层），属 CLAUDE.md 规则 10 的明示例外。落地时按 ADR-028 风格统一删除原稿底部"版本/引入时间"两行；"关联讨论"段"ADR-011 / ADR-028（引擎与宿主分离原则）"占位修正为"ADR-028"（ADR-011 实为 LLM 提供商，非引擎与宿主分离）。
 - 2026-05-12：作者明确授权新增 ADR-030（AestheticPreference schema；字段集留空预留，待 T-3X-1 实证归纳）+ 修订 ADR-020 v0.2（X4 闭环；阶段 2/3/4 三阶段口径），属 CLAUDE.md 规则 10 的明示例外。审美层决策于 2026-05-09 签字（v0.2）；ADR-028 + ADR-029 同期由产品线讨论起草并于 2026-05-10/11 push 到 main，占用编号 028/029；本 ADR 顺延为 ADR-030。整合自 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.4 + §6.5。T-3X L2 校准会话起草 L3 fixation PR paste-ready prompt（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2 修订包含产品线 ADR-028/029 联动校准）→ L1 fixation 执行会话（本 PR）落地。
+- 2026-05-13：作者明确授权新增 ADR-031（GM 抉择空间结构化方案；混合方案 D = A 基础层 + B NPC 状态机增强层），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（5.1 立 ADR-031 / 5.2 T-3X-1 拆 a+b / 5.3 跳 critique / 5.4 DEBATE §10 同期立 / 5.5 ROADMAP 时长 5-9 → 6-11 周）。同期落地：DEBATE_NOTES.md §10 核心赌注段 + STAGE_3_TASKS.md v1.0.2（T-3X-1 拆分）+ ROADMAP §阶段 3 时长校准。后续 T-3X-1a / T-3X-1b L3 工程会话基于本 ADR 启动。
 
 ## 版本
 
