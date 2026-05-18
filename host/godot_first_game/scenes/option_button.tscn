@@ -1,0 +1,10 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/option_button.gd" id="1"]
+
+[node name="DialogueOptionButton" type="Button"]
+custom_minimum_size = Vector2(0, 58)
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 18
+text = "Option"
+script = ExtResource("1")
