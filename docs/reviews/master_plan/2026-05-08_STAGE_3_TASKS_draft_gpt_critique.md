@@ -135,5 +135,5 @@ v0.1 的前向方向总体健康：ROADMAP 阶段 3 五个完成标志、Round 5
 ## 8. 必读策略复盘（精简版执行情况）
 
 - 8 份预读充分。v0.1 主体、CLAUDE.md、ROADMAP 阶段 3/4、ADR-016~021、DEBATE §9/Round5、STAGE_2_ACCEPTANCE §4/§5/§8、HANDOFF 全文、synthesis §6/§7/§9/§11 足够支撑架构层 critique。
-- by-need 实际触发 5 份：`STAGE_2_TASKS.md`（ABC/prompt 体例）、`2026-05-01_review_routine_governance.md`（§10）、`2026-05-02_PZ_design_reflection.md`（§5/§7）、`SCHEMA_v0.3.md`（复合版本语义）、`content/test_scene_v0/scene.json`（gold scene 形态）。
+- by-need 实际触发 5 份：`STAGE_2_TASKS.md`（ABC/prompt 体例）、`/docs/governance.md`（§10）、`2026-05-02_PZ_design_reflection.md`（§5/§7）、`SCHEMA_v0.3.md`（复合版本语义）、`content/test_scene_v0/scene.json`（gold scene 形态）。
 - 未预想但必要的增补：`pyproject.toml`、`generator/context_assembler.py`、`generator/generate_scene.py`、`generator/llm_provider.py`、`generator/scene_review_cli.py`、`schema/dialogue_graph.schema.json`、`schema/chapter.schema.json`。这些不是为了写代码，而是验证 v0.1 prompt 的模块边界是否能在真实 repo 中落地。阶段 4 critique 建议把 “repo structure / dependency manifest / key current modules” 加入 by-need 明示清单，尤其当任务清单包含新工具包或 Web UI 时。

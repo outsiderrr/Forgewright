@@ -82,7 +82,7 @@ T-3Y L2 会话完成 = 以下产物全部落档：
 6. /docs/DECISIONS.md（特别 ADR-001 / 005 / 006 / 008 / 027 / 028 / 029 / 030 / 031）
 7. /docs/STAGE_3_TASKS.md §1（完成标志）+ §1.5（ABC 流程）+ §1.7（量化矩阵）
 8. /docs/DEBATE_NOTES.md §10（项目级可测目标 + 4 档回退路径）
-9. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1 §10（ABC 闭环）+ §11（v0.4 prompt 文件化）
+9. /docs/governance.md v0.4.1 §10（ABC 闭环）+ §11（v0.4 prompt 文件化）
 
 # 工作风格
 
