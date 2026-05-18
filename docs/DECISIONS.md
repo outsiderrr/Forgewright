@@ -370,6 +370,31 @@
 - validator 扩展（T-2.7）必须支持本体引用闭合 + state path 命名空间合法性 + state_path_slug 反查
 - prompt 模板（T-2.5）必须把 character_features / dramatic_triggers / Chapter/Act / 系统时间双轨纳入 context
 
+### v0.4（2026-05-18 ADR-034 + ADR-034.1 落地承接）
+
+**修订内容**：
+
+1. **新增第 6 个 state path 命名空间** `knowledge.*`（玩家知识 / fact-level player knowledge）：
+   - pattern：`^knowledge\.[a-z0-9_]+(\.[a-z0-9_]+)*$`
+   - 用途：跟踪玩家在游戏过程中获得的离散事实（如 `knowledge.npc_is_killer` / `knowledge.crime_motive` / `knowledge.<reveal_id>.stage_<n>` for progressive disclosure）
+   - 对应 Ink LIST + Articy Glossary 业界主流（ADR-034 §2 调研结论）
+
+2. **Monotonic 命名空间清单**（ADR-034 D11 落地）：
+   - `flag.player_*` — LLM 生成内容只能 `set` / `inc` / `add`，禁止 `dec` / `remove`（玩家不忘行为历史）
+   - `knowledge.*` — 同上（玩家不忘事实知识）
+   - 其他命名空间（`world.*` / `faction.<id>.*` / `relationship.<slug>.*` / `flag.*`（非 `player_`）/ `player.*`）允许双向；详 ADR-034 D11
+   - 作者手填内容（`generation_trace.source == "human"`）不受此规则约束
+
+**理由**：T-3Y 进展报告 §5.2 拍板"不模拟玩家遗忘"——schema 层补防御。T-3Y player_known_info 设计需要 `knowledge.*` 命名空间作为 first-class primitive，对齐 Ink LIST + Articy Glossary 业界主流（ADR-034 §2 调研）。作者 2026-05-18 拍板（5 个争议点全部接受 Agent A 倾向，含 Gap 8 + Gap 9）。
+
+**追溯**：见 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2 §6.3 D3 + D11 + §7.4 拍板表。
+
+**对工程的影响**：
+- validator（`/validator/`）必须扩展支持第 6 命名空间 + monotonic 规则
+- 机械预检器（T-2.4 后续修订）的命名空间清单更新至 6 条
+- T-3Y-1 工程会话**硬依赖**此 v0.4 修订；必须先落地 `knowledge.*` 命名空间
+- schema 文件如需 pattern 校验，加入第 6 命名空间
+
 ---
 
 ## ADR-017：时钟系统
@@ -972,6 +997,99 @@ NPC 状态机运行时执行 = 查表（state × event → next_state + response
 
 ---
 
+## ADR-034：Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims（v_incremental）
+
+**状态**：已接受（2026-05-18）
+
+**背景**：
+
+2026-05-15 T-3Y L2 综合规划师会话识别一个架构层级风险——Forgewright dialogue_graph schema 凭直觉自设计，未对标业界事实标准（Ink / Articy / Twine / Dialogic），未来集成 / 迁移 / 用户群扩展可能撞兼容性壁。本 ADR 通过 4 工具调研 + 7 维度评分 + 3 distinct 立场候选评估，确定 Forgewright schema 与业界工具生态的关系。
+
+详细调研（4 工具 per-tool 机制清单 + 3 distinct 候选方案 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）见 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2。
+
+**调研核心发现**：
+
+1. **架构层不可调和**：4 工具中没有一个采用 Forgewright "JSON-native（源 = 运行时）"模式。3 个用 DSL 源 + 编译产物（Ink / Twine / Dialogic），1 个用私有编辑期格式 + JSON 导出（Articy）。
+2. **T-3Y capability surplus 领先业界**：T-3Y 4 个待答设计问题（scene_metaparams / progressive disclosure / coverage_strategy / scene pre-post）在 4 工具中 0 个原生支持。
+3. **真实 v0.3 落后业界点**：3 处（行内条件文本 / 一次性选项标记 / 信息揭露原语）。
+
+**决策**：选 **v_incremental** 路线——Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims，**不立格式中立 IR**。
+
+11 个子决策（D1-D11）：
+
+**D1 · Schema 定位措辞**：`/docs/SCHEMA_v0.3.md`（或后续）开篇正式定位为"AI-generation-aware schema that selectively aligns with industry primitives where they fit; NOT a format-neutral intermediate representation."
+
+**D2 · 接受 T-3Y 草案核心结构**：scene_metaparams / scene_reveals / scene_seeds / scene_static_inputs/outputs / player_known_info / foreground_goal / background_seeds 等字段作为 Forgewright 差异化优势 documented。
+
+**D3 · 立项 ADR-034.1 · `knowledge.*` state path 第 6 命名空间**：直接对标 Ink LIST + Articy Glossary 主流做法。具体语义 + pattern + 与 T-3Y player_known_info 的耦合关系由 **ADR-016 v0.4 修订**承接（本 PR 同步落地）。
+
+**D4 · scene_metaparams 字段形态**：`dict[str, JSON]` 自由形态 + 项目配置层定义字段名 enum（参考 ADR-029 模式）；保 ADR-027 世界观不可知性原则。**作者 2026-05-18 拍板接受**。
+
+**D5 · scene_reveals 多路径语义**：用 ordered flag set 模式。每 trigger_node 触发时 set `knowledge.<reveal_id>.stage_<n>` flag；completion_node 入口检查 `required_stages ⊆ set_stages`。参考 Ink LIST 主流。**作者 2026-05-18 拍板接受**。
+
+**D6 · scene_seeds.coverage_strategy validator**：v0.1 接受弱保证（场景退出时 flag set 检查；无 path enumeration）；强保证推迟到未来 ADR 修订。参考 Articy fallback() 工程节奏。**作者 2026-05-18 拍板接受**。
+
+**D7 · 立 4 个 follow-up ADR 候选清单**：
+
+- ADR-034.1：`knowledge.*` 命名空间落地（**ADR-016 v0.4 修订承接**，本 PR 同步落地）— **高优先级**
+- ADR-034.2：`Option.choice_visibility` 字段（once / sticky / disabled enum，对齐 Ink `*`/`+` + Articy seen/unseen）— 中优先级，阶段 3-4
+- ADR-034.3：`node.narration` inline conditional text 微语言（对齐 Ink `{cond: A|B}`）— 低优先级，阶段 4 前后
+- ADR-034.4：`chapter.ifid` 字段（UUID v4，对齐 Twine StoryData）— 低优先级，阶段 4 开源剥离
+
+**D8 · 阶段 4 开源剥离时加单向导出适配器**：`forgewright-to-twine.py`（输出 .twee）+ `forgewright-to-dialogic.py`（输出 .dtl）。承认 lossy；Ink / Articy 不在 v0.1 适配器范围（架构异构性大、价值低）。
+
+**D9 · ADR-034 本身不修改任何现有 schema 或代码**：仅做立项决定 + 措辞修订；具体 schema 字段变更由 follow-up ADR 各自承接。本 PR 例外只动 ADR-016 v0.4 修订（D3 配套）。
+
+**D10 · 明示停止条件（v_incremental 独有）**：当某次对齐候选识别为"为对齐而对齐"（即业界原语与 Forgewright 哲学冲突或 capability surplus 必然受损）时立即停止；每候选 follow-up ADR 必须明示哲学冲突检查（ADR-004 / 006 / 027 合规审查 + capability surplus 影响评估）。这是 v_incremental 对"滑坡到 v_full_ir"的核心防御。
+
+**D11 · Player-monotonic 原则**（Gap 9 落地，作者 2026-05-18 拍板）：
+
+Schema 层强制——LLM 生成的 state effects 在以下 **monotonic 命名空间**下，只允许 `set` / `inc` / `add`，禁止 `dec` / `remove`：
+
+- `flag.player_*` — 玩家见证 / 行为 flag
+- `knowledge.*`（ADR-034.1 新增）— 玩家知识
+
+**不在 monotonic 清单内**（允许双向变化）：
+
+- `player.traits` / `player.bonds`（性格特征 / 羁绊可被剧情移除：背叛 → 羁绊消失；喝酒 → 观察能力下降）
+- `relationship.<slug>.*`（关系状态值自然波动，含 trust / fear / affinity 等）
+- `faction.<id>.*` / `world.*` / `player.gold` / `player.health` 等
+
+作者手填内容（`generation_trace.source == "human"`）不受此规则约束。详 ADR-016 v0.4 修订。
+
+**5 个 T-3Y 设计争议点 · 作者 2026-05-18 拍板结果**：全部接受 Agent A 倾向（Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。
+
+**替代方案及否决理由**：
+
+- **A1 v_full_ir（格式中立 IR + 4 个双向适配器）**：Schema 体积爆炸违反 ADR-004 极简；T-3Y capability surplus 在导出路径必然降级（progressive disclosure → flatten；coverage strategy → 丢弃）；工程量 17-21 周阻塞主线；4 适配器永续 maintenance
+- **A2 v_thin_export（不立 IR + 仅 2 单向 shim + 不立 follow-up）**：违反"主流能实现相同效果则推主流"原则——明知 Ink LIST、Twine ifid 等有借鉴价值仍不学；社区采纳门槛过高（中文社区评分 4）；阶段 4 后悔升级成本 12-17 周
+- **A3 缓议**：T-3Y 4 个待答设计问题阻塞 T-3Y-1 工程会话；缓议延迟主线
+- **A4 完全闭门**：失去阶段 4 工具生态价值；用户群扩张被永久封顶
+
+**后果**：
+
+1. Schema 文档措辞修订（`/docs/SCHEMA_v0.3.md` 或后续；D1）
+2. **ADR-016 v0.4 修订**承接 D3 + D11（本 PR 同步落地）
+3. T-3Y-1 工程会话按 D4 / D5 / D6 / D11 实现 schema 字段；硬依赖 ADR-016 v0.4 = ADR-034.1
+4. 4 个 follow-up ADR（D7）独立排期；不阻塞 ADR-034 合入
+5. 阶段 4 开源剥离阶段加 2 个单向导出适配器（D8）
+6. validator 扩展支持 6 命名空间 + monotonic 规则（D11 + ADR-016 v0.4 配套）
+7. 5 个 T-3Y 设计争议点（Gap 5 / 6 / 7 / 9 / 10）作者拍板已落档（详调研报告 §7.4）；Gap 5/6/7/10 进入 T-3Y-1 工程会话实现
+
+**关联讨论**：
+
+- ADR-004（极简）：D1 + 否决 A1 论证基础
+- ADR-006（SOT）：本 ADR 不触动 SOT 哲学
+- ADR-007（核心是 Runtime 不是 Parser）：D1 措辞一致
+- **ADR-016（state path 命名空间）**：**v0.4 修订承接 D3 + D11**（本 PR 同步）
+- ADR-027（世界观不可知）：D4 的核心约束
+- ADR-028（引擎与宿主分离）：D8 适配器的归属层（host adapter，非 engine）
+- ADR-029（技能体系项目配置层）：D4 的模式参考
+- T-3Y 进展报告（[2026-05-15_T-3Y_design_progress.md](reviews/master_plan/2026-05-15_T-3Y_design_progress.md)）：被本 ADR 解锁；T-3Y-1 工程会话承接
+- 调研报告（[2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2）：本 ADR 详细论证 + 4 工具调研 + 7 维度评分 + 5 拍板结果
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -984,6 +1102,7 @@ NPC 状态机运行时执行 = 查表（state × event → next_state + response
 - 2026-05-11：作者明确授权新增 ADR-029（技能体系作为项目配置层），属 CLAUDE.md 规则 10 的明示例外。落地时按 ADR-028 风格统一删除原稿底部"版本/引入时间"两行；"关联讨论"段"ADR-011 / ADR-028（引擎与宿主分离原则）"占位修正为"ADR-028"（ADR-011 实为 LLM 提供商，非引擎与宿主分离）。
 - 2026-05-12：作者明确授权新增 ADR-030（AestheticPreference schema；字段集留空预留，待 T-3X-1 实证归纳）+ 修订 ADR-020 v0.2（X4 闭环；阶段 2/3/4 三阶段口径），属 CLAUDE.md 规则 10 的明示例外。审美层决策于 2026-05-09 签字（v0.2）；ADR-028 + ADR-029 同期由产品线讨论起草并于 2026-05-10/11 push 到 main，占用编号 028/029；本 ADR 顺延为 ADR-030。整合自 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.4 + §6.5。T-3X L2 校准会话起草 L3 fixation PR paste-ready prompt（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2 修订包含产品线 ADR-028/029 联动校准）→ L1 fixation 执行会话（本 PR）落地。
 - 2026-05-13：作者明确授权新增 ADR-031（GM 抉择空间结构化方案；混合方案 D = A 基础层 + B NPC 状态机增强层），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（5.1 立 ADR-031 / 5.2 T-3X-1 拆 a+b / 5.3 跳 critique / 5.4 DEBATE §10 同期立 / 5.5 ROADMAP 时长 5-9 → 6-11 周）。同期落地：DEBATE_NOTES.md §10 核心赌注段 + STAGE_3_TASKS.md v1.0.2（T-3X-1 拆分）+ ROADMAP §阶段 3 时长校准。后续 T-3X-1a / T-3X-1b L3 工程会话基于本 ADR 启动。
+- 2026-05-18：作者明确授权新增 ADR-034（Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims；v_incremental 路线）+ 修订 ADR-016 v0.4（新增第 6 个 state path 命名空间 `knowledge.*` + monotonic 命名空间清单），属 CLAUDE.md 规则 10 的明示例外。整合自 ADR-034 调研报告 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2（4 工具 per-tool 机制清单 + 3 distinct 候选评估 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）+ 作者 2026-05-18 拍板（5 争议点全部接受 Agent A 倾向：Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。ADR-034 调研会话（claude/wonderful-proskuriakova-e68be2）产出 + 同会话落地。
 
 ## 版本
 
