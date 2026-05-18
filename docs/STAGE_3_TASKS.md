@@ -453,7 +453,7 @@ Wave 8（验收）:
 
 ## 8. T-3.X paste-ready 执行会话 prompt 索引（v0.4 工作流；prompt 文件化）
 
-> **v0.4 工作流**（2026-05-08 起；详见 [/docs/reviews/master_plan/2026-05-01_review_routine_governance.md](reviews/master_plan/2026-05-01_review_routine_governance.md) §11）：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。详见 [/docs/prompts/README.md](prompts/README.md)。
+> **v0.4 工作流**（2026-05-08 起；详见 [/docs/governance.md](governance.md) §11）：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。详见 [/docs/prompts/README.md](prompts/README.md)。
 >
 > **L3 会话起步标准格式**：
 >

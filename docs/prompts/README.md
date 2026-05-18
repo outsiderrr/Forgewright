@@ -2,7 +2,7 @@
 
 > 阶段 3 起新规范：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。
 >
-> v0.4 governance 修订记录见 [/docs/reviews/master_plan/2026-05-01_review_routine_governance.md](../reviews/master_plan/2026-05-01_review_routine_governance.md) §11 v0.4 段。
+> v0.4 governance 修订记录见 [/docs/governance.md](../governance.md) §11 v0.4 段。
 
 ## 目录结构
 

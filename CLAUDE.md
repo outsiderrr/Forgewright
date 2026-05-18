@@ -81,6 +81,7 @@
 - `/docs/DECISIONS.md`：架构决策记录（ADR 格式，每条决策独立带编号和日期）。
 - `/docs/DEBATE_NOTES.md`：四轮对抗性评审的关键结论，作为反悔前必读。
 - `/docs/SCHEMA_v0.md`：Schema 设计说明（配合 `/schema` 下的 JSON Schema 文件阅读）。
+- `/docs/governance.md`：项目治理（v0.4.1）—— ABC 闭环 / prompt 文件化 / L2 / L3 角色定义 / 跳 BC 破例清单 等核心治理规则。
 
 ## 版本
 

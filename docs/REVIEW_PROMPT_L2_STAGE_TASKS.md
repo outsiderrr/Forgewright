@@ -81,7 +81,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。短期作者本�
 8. `/docs/HANDOFF_STAGE_{{PRIOR_STAGE_NUMBER}}_TO_{{STAGE_NUMBER}}.md` — v0.1 是否完整继承交接档约束（特别"Schema 扩展警示"段 / 阶段 N-1 收尾架构遗留段）
 9. `/docs/STAGE_{{PRIOR_STAGE_NUMBER}}_TASKS.md` — paste-ready prompt 格式参考（v0.1 §8 是否与上一阶段 §8 同款体例）
 10. `/docs/reviews/master_plan/2026-04-30_synthesis.md` — Round 5 综合 §6 阶段 2 启动闸门 vs §7 阶段 3 启动前置（v0.1 启动闸门映射是否完整）+ §9 待阶段 X 项
-11. `/docs/reviews/master_plan/2026-05-01_review_routine_governance.md` v0.3 — §10 ABC 三阶段流程（v0.1 §1.5 是否吸收完整）
+11. `/docs/governance.md` v0.3 — §10 ABC 三阶段流程（v0.1 §1.5 是否吸收完整）
 12. `/docs/reviews/master_plan/2026-05-02_PZ_design_reflection.md` — §5 §9.2 + §7 作者态度（v0.1 长对话一致性 / sibling 涌现项目防护是否与作者态度对齐）
 13. `/content/test_scene_v0/scene.json` — gold standard，v0.1 任务依赖该场景不被破
 
@@ -104,7 +104,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。短期作者本�
 
 - `/docs/STAGE_{{PRIOR_STAGE_NUMBER}}_TASKS.md` — 4500+ 行 token 大户；如需对照 paste-ready prompt 体例，按章节查（如 §1.5 ABC 段 / §8 paste-ready prompts）
 - `/docs/SCHEMA_v0.md` + `v0.2.md` + `v0.3.md` — schema 边界查表用
-- `/docs/reviews/master_plan/2026-05-01_review_routine_governance.md` — ABC 流程定义查（v0.3 §10）
+- `/docs/governance.md` — ABC 流程定义查（v0.3 §10）
 - `/docs/reviews/master_plan/2026-05-02_PZ_design_reflection.md` — 作者态度查（§7）+ §9.2 长对话一致性深入讨论
 - `/content/test_scene_v0/scene.json` — gold scene 形态查
 
@@ -289,7 +289,7 @@ GPT-5.5 critique 落盘 /docs/reviews/master_plan/<date>_STAGE_X_TASKS_draft_gpt
 [作者按 v1.0 wave 顺序逐个起 L3 执行会话]
 ```
 
-整体 L1 → L2 → L3 治理见 `/docs/reviews/master_plan/2026-05-01_review_routine_governance.md` v0.3。
+整体 L1 → L2 → L3 治理见 `/docs/governance.md` v0.3。
 
 ---
 

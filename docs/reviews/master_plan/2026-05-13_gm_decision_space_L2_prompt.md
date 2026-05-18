@@ -315,7 +315,7 @@ L3 工程会话（T-3X-1 / T-3X-1a + T-3X-1b / T-3X-2 视拆分判断）→ 立 
 
 ## 与现有治理的关系
 
-本提示词对应工作流的 **L2 起草步骤**（不同于 `REVIEW_PROMPT_L2_STAGE_TASKS.md` 的 L2 critique 步骤）。整体 L1 → L2 → L3 治理见 `/docs/reviews/master_plan/2026-05-01_review_routine_governance.md` v0.3。
+本提示词对应工作流的 **L2 起草步骤**（不同于 `REVIEW_PROMPT_L2_STAGE_TASKS.md` 的 L2 critique 步骤）。整体 L1 → L2 → L3 治理见 `/docs/governance.md` v0.3。
 
 ---
 

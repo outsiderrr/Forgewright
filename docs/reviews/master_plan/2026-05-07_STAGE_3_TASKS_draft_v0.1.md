@@ -14,7 +14,7 @@
 - `/docs/ROADMAP.md` §阶段 3（含 Round 5 综合后完成标志强化项 5 项 + 强建议 2 项）
 - `/docs/reviews/master_plan/2026-04-30_synthesis.md` §7 阶段 3 启动前置 + §9 综合开放决策
 - `/docs/reviews/master_plan/2026-05-02_PZ_design_reflection.md` §5 + §7（U-CL-5 长对话一致性 + 作者态度记录）
-- `/docs/reviews/master_plan/2026-05-01_review_routine_governance.md` v0.3 §10（ABC 三阶段流程）
+- `/docs/governance.md` v0.3 §10（ABC 三阶段流程）
 - `/docs/STAGE_2_ACCEPTANCE.md` §4 R2.X 遗留 + §5 阶段 3 启动闸门
 - 阶段 2 实战经验（13 主任务 ABC 闭环 + 13 跳 BC 破例 PR）
 

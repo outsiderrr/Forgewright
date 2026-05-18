@@ -81,7 +81,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。阶段 3 工程�
 1. /CLAUDE.md — 项目硬规则 10 条（特别规则 2 不跨模块 / 规则 9-10 不修 CLAUDE / DECISIONS 除非作者授权）
 2. /docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md（v0.2；**主输入**，特别 §6.4 + §6.5 + §10 修订记录）
 3. /docs/DECISIONS.md（特别 ADR-020 现状段 + ADR-010 v0.2 修订段作为格式参考 + 变更历史段；**行号现读现取**——main 现含 ADR-028/029，旧行号已漂移）
-4. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1（特别 §10 ABC 流程）
+4. /docs/governance.md v0.4.1（特别 §10 ABC 流程）
 5. /docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md v0.2.2（**T-3X L2 校准产出本备忘**；本 prompt 即来自 §3；含产品线 ADR-028/029 联动校准说明）
 6. 参考 PR #50（L1 fixation of strategy calibration v0.1）：`gh pr view 50 --json title,body,commits,files` 看模式
 
@@ -248,7 +248,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。阶段 3 工程�
 2. /docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md（v0.2；**主输入**，特别 §6.1 + §6.3 + §5 关键决策点 3-7）
 3. /docs/ROADMAP.md（特别 §阶段 3 L185-L218 + 阶段 4 切换协议 L241-L255 + 更新记录 L260-L268）
 4. /docs/HANDOFF_STAGE_2_TO_3.md（特别 §阶段 3 审美层 review 激活 L75-L83 + 跨阶段提醒 X4 L205-L207）
-5. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1（特别 §10 ABC 流程）
+5. /docs/governance.md v0.4.1（特别 §10 ABC 流程）
 6. 参考 PR #50（L1 fixation of strategy calibration v0.1）：`gh pr view 50 --json title,body,commits,files` 看模式
 
 # 模块边界（硬性）
@@ -452,7 +452,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。阶段 3 工程�
 3. /docs/STAGE_3_TASKS.md（v1.0；特别 §1 完成标志阈值表 L66-L92 + §3.1 ADR-022 决策核心 L199-L213 + §7 任务清单 L360-L381 + §6 wave 图 L306-L356）
 4. /docs/prompts/stage_3/T-3.10.md（现状全文；待修订）
 5. /docs/DECISIONS.md（PR-A 已落地的 ADR-030 + ADR-020 v0.2；引用源）
-6. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1（特别 §10 ABC 流程 + §11 v0.4 prompt 文件化）
+6. /docs/governance.md v0.4.1（特别 §10 ABC 流程 + §11 v0.4 prompt 文件化）
 7. 参考 PR #50（L1 fixation of strategy calibration v0.1）：`gh pr view 50 --json title,body,commits,files` 看模式
 
 # 模块边界（硬性）

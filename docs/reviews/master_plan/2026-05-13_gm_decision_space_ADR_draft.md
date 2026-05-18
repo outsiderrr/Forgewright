@@ -716,7 +716,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。第一款游戏 
 5. /docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md（L2 综合规划师产出；本 prompt 即来自 §3.1）
 6. /docs/SCHEMA_v0.3.md §1-§5 — schema 体例参考
 7. /docs/STAGE_3_TASKS.md v1.0.1 §1.5 ABC 流程 + §8 任务 prompt 体例
-8. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1 §10 ABC 流程
+8. /docs/governance.md v0.4.1 §10 ABC 流程
 9. /generator/scene_strategies.py + /generator/prompts/scene/ — prompt 模板现状
 
 # 模块边界（硬性）
@@ -852,7 +852,7 @@ Forgewright = AI 辅助分支叙事 RPG 内容生产流水线。第一款游戏 
 9. /validator/*.py — 现有 validator 模块
 10. /engine/*.py — 极简运行时（注意 ADR-004 + DEBATE §5 极简原则）
 11. /docs/STAGE_3_TASKS.md v1.0.1 §1.5 ABC 流程 + §8 任务 prompt 体例
-12. /docs/reviews/master_plan/2026-05-01_review_routine_governance.md v0.4.1 §10 ABC 流程
+12. /docs/governance.md v0.4.1 §10 ABC 流程
 
 # 模块边界（硬性）
 
