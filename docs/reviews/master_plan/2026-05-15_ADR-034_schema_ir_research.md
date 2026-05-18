@@ -491,7 +491,7 @@ Dialogic 是**Godot 引擎插件**：编辑期作者用 Dialogic 编辑器写 `.
 
 ### 6.1 状态
 
-**proposed**（2026-05-15 调研报告产）；待作者签字 + L2 综合规划师评审 + 合入 `/docs/DECISIONS.md`。
+**proposed**（2026-05-15 调研报告产）；5 个 T-3Y 设计争议点已由作者拍板（2026-05-18，全部接受 Agent A 倾向，详 §7.4）；待 L2 综合规划师评审 + 合入 `/docs/DECISIONS.md`。
 
 ### 6.2 背景
 
@@ -561,6 +561,34 @@ ADR-034 仅做立项决定 + 措辞修订（SCHEMA_v0.3.md / SCHEMA_v0.4 草案�
 
 当某次对齐候选识别为"为对齐而对齐"——即业界原语与 Forgewright 哲学冲突或 capability surplus 必然受损——时立即停止，**不再继续对齐方向**。每候选 follow-up ADR 必须明示哲学冲突检查（ADR-004 / 006 / 027 合规审查 + capability surplus 影响评估）。这是 v_incremental 对"滑坡到 v_full_ir"的核心防御。
 
+#### D11 · Player-monotonic 原则（Gap 9 落地，2026-05-18 作者拍板）
+
+Schema 层强制：LLM 生成的 state effects 在以下 **monotonic 命名空间**下，只允许 `set` / `inc` / `add`，**禁止** `dec` / `remove`：
+
+- `flag.player_*` —— 玩家见证 / 行为 flag（玩家不会忘记做过的事）
+- `knowledge.*`（ADR-034.1 新增）—— 玩家知识（玩家不会忘记知道的事实）
+
+**不在 monotonic 清单内**（即允许双向变化）：
+
+- `player.traits` / `player.bonds` —— 性格特征 / 羁绊可被剧情移除（如背叛 → 羁绊消失；喝酒 → 观察能力下降）
+- `relationship.<slug>.*`（含 trust / fear / affinity 等）—— 关系状态值自然波动
+- `faction.<id>.*` —— 阵营声誉双向
+- `world.*` —— 世界状态双向
+- `player.gold` / `player.health` 等数值 stat —— 自然双向
+
+**作者手填内容**（`generation_trace.source == "human"`）不受此规则约束（生产期修订可破例）。
+
+Validator 实现示意：
+
+```python
+MONOTONIC_NAMESPACES = [r"^flag\.player_.+", r"^knowledge\..+"]
+# 规则：generation_trace.source == "llm" 的 effect，path 匹配 MONOTONIC_NAMESPACES 时：
+#   - op 必须 ∈ {set, inc, add}
+#   - 违反则 validator 拒收
+```
+
+**理由**：T-3Y §5.2 拍板"不模拟玩家遗忘——默认玩家记住一切"。但 v0.3 schema 的 `state_effect.op` enum 含 `dec` / `remove`，LLM 可能不当生成"玩家忘了 X"。本 D11 在 schema 层补防御。**清单只 2 条**（不含 traits / bonds），因为作者拍板（2026-05-18）：traits / bonds 属于身份层标签但**可被剧情移除**（背叛 → 羁绊消失；喝酒 → 观察能力下降），不算 monotonic。
+
 ### 6.4 替代方案
 
 | 替代 | 简称 | 内容 | 详 |
@@ -587,7 +615,7 @@ ADR-034 仅做立项决定 + 措辞修订（SCHEMA_v0.3.md / SCHEMA_v0.4 草案�
 4. 4 个 follow-up ADR 候选（D7）独立排期，不阻塞 ADR-034 本身合入
 5. 阶段 4 开源剥离阶段加 2 个单向导出适配器（D8）
 6. ADR-034 本身不修改任何现有 schema 或代码（D9）；只做立项 + 措辞
-7. **5 个 T-3Y 设计争议点**（§5.2 Gap 5/6/7/9/10）**留作者拍板**——ADR-034 不替作者决定 dict 形态 vs enum / ordered flag set vs raw list / 弱保证 vs 强保证 / player-monotonic 原则 / player_known_info 拆分
+7. **5 个 T-3Y 设计争议点**（§5.2 Gap 5/6/7/9/10）**已由作者拍板**（2026-05-18，全部接受 Agent A 倾向，详 §7.4）—— Gap 9 落地为 D11 player-monotonic 原则（monotonic 清单 = `flag.player_*` + `knowledge.*` 两条；traits/bonds 归双向）；Gap 5/6/7/10 进入 T-3Y-1 工程会话实现
 
 ### 6.7 关联讨论
 
@@ -667,17 +695,23 @@ Dialogic 2.x 完全缺 scene-level pre/post + progressive disclosure + coverage 
 
 ADR-034 的合适拍板时机：**T-3Y-1 工程会话启动前**（因 ADR-034.1 knowledge.* 命名空间是其工程依赖）。若选 Path 4（缓议），需要在 T-3Y-1 启动前重新评估。
 
-### 7.4 5 个 T-3Y 设计争议点的拍板（§5.2 Gap 5/6/7/9/10）
+### 7.4 5 个 T-3Y 设计争议点 · 作者拍板结果（2026-05-18）
 
-> 这些是 ADR-034 立项后必须由作者拍板的 5 个设计点；ADR-034 不替作者决定。详细论据见 §5.2 gap 表 + §5.3 dissent。
+> 5 个争议点已由作者（outsiderrr）于 2026-05-18 拍板，**全部接受 Agent A 倾向**。详细讨论见 §5.2 gap 表 + §5.3 dissent。Gap 9 落地为 §6.3 D11 player-monotonic 原则。
 
-| 争议点 | Agent 倾向 | 留作者拍板的关键问题 |
+| 争议点 | Agent A 倾向 | 作者拍板（2026-05-18）|
 |---|---|---|
-| Gap 5 · scene_metaparams 字段形态 | dict[str, JSON] + 项目配置层 | 是否接受 dict 形态？或保留 enum + ADR-027 加例外条款？ |
-| Gap 6 · scene_reveals 顺序语义 | ordered flag set 模式 | 是否接受 ordered flag set 重构？ |
-| Gap 7 · coverage_strategy validator 强度 | v0.1 弱保证 | 是否接受弱保证？或要求 path enumeration？ |
-| Gap 9 · player-monotonic 原则 | 立此原则 | 是否在 ADR-034 立 player-monotonic？或单独立 ADR-034.5？ |
-| Gap 10 · player_known_info summary 字段归属 | 拆 schema list + 生成层 summary | 是否接受拆分（summary 不进 schema）？ |
+| Gap 5 · scene_metaparams 字段形态 | `dict[str, JSON]` + 项目配置层定义字段名 enum | ✓ **接受 A**（参考 ADR-029 项目配置层模式；保 ADR-027 世界观不可知）|
+| Gap 6 · scene_reveals 顺序语义 | ordered flag set 模式（参考 Ink LIST）| ✓ **接受 A**（依赖 ADR-034.1 `knowledge.*` 命名空间先落地）|
+| Gap 7 · coverage_strategy validator 强度 | v0.1 弱保证；v0.2 升级到强保证留口子 | ✓ **接受 A**（mandatory_with_fallback 用 flag set 检查，不做 path enumeration）|
+| Gap 9 · player-monotonic 原则 | 在 ADR-034 立此原则 | ✓ **接受 A**；monotonic 命名空间清单 = `flag.player_*` + `knowledge.*` 两条；**traits / bonds 归双向**（可被剧情移除：背叛 → 羁绊消失；喝酒 → 观察能力下降）；落地为 §6.3 D11 |
+| Gap 10 · player_known_info summary 字段归属 | 拆分 — schema 层只保 `list[knowledge_id]`；summary 由生成层管理 | ✓ **接受 A**（T-3.5 批量调度器加 prompt-time-context 字段记录 summary，不进 node schema）|
+
+**下游影响**：
+
+1. ADR-034 §6.3 加 **D11**（player-monotonic 原则）落地 Gap 9
+2. T-3Y-1 工程会话按 D4 / D5 / D6 / D11 + 上述拍板实现 schema 字段
+3. ADR-034.1（`knowledge.*` 命名空间）是 T-3Y-1 工程**硬依赖**——必须先落地
 
 ---
 
@@ -730,7 +764,8 @@ ADR-034 的合适拍板时机：**T-3Y-1 工程会话启动前**（因 ADR-034.1
 ## §10 版本
 
 - **v0.1**（2026-05-15）：ADR-034 调研会话产出。等待作者签字 + L2 综合规划师评审。
-- **v0.2+**（未来）：作者反馈 / L2 评审吸收后修订；合入决策正式落 `/docs/DECISIONS.md` ADR-034 段。
+- **v0.2**（2026-05-18）：5 个 T-3Y 设计争议点（§5.2 Gap 5/6/7/9/10）作者拍板完成（全部接受 Agent A 倾向）；§6.3 加 D11 player-monotonic 原则（monotonic 清单 = `flag.player_*` + `knowledge.*` 两条）；§7.4 拍板表更新；§6.1 状态 / §6.6 后果 / §10 版本同步修订。
+- **v0.3+**（未来）：L2 综合规划师评审吸收后修订；合入决策正式落 `/docs/DECISIONS.md` ADR-034 段。
 
 ---
 
