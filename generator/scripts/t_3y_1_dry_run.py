@@ -458,6 +458,7 @@ def run_pipeline(
     }
 
     # ---------- step 9: 落档 JSON + markdown ----------
+    # Codex review finding 5.1：summary 直接作为参数传入，不从 prompt 反解析。
     _emit_success_report(
         result=result,
         out_report_path=out_report_path,
@@ -467,6 +468,7 @@ def run_pipeline(
         pki=pki,
         npc_state=npc_state,
         prompt=prompt,
+        all_known_info_summary=summary,
     )
 
     return result
@@ -514,6 +516,7 @@ def _emit_success_report(
     pki: list[dict[str, Any]],
     npc_state: dict[str, Any],
     prompt: dict[str, str],
+    all_known_info_summary: str | None = None,
 ) -> None:
     out_json_path.parent.mkdir(parents=True, exist_ok=True)
     out_json_path.write_text(
@@ -522,6 +525,7 @@ def _emit_success_report(
     md = _render_success_markdown(
         result=result, graph=graph, intent=intent, pki=pki,
         npc_state=npc_state, prompt=prompt,
+        all_known_info_summary=all_known_info_summary,
     )
     out_report_path.parent.mkdir(parents=True, exist_ok=True)
     out_report_path.write_text(md, encoding="utf-8")
@@ -535,6 +539,7 @@ def _render_success_markdown(
     pki: list[dict[str, Any]],
     npc_state: dict[str, Any],
     prompt: dict[str, str],
+    all_known_info_summary: str | None = None,
 ) -> str:
     node = result["completed_node"]
     meta = result["metadata"]
@@ -633,7 +638,7 @@ AP-4 假靶子否定 / AP-5 总结代细节 / AP-6 锚定未说明标准 / AP-9 
 
 **all_known_info_summary（全局背景；不入 schema）**：
 
-> {prompt['user'].split('all_known_info_summary')[1].split('**')[2].strip() if 'all_known_info_summary' in prompt['user'] else '(见 prompt user message)'}
+> {all_known_info_summary if all_known_info_summary else '(未提供；见 prompt user message 附录)'}
 
 ### 4.3 模块 C reconcile
 
