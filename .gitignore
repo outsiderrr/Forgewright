@@ -70,3 +70,8 @@ coverage.xml
 # T-3.6a review UI — generated smoke-test screenshots (PR description carries copies)
 /tools/review_ui/tests/_screenshots/
 /tools/review_ui/tests/_screenshots_pr/
+
+# Local secrets (T-3Y-1 + future LLM keys)
+.env
+.env.*
+!.env.example

@@ -46,6 +46,102 @@
       "type": "array",
       "items": {"type": "string", "minLength": 1}
     },
+    "scene_metaparams": {
+      "description": "⭐ T-3Y-1 / ADR-034 D4：场景元参数（场景级元变量影响整个场景生成期）；dict[str, JSON] 自由形态，字段名由项目配置层定义（参考 ADR-029 模式 + ADR-027 世界观不可知性原则）。典型字段：culprit_id（真凶 ID）/ difficulty_level（难度等级）/ apparition_level（显现等级）。具体 enum 不在 schema 层固化。本字段 optional，可省；不影响现有 gold scene。",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "scene_reveals": {
+      "description": "⭐ T-3Y-1 / ADR-034 D5：场景揭露清单；ordered flag set 模式（对齐 Ink LIST 主流）。每 trigger_node 触发时 set knowledge.<reveal_id>.stage_<n>；completion_node 入口检查 required_stages ⊆ set_stages。__留给 /validator__：(1) trigger_node_ids / completion_node_id 必须在本图 nodes map 内可解析；(2) reveal_id 与节点级 foreground_goal 双向引用一致。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reveal_id", "trigger_node_ids", "completion_node_id", "required_stages"],
+        "additionalProperties": false,
+        "properties": {
+          "reveal_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "trigger_node_ids": {
+            "description": "本 reveal 触发节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-]+$", "minLength": 1}
+          },
+          "completion_node_id": {
+            "description": "本 reveal 完成节点（入口检查 required_stages ⊆ set_stages）。",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1
+          },
+          "required_stages": {
+            "description": "completion_node 入口要求 set 完的 stage 整数列表（如 [1, 2] 表示要求 knowledge.<reveal_id>.stage_1 + .stage_2 都已 set）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "scene_seeds": {
+      "description": "⭐ T-3Y-1 / ADR-034 D6：场景种子清单 + coverage_strategy 覆盖策略；v0.1 弱保证（场景退出 flag set 检查；无 path enumeration 即不做完备路径枚举）。__留给 /validator__：(1) planted_in_node_ids 必须在本图 nodes map 内可解析；(2) seed_id 与节点级 background_seeds 双向引用一致；(3) coverage_strategy='mandatory_all_paths' 时场景退出需检查 flag 已埋（v0.1 弱形式）。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seed_id", "planted_in_node_ids", "coverage_strategy"],
+        "additionalProperties": false,
+        "properties": {
+          "seed_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "planted_in_node_ids": {
+            "description": "本 seed 被埋入的节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-]+$", "minLength": 1}
+          },
+          "coverage_strategy": {
+            "description": "ADR-034 D6 3 枚举：mandatory_all_paths（强制全路径覆盖）/ mandatory_with_fallback（强制带回退）/ conditional_reward（条件性奖励）。",
+            "enum": ["mandatory_all_paths", "mandatory_with_fallback", "conditional_reward"]
+          },
+          "condition": {
+            "description": "🟡 optional：仅在条件成立的路径埋（典型 conditional_reward 模式）；可省略或 null。",
+            "oneOf": [
+              {"type": "null"},
+              {"$ref": "state_condition.schema.json"}
+            ]
+          }
+        }
+      }
+    },
+    "player_known_info": {
+      "description": "⭐ T-3Y-1 / T-3Y 进展报告 §5.1 双层结构的结构化部分（relevant_known_info：retrieval 短列表）。每项指向一个 knowledge.* state path + 当前 stage 整数。全局背景一段话 all_known_info_summary 在 prompt assembly 阶段生成，__不入 schema__。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["knowledge_path"],
+        "additionalProperties": false,
+        "properties": {
+          "knowledge_path": {
+            "description": "ADR-016 v0.4 第 6 命名空间 knowledge.* 的 state path。",
+            "type": "string",
+            "pattern": "^knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+            "minLength": 1
+          },
+          "stage": {
+            "description": "🟡 optional：当 knowledge_path 是 progressive disclosure（渐进揭露）形态时记录当前 stage 整数；不分阶段的揭露省略此字段。",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
     "authoring": {
       "description": "🟡 生成来源 / 审阅状态 / 主编签名；阶段 0 手写场景可空。内部结构后续任务固化。",
       "type": "object"

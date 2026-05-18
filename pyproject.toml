@@ -42,10 +42,14 @@ packages = [
     "tools",
     "tools.review_ui",
     "generator.playtest",
+    "generator.forward_planner",
+    "generator.prompts.node",
+    "generator.node_text_gen",
 ]
 
 [tool.setuptools.package-data]
 "generator.prompts.visual" = ["*.md"]
 "generator.prompts.scene" = ["*.md"]
+"generator.prompts.node" = ["*.md"]
 "generator.playtest" = ["personas/*.json"]
 "tools.review_ui" = ["static/*.html", "static/*.css", "static/*.js", "static/vendor/*.js"]
