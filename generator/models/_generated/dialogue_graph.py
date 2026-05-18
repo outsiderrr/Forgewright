@@ -4,11 +4,90 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, constr
+from pydantic import BaseModel, ConfigDict, Field, RootModel, conint, constr
 
-from . import node
+from . import node, state_condition
+
+
+class TriggerNodeId(RootModel[constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1)]):
+    root: constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1)
+
+
+class RequiredStage(RootModel[conint(ge=1)]):
+    root: conint(ge=1)
+
+
+class SceneReveal(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    reveal_id: constr(pattern=r"^[a-z0-9_]+$", min_length=1, max_length=128) = Field(
+        ...,
+        description="Codex review finding 4.2 收紧：pattern 只允许小写蛇形 [a-z0-9_]，确保 D5 派生 `knowledge.<reveal_id>.stage_<n>` 合法（ADR-016 v0.4 knowledge.* pattern 只允许小写段）。",
+    )
+    trigger_node_ids: list[TriggerNodeId] = Field(
+        ...,
+        description="本 reveal 触发节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+        min_length=1,
+    )
+    completion_node_id: constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1) = Field(
+        ..., description="本 reveal 完成节点（入口检查 required_stages ⊆ set_stages）。"
+    )
+    required_stages: list[RequiredStage] = Field(
+        ...,
+        description="completion_node 入口要求 set 完的 stage 整数列表（如 [1, 2] 表示要求 knowledge.<reveal_id>.stage_1 + .stage_2 都已 set）。",
+        min_length=1,
+    )
+
+
+class PlantedInNodeId(RootModel[constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1)]):
+    root: constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1)
+
+
+class CoverageStrategy(Enum):
+    """
+    ADR-034 D6 3 枚举：mandatory_all_paths（强制全路径覆盖）/ mandatory_with_fallback（强制带回退）/ conditional_reward（条件性奖励）。
+    """
+
+    mandatory_all_paths = "mandatory_all_paths"
+    mandatory_with_fallback = "mandatory_with_fallback"
+    conditional_reward = "conditional_reward"
+
+
+class PlayerKnownInfoItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    knowledge_path: constr(
+        pattern=r"^knowledge\.[a-z0-9_]+(\.[a-z0-9_]+)*$", min_length=1
+    ) = Field(..., description="ADR-016 v0.4 第 6 命名空间 knowledge.* 的 state path。")
+    stage: conint(ge=1) | None = Field(
+        None,
+        description="🟡 optional：当 knowledge_path 是 progressive disclosure（渐进揭露）形态时记录当前 stage 整数；不分阶段的揭露省略此字段。",
+    )
+
+
+class SceneSeed(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    seed_id: constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1, max_length=128)
+    planted_in_node_ids: list[PlantedInNodeId] = Field(
+        ...,
+        description="本 seed 被埋入的节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+        min_length=1,
+    )
+    coverage_strategy: CoverageStrategy = Field(
+        ...,
+        description="ADR-034 D6 3 枚举：mandatory_all_paths（强制全路径覆盖）/ mandatory_with_fallback（强制带回退）/ conditional_reward（条件性奖励）。",
+    )
+    condition: state_condition.StateCondition | None = Field(
+        None,
+        description="🟡 optional：仅在条件成立的路径埋（典型 conditional_reward 模式）；可省略或 null。",
+    )
 
 
 class DialogueGraph(BaseModel):
@@ -45,6 +124,22 @@ class DialogueGraph(BaseModel):
     )
     character_refs: list[constr(min_length=1)] = Field(
         ..., description="声明本图涉及的本体角色 ID（闭合性留给 /validator）。"
+    )
+    scene_metaparams: dict[str, Any] | None = Field(
+        None,
+        description="⭐ T-3Y-1 / ADR-034 D4：场景元参数（场景级元变量影响整个场景生成期）；dict[str, JSON] 自由形态，字段名由项目配置层定义（参考 ADR-029 模式 + ADR-027 世界观不可知性原则）。典型字段：culprit_id（真凶 ID）/ difficulty_level（难度等级）/ apparition_level（显现等级）。具体 enum 不在 schema 层固化。本字段 optional，可省；不影响现有 gold scene。",
+    )
+    scene_reveals: list[SceneReveal] | None = Field(
+        None,
+        description="⭐ T-3Y-1 / ADR-034 D5：场景揭露清单；ordered flag set 模式（对齐 Ink LIST 主流）。每 trigger_node 触发时 set knowledge.<reveal_id>.stage_<n>；completion_node 入口检查 required_stages ⊆ set_stages。__留给 /validator__：(1) trigger_node_ids / completion_node_id 必须在本图 nodes map 内可解析；(2) reveal_id 与节点级 foreground_goal 双向引用一致。本字段 optional。",
+    )
+    scene_seeds: list[SceneSeed] | None = Field(
+        None,
+        description="⭐ T-3Y-1 / ADR-034 D6：场景种子清单 + coverage_strategy 覆盖策略；v0.1 弱保证（场景退出 flag set 检查；无 path enumeration 即不做完备路径枚举）。__留给 /validator__：(1) planted_in_node_ids 必须在本图 nodes map 内可解析；(2) seed_id 与节点级 background_seeds 双向引用一致；(3) coverage_strategy='mandatory_all_paths' 时场景退出需检查 flag 已埋（v0.1 弱形式）。本字段 optional。",
+    )
+    player_known_info: list[PlayerKnownInfoItem] | None = Field(
+        None,
+        description="⭐ T-3Y-1 / T-3Y 进展报告 §5.1 双层结构的结构化部分（relevant_known_info：retrieval 短列表）。每项指向一个 knowledge.* state path + 当前 stage 整数。全局背景一段话 all_known_info_summary 在 prompt assembly 阶段生成，__不入 schema__。本字段 optional。",
     )
     authoring: dict[str, Any] | None = Field(
         None,
