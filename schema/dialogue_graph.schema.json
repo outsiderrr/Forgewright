@@ -60,8 +60,9 @@
         "additionalProperties": false,
         "properties": {
           "reveal_id": {
+            "description": "Codex review finding 4.2 收紧：pattern 只允许小写蛇形 [a-z0-9_]，确保 D5 派生 `knowledge.<reveal_id>.stage_<n>` 合法（ADR-016 v0.4 knowledge.* pattern 只允许小写段）。",
             "type": "string",
-            "pattern": "^[a-zA-Z0-9_-]+$",
+            "pattern": "^[a-z0-9_]+$",
             "minLength": 1,
             "maxLength": 128
           },

@@ -126,7 +126,7 @@ def test_scene_reveals_ordered_flag_set_passes() -> None:
     g = _base_graph()
     g["scene_reveals"] = [
         {
-            "reveal_id": "R1_wright_double_life",
+            "reveal_id": "r1_wright_double_life",
             "trigger_node_ids": ["node_1"],
             "completion_node_id": "node_1",
             "required_stages": [1, 2],
@@ -140,7 +140,7 @@ def test_scene_reveals_missing_required_stages_rejected() -> None:
     g = _base_graph()
     g["scene_reveals"] = [
         {
-            "reveal_id": "R1",
+            "reveal_id": "r1",
             "trigger_node_ids": ["node_1"],
             "completion_node_id": "node_1",
             # required_stages 缺失
@@ -154,7 +154,7 @@ def test_scene_reveals_empty_trigger_node_ids_rejected() -> None:
     g = _base_graph()
     g["scene_reveals"] = [
         {
-            "reveal_id": "R1",
+            "reveal_id": "r1",
             "trigger_node_ids": [],
             "completion_node_id": "node_1",
             "required_stages": [1],
@@ -168,12 +168,62 @@ def test_scene_reveals_required_stages_zero_rejected() -> None:
     g = _base_graph()
     g["scene_reveals"] = [
         {
-            "reveal_id": "R1",
+            "reveal_id": "r1",
             "trigger_node_ids": ["node_1"],
             "completion_node_id": "node_1",
             "required_stages": [0],  # minimum: 1
         }
     ]
+    errors = list(_dialogue_graph_validator().iter_errors(g))
+    assert len(errors) >= 1
+
+
+def test_scene_reveals_reveal_id_uppercase_rejected() -> None:
+    """Codex review finding 4.2 收紧：reveal_id 大写应拒收（pattern ^[a-z0-9_]+$）。
+
+    保护 ADR-016 v0.4 knowledge.<reveal_id>.stage_<n> 合法性——
+    knowledge.* pattern 只允许小写段。
+    """
+    g = _base_graph()
+    g["scene_reveals"] = [
+        {
+            "reveal_id": "R1_wright_double_life",  # 大写违规
+            "trigger_node_ids": ["node_1"],
+            "completion_node_id": "node_1",
+            "required_stages": [1],
+        }
+    ]
+    errors = list(_dialogue_graph_validator().iter_errors(g))
+    assert len(errors) >= 1
+
+
+def test_scene_reveals_reveal_id_hyphen_rejected() -> None:
+    """Codex review finding 4.2 收紧：reveal_id 连字符应拒收（pattern 只允 [a-z0-9_]）。"""
+    g = _base_graph()
+    g["scene_reveals"] = [
+        {
+            "reveal_id": "wright-double-life",  # 连字符违规
+            "trigger_node_ids": ["node_1"],
+            "completion_node_id": "node_1",
+            "required_stages": [1],
+        }
+    ]
+    errors = list(_dialogue_graph_validator().iter_errors(g))
+    assert len(errors) >= 1
+
+
+def test_node_foreground_goal_uppercase_rejected() -> None:
+    """Codex review finding 4.2：foreground_goal 中 reveal_id 段大写应拒收。"""
+    g = _base_graph()
+    g["nodes"]["node_1"]["foreground_goal"] = "R1.stage_2"  # 大写违规
+    errors = list(_dialogue_graph_validator().iter_errors(g))
+    assert len(errors) >= 1
+
+
+def test_node_foreground_goal_hyphen_rejected() -> None:
+    """Codex review finding 4.2：foreground_goal 中 reveal_id 段连字符应拒收。"""
+    g = _base_graph()
+    g["nodes"]["node_1"]["foreground_goal"] = "wright-double-life.stage_2"
     errors = list(_dialogue_graph_validator().iter_errors(g))
     assert len(errors) >= 1
 
@@ -285,7 +335,7 @@ def test_node_with_background_seeds_and_foreground_goal_passes() -> None:
         "S2_vick_dangerous",
         "S4_country_cottage_cache",
     ]
-    g["nodes"]["node_1"]["foreground_goal"] = "R1_wright_double_life.stage_2"
+    g["nodes"]["node_1"]["foreground_goal"] = "r1_wright_double_life.stage_2"
     errors = list(_dialogue_graph_validator().iter_errors(g))
     assert errors == [], [e.message for e in errors]
 
@@ -293,7 +343,7 @@ def test_node_with_background_seeds_and_foreground_goal_passes() -> None:
 def test_node_foreground_goal_no_stage_suffix_passes() -> None:
     """不分阶段 reveal 可省略 .stage_<n> 后缀."""
     g = _base_graph()
-    g["nodes"]["node_1"]["foreground_goal"] = "R1_wright_double_life"
+    g["nodes"]["node_1"]["foreground_goal"] = "r1_wright_double_life"
     errors = list(_dialogue_graph_validator().iter_errors(g))
     assert errors == [], [e.message for e in errors]
 
@@ -330,7 +380,7 @@ def test_inn_lucy_scene_end_to_end_full_fields() -> None:
     g["scene_metaparams"] = {"culprit_id": "culprit_vick"}
     g["scene_reveals"] = [
         {
-            "reveal_id": "R1_wright_double_life",
+            "reveal_id": "r1_wright_double_life",
             "trigger_node_ids": ["node_1"],
             "completion_node_id": "node_1",
             "required_stages": [1, 2],
@@ -347,7 +397,7 @@ def test_inn_lucy_scene_end_to_end_full_fields() -> None:
         {"knowledge_path": "knowledge.wright_dead", "stage": 1},
     ]
     g["nodes"]["node_1"]["background_seeds"] = ["S2_vick_dangerous"]
-    g["nodes"]["node_1"]["foreground_goal"] = "R1_wright_double_life.stage_2"
+    g["nodes"]["node_1"]["foreground_goal"] = "r1_wright_double_life.stage_2"
 
     errors = list(_dialogue_graph_validator().iter_errors(g))
     assert errors == [], [e.message for e in errors]

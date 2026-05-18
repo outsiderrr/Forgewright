@@ -90,13 +90,13 @@ def test_render_propagates_forward_planner_outputs_to_user() -> None:
     out = render_node_prompt(
         node_skeleton=_skeleton(),
         player_known_info=[{"knowledge_path": "knowledge.wright_dead", "stage": 1}],
-        foreground_goal="R1_wright_double_life.stage_2",
+        foreground_goal="r1_wright_double_life.stage_2",
         background_seeds=["S2_vick_dangerous"],
         npc_state={"trust": 1},
     )
     user = out["user"]
     assert "knowledge.wright_dead" in user
-    assert "R1_wright_double_life.stage_2" in user
+    assert "r1_wright_double_life.stage_2" in user
     assert "S2_vick_dangerous" in user
     assert "trust" in user
 
@@ -110,7 +110,7 @@ def test_run_end_to_end_with_mock_returns_parsed_dict() -> None:
         provider=provider,
         node_skeleton=_skeleton(),
         player_known_info=[{"knowledge_path": "knowledge.wright_dead"}],
-        foreground_goal="R1.stage_1",
+        foreground_goal="r1.stage_1",
         background_seeds=["S1"],
     )
     assert result["node_id"] == "node_3_info_offer"

@@ -6,7 +6,7 @@ from generator.forward_planner.reconcile import reconcile
 
 def test_reconcile_pass_when_all_present() -> None:
     intent = {
-        "foreground_goal": "R1_wright_double_life.stage_2",
+        "foreground_goal": "r1_wright_double_life.stage_2",
         "background_seeds": ["S2"],
     }
     known = [{"knowledge_path": "knowledge.wright_dead", "stage": 1}]
@@ -25,7 +25,7 @@ def test_reconcile_unreachable_when_missing_foreground_goal() -> None:
 
 def test_reconcile_unreachable_when_empty_known_info() -> None:
     intent = {
-        "foreground_goal": "R1.stage_1",
+        "foreground_goal": "r1.stage_1",
         "background_seeds": [],
     }
     known: list[dict] = []
@@ -45,7 +45,7 @@ def test_reconcile_unreachable_when_empty_foreground_goal_string() -> None:
 def test_reconcile_ignores_skill_preconditions_in_stub() -> None:
     """skill_preconditions 参数 T-3Y-1 阶段未消费，传任意值不影响结果."""
     intent = {
-        "foreground_goal": "R1.stage_1",
+        "foreground_goal": "r1.stage_1",
         "background_seeds": ["S1"],
     }
     known = [{"knowledge_path": "knowledge.foo"}]

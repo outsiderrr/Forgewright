@@ -75,7 +75,7 @@ def build_inn_lucy_graph() -> dict[str, Any]:
         # ADR-034 D5 scene_reveals（ordered flag set）
         "scene_reveals": [
             {
-                "reveal_id": "R1_wright_double_life",
+                "reveal_id": "r1_wright_double_life",
                 "trigger_node_ids": ["node_3_info_offer"],
                 "completion_node_id": "node_3_info_offer",
                 "required_stages": [1, 2],
@@ -169,7 +169,7 @@ def build_inn_lucy_graph() -> dict[str, Any]:
                 ],
                 # T-3Y-1 节点级新字段
                 "background_seeds": ["S2_vick_dangerous", "S4_country_cottage_cache"],
-                "foreground_goal": "R1_wright_double_life.stage_2",
+                "foreground_goal": "r1_wright_double_life.stage_2",
             }
         },
     }

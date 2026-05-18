@@ -10,7 +10,7 @@ def _base_graph() -> dict:
             "node_3_info_offer": {
                 "node_id": "node_3_info_offer",
                 "type": "dialogue",
-                "foreground_goal": "R1_wright_double_life.stage_2",
+                "foreground_goal": "r1_wright_double_life.stage_2",
                 "background_seeds": ["S2_vick_dangerous", "S4_country_cottage_cache"],
             },
             "node_empty": {
@@ -23,7 +23,7 @@ def _base_graph() -> dict:
 
 def test_intent_returns_node_fields() -> None:
     result = compute_intent(_base_graph(), "node_3_info_offer")
-    assert result["foreground_goal"] == "R1_wright_double_life.stage_2"
+    assert result["foreground_goal"] == "r1_wright_double_life.stage_2"
     assert result["background_seeds"] == [
         "S2_vick_dangerous",
         "S4_country_cottage_cache",

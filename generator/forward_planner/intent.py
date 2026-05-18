@@ -23,7 +23,7 @@ def compute_intent(graph: dict[str, Any], node_id: str) -> dict[str, Any]:
 
     Returns:
         dict 含两键：
-          - 'foreground_goal': str | None    本节点承载的 reveal + stage（如 'R1.stage_2'）
+          - 'foreground_goal': str | None    本节点承载的 reveal + stage（如 'r1.stage_2'）
           - 'background_seeds': list[str]    本节点要埋的 seed_id 列表
 
         节点不存在或字段缺失 → 返回空意图（foreground_goal=None, background_seeds=[]）

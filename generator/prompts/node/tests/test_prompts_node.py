@@ -118,8 +118,8 @@ def test_render_player_known_info_empty() -> None:
 
 
 def test_render_foreground_goal_with_value() -> None:
-    block = render_foreground_goal("R1_wright_double_life.stage_2")
-    assert "R1_wright_double_life.stage_2" in block
+    block = render_foreground_goal("r1_wright_double_life.stage_2")
+    assert "r1_wright_double_life.stage_2" in block
     assert "围绕" in block
 
 
@@ -163,7 +163,7 @@ def test_build_user_message_includes_all_sections() -> None:
         player_known_info=[
             {"knowledge_path": "knowledge.wright_dead", "stage": 1},
         ],
-        foreground_goal="R1_wright_double_life.stage_2",
+        foreground_goal="r1_wright_double_life.stage_2",
         background_seeds=["S2_vick_dangerous"],
         npc_state={"trust": 1},
     )
@@ -171,7 +171,7 @@ def test_build_user_message_includes_all_sections() -> None:
     assert user.count("---") >= 5
     # 关键字段全部出现
     assert "knowledge.wright_dead" in user
-    assert "R1_wright_double_life.stage_2" in user
+    assert "r1_wright_double_life.stage_2" in user
     assert "S2_vick_dangerous" in user
     assert "char_lucy" in user
     assert "node_3_info_offer" in user
