@@ -370,6 +370,31 @@
 - validator 扩展（T-2.7）必须支持本体引用闭合 + state path 命名空间合法性 + state_path_slug 反查
 - prompt 模板（T-2.5）必须把 character_features / dramatic_triggers / Chapter/Act / 系统时间双轨纳入 context
 
+### v0.4（2026-05-18 ADR-034 + ADR-034.1 落地承接）
+
+**修订内容**：
+
+1. **新增第 6 个 state path 命名空间** `knowledge.*`（玩家知识 / fact-level player knowledge）：
+   - pattern：`^knowledge\.[a-z0-9_]+(\.[a-z0-9_]+)*$`
+   - 用途：跟踪玩家在游戏过程中获得的离散事实（如 `knowledge.npc_is_killer` / `knowledge.crime_motive` / `knowledge.<reveal_id>.stage_<n>` for progressive disclosure）
+   - 对应 Ink LIST + Articy Glossary 业界主流（ADR-034 §2 调研结论）
+
+2. **Monotonic 命名空间清单**（ADR-034 D11 落地）：
+   - `flag.player_*` — LLM 生成内容只能 `set` / `inc` / `add`，禁止 `dec` / `remove`（玩家不忘行为历史）
+   - `knowledge.*` — 同上（玩家不忘事实知识）
+   - 其他命名空间（`world.*` / `faction.<id>.*` / `relationship.<slug>.*` / `flag.*`（非 `player_`）/ `player.*`）允许双向；详 ADR-034 D11
+   - 作者手填内容（`generation_trace.source == "human"`）不受此规则约束
+
+**理由**：T-3Y 进展报告 §5.2 拍板"不模拟玩家遗忘"——schema 层补防御。T-3Y player_known_info 设计需要 `knowledge.*` 命名空间作为 first-class primitive，对齐 Ink LIST + Articy Glossary 业界主流（ADR-034 §2 调研）。作者 2026-05-18 拍板（5 个争议点全部接受 Agent A 倾向，含 Gap 8 + Gap 9）。
+
+**追溯**：见 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2 §6.3 D3 + D11 + §7.4 拍板表。
+
+**对工程的影响**：
+- validator（`/validator/`）必须扩展支持第 6 命名空间 + monotonic 规则
+- 机械预检器（T-2.4 后续修订）的命名空间清单更新至 6 条
+- T-3Y-1 工程会话**硬依赖**此 v0.4 修订；必须先落地 `knowledge.*` 命名空间
+- schema 文件如需 pattern 校验，加入第 6 命名空间
+
 ---
 
 ## ADR-017：时钟系统
@@ -972,6 +997,99 @@ NPC 状态机运行时执行 = 查表（state × event → next_state + response
 
 ---
 
+## ADR-034：Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims（v_incremental）
+
+**状态**：已接受（2026-05-18）
+
+**背景**：
+
+2026-05-15 T-3Y L2 综合规划师会话识别一个架构层级风险——Forgewright dialogue_graph schema 凭直觉自设计，未对标业界事实标准（Ink / Articy / Twine / Dialogic），未来集成 / 迁移 / 用户群扩展可能撞兼容性壁。本 ADR 通过 4 工具调研 + 7 维度评分 + 3 distinct 立场候选评估，确定 Forgewright schema 与业界工具生态的关系。
+
+详细调研（4 工具 per-tool 机制清单 + 3 distinct 候选方案 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）见 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2。
+
+**调研核心发现**：
+
+1. **架构层不可调和**：4 工具中没有一个采用 Forgewright "JSON-native（源 = 运行时）"模式。3 个用 DSL 源 + 编译产物（Ink / Twine / Dialogic），1 个用私有编辑期格式 + JSON 导出（Articy）。
+2. **T-3Y capability surplus 领先业界**：T-3Y 4 个待答设计问题（scene_metaparams / progressive disclosure / coverage_strategy / scene pre-post）在 4 工具中 0 个原生支持。
+3. **真实 v0.3 落后业界点**：3 处（行内条件文本 / 一次性选项标记 / 信息揭露原语）。
+
+**决策**：选 **v_incremental** 路线——Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims，**不立格式中立 IR**。
+
+11 个子决策（D1-D11）：
+
+**D1 · Schema 定位措辞**：`/docs/SCHEMA_v0.3.md`（或后续）开篇正式定位为"AI-generation-aware schema that selectively aligns with industry primitives where they fit; NOT a format-neutral intermediate representation."
+
+**D2 · 接受 T-3Y 草案核心结构**：scene_metaparams / scene_reveals / scene_seeds / scene_static_inputs/outputs / player_known_info / foreground_goal / background_seeds 等字段作为 Forgewright 差异化优势 documented。
+
+**D3 · 立项 ADR-034.1 · `knowledge.*` state path 第 6 命名空间**：直接对标 Ink LIST + Articy Glossary 主流做法。具体语义 + pattern + 与 T-3Y player_known_info 的耦合关系由 **ADR-016 v0.4 修订**承接（本 PR 同步落地）。
+
+**D4 · scene_metaparams 字段形态**：`dict[str, JSON]` 自由形态 + 项目配置层定义字段名 enum（参考 ADR-029 模式）；保 ADR-027 世界观不可知性原则。**作者 2026-05-18 拍板接受**。
+
+**D5 · scene_reveals 多路径语义**：用 ordered flag set 模式。每 trigger_node 触发时 set `knowledge.<reveal_id>.stage_<n>` flag；completion_node 入口检查 `required_stages ⊆ set_stages`。参考 Ink LIST 主流。**作者 2026-05-18 拍板接受**。
+
+**D6 · scene_seeds.coverage_strategy validator**：v0.1 接受弱保证（场景退出时 flag set 检查；无 path enumeration）；强保证推迟到未来 ADR 修订。参考 Articy fallback() 工程节奏。**作者 2026-05-18 拍板接受**。
+
+**D7 · 立 4 个 follow-up ADR 候选清单**：
+
+- ADR-034.1：`knowledge.*` 命名空间落地（**ADR-016 v0.4 修订承接**，本 PR 同步落地）— **高优先级**
+- ADR-034.2：`Option.choice_visibility` 字段（once / sticky / disabled enum，对齐 Ink `*`/`+` + Articy seen/unseen）— 中优先级，阶段 3-4
+- ADR-034.3：`node.narration` inline conditional text 微语言（对齐 Ink `{cond: A|B}`）— 低优先级，阶段 4 前后
+- ADR-034.4：`chapter.ifid` 字段（UUID v4，对齐 Twine StoryData）— 低优先级，阶段 4 开源剥离
+
+**D8 · 阶段 4 开源剥离时加单向导出适配器**：`forgewright-to-twine.py`（输出 .twee）+ `forgewright-to-dialogic.py`（输出 .dtl）。承认 lossy；Ink / Articy 不在 v0.1 适配器范围（架构异构性大、价值低）。
+
+**D9 · ADR-034 本身不修改任何现有 schema 或代码**：仅做立项决定 + 措辞修订；具体 schema 字段变更由 follow-up ADR 各自承接。本 PR 例外只动 ADR-016 v0.4 修订（D3 配套）。
+
+**D10 · 明示停止条件（v_incremental 独有）**：当某次对齐候选识别为"为对齐而对齐"（即业界原语与 Forgewright 哲学冲突或 capability surplus 必然受损）时立即停止；每候选 follow-up ADR 必须明示哲学冲突检查（ADR-004 / 006 / 027 合规审查 + capability surplus 影响评估）。这是 v_incremental 对"滑坡到 v_full_ir"的核心防御。
+
+**D11 · Player-monotonic 原则**（Gap 9 落地，作者 2026-05-18 拍板）：
+
+Schema 层强制——LLM 生成的 state effects 在以下 **monotonic 命名空间**下，只允许 `set` / `inc` / `add`，禁止 `dec` / `remove`：
+
+- `flag.player_*` — 玩家见证 / 行为 flag
+- `knowledge.*`（ADR-034.1 新增）— 玩家知识
+
+**不在 monotonic 清单内**（允许双向变化）：
+
+- `player.traits` / `player.bonds`（性格特征 / 羁绊可被剧情移除：背叛 → 羁绊消失；喝酒 → 观察能力下降）
+- `relationship.<slug>.*`（关系状态值自然波动，含 trust / fear / affinity 等）
+- `faction.<id>.*` / `world.*` / `player.gold` / `player.health` 等
+
+作者手填内容（`generation_trace.source == "human"`）不受此规则约束。详 ADR-016 v0.4 修订。
+
+**5 个 T-3Y 设计争议点 · 作者 2026-05-18 拍板结果**：全部接受 Agent A 倾向（Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。
+
+**替代方案及否决理由**：
+
+- **A1 v_full_ir（格式中立 IR + 4 个双向适配器）**：Schema 体积爆炸违反 ADR-004 极简；T-3Y capability surplus 在导出路径必然降级（progressive disclosure → flatten；coverage strategy → 丢弃）；工程量 17-21 周阻塞主线；4 适配器永续 maintenance
+- **A2 v_thin_export（不立 IR + 仅 2 单向 shim + 不立 follow-up）**：违反"主流能实现相同效果则推主流"原则——明知 Ink LIST、Twine ifid 等有借鉴价值仍不学；社区采纳门槛过高（中文社区评分 4）；阶段 4 后悔升级成本 12-17 周
+- **A3 缓议**：T-3Y 4 个待答设计问题阻塞 T-3Y-1 工程会话；缓议延迟主线
+- **A4 完全闭门**：失去阶段 4 工具生态价值；用户群扩张被永久封顶
+
+**后果**：
+
+1. Schema 文档措辞修订（`/docs/SCHEMA_v0.3.md` 或后续；D1）
+2. **ADR-016 v0.4 修订**承接 D3 + D11（本 PR 同步落地）
+3. T-3Y-1 工程会话按 D4 / D5 / D6 / D11 实现 schema 字段；硬依赖 ADR-016 v0.4 = ADR-034.1
+4. 4 个 follow-up ADR（D7）独立排期；不阻塞 ADR-034 合入
+5. 阶段 4 开源剥离阶段加 2 个单向导出适配器（D8）
+6. validator 扩展支持 6 命名空间 + monotonic 规则（D11 + ADR-016 v0.4 配套）
+7. 5 个 T-3Y 设计争议点（Gap 5 / 6 / 7 / 9 / 10）作者拍板已落档（详调研报告 §7.4）；Gap 5/6/7/10 进入 T-3Y-1 工程会话实现
+
+**关联讨论**：
+
+- ADR-004（极简）：D1 + 否决 A1 论证基础
+- ADR-006（SOT）：本 ADR 不触动 SOT 哲学
+- ADR-007（核心是 Runtime 不是 Parser）：D1 措辞一致
+- **ADR-016（state path 命名空间）**：**v0.4 修订承接 D3 + D11**（本 PR 同步）
+- ADR-027（世界观不可知）：D4 的核心约束
+- ADR-028（引擎与宿主分离）：D8 适配器的归属层（host adapter，非 engine）
+- ADR-029（技能体系项目配置层）：D4 的模式参考
+- T-3Y 进展报告（[2026-05-15_T-3Y_design_progress.md](reviews/master_plan/2026-05-15_T-3Y_design_progress.md)）：被本 ADR 解锁；T-3Y-1 工程会话承接
+- 调研报告（[2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2）：本 ADR 详细论证 + 4 工具调研 + 7 维度评分 + 5 拍板结果
+
+---
+
 ## ADR-035：第一款游戏 L3 宿主程序选型
 
 **状态**：已接受（2026-05-18）
@@ -1000,7 +1118,7 @@ ADR-028（引擎与宿主分离原则；2026-05-10 立）规定 Forgewright 引�
 2. 新建 `/host/godot_first_game/` 子目录（与 `/engine` 平行；不在 ADR-004 极薄运行时约束内；与 ROADMAP 阶段 4 "游戏内容填充" 同期落地）
 3. 5-7 个 GDScript 文件（~500-700 行总）：`main.gd` + `main.tscn` 入口 / `dialogue_player.gd` 节点渲染 + 选项 / `world_state.gd` state 引擎（移植自 `/engine/state/`） / `ontology_resolver.gd` 本体引用解析 / `scene_router.gd` T-3Y scene_branches + scene_metaparams + actual_inputs/outputs / `font_loader.gd` 中文字体打包
 4. **不使用 Dialogic 插件**（详否决理由见调研报告 §3.3 + §5.4）；如阶段 4 实测发现需要 dialogue 插件辅助，候选为 Dialogue Manager 4 (nathanhoad) 作 hybrid 形态
-5. T-3Y 字段集（scene_branches / scene_metaparams / scene_actual_inputs/outputs / included_node_ids）映射由自写代码实现
+5. T-3Y 字段集（scene_branches / scene_metaparams / scene_actual_inputs/outputs / included_node_ids）映射由自写代码实现；与 ADR-034 v_incremental 路线 + ADR-016 v0.4 `knowledge.*` 命名空间协同（具体字段在 T-3Y-1 工程会话落地时统一）
 6. Godot 项目内承担：富文本渲染（RichTextLabel + BBCode）/ 选项呈现（VBoxContainer + Button）/ state 内部表达 / 多平台导出（itch.io HTML5 + macOS + Windows binary + 可选 iOS/Android）
 7. 第一款游戏的"参考宿主"地位明确——开源框架剥离时（阶段 4 后期），Godot 宿主作为 Forgewright 的**第一个参考适配实现**
 8. **可扩展性预留**：自写代码完全可控；未来扩展物品系统 / 技能 UI / DND 风格库存装备槽 / 探索范式时无插件锁定阻碍——这是作者明示"保留可扩展性"硬约束的工程层落地
@@ -1016,7 +1134,7 @@ ADR-004 极薄运行时约束（≤ 500 行）继续生效；`/engine/` 仍是 F
 
 **替代方案及否决理由**：
 
-- **v_renpy（Ren'Py 8.5.x）**：22 年成熟 + 工程量最低（demo 实测后 1-2 天估时高度可信 vs Ren'Py 应该更快）+ multi-platform 最强；但 Ren'Py 主打 VN 范式，复杂 UI（DND 风格库存 / 装备槽 / 自由探索）偏弱；作者明示"保留可扩展性"硬约束。**次决策备选退路**：如阶段 4 起手期 v_godot_custom 进度严重卡了（2 周内未达 50%）+ 复杂 UI 短期不需要 → 可切换 v_renpy
+- **v_renpy（Ren'Py 8.5.x）**：22 年成熟 + 工程量最低（demo 实测后 1-2 天估时高度可信 vs Ren'Py 应该更快）+ multi-platform 最强；但 Ren'Py 主打 VN 范式，复杂 UI（DND 风格库存 / 装备槽 / 自由探索）偏弱；作者明示"保留可扩展性"硬约束。**次决策备选退路**:如阶段 4 起手期 v_godot_custom 进度严重卡了（2 周内未达 50%）+ 复杂 UI 短期不需要 → 可切换 v_renpy
 - **v_godot_dialogic（Godot 4.6 + Dialogic 2.x 插件 / 原 T-3Y L2 推荐）**：Dialogic 16 月发版停滞（最新 Alpha 19 = 2025-01-12）+ 28 个月全程 Alpha 未发 Beta + 80% 功能 Forgewright 用不到 + 数据格式 `.dtl` 不兼容 + 存档系统重写预告。**明确否决**
 - **Godot + Dialogue Manager 4 (nathanhoad)**：可行 hybrid 形态（活跃维护 + stateless branching + 与 Forgewright 哲学同源）；保留作 v_godot_custom 的 plugin-assisted 补充选项（如未来需要 dialogue 插件辅助）
 - **保留现有 Python CLI 播放器作唯一运行时**：分发难（朋友 3-5 玩通 + itch.io 发布均做不到）—— 但 `/engine/player.py` 以 (a)+(b) 合并保留作 reference + dry-run 工具角色继续存在
@@ -1029,7 +1147,7 @@ ADR-004 极薄运行时约束（≤ 500 行）继续生效；`/engine/` 仍是 F
 - 阶段 4 起手期工程任务（推到阶段 3 → 4 切换会话拆解；本 ADR 不立刻拆 T-x.y）：
   - T-4.1 Godot 项目骨架 + 中文字体打包
   - T-4.2 dialogue_player.gd + world_state.gd + ontology_resolver.gd
-  - T-4.3 scene_router.gd（T-3Y 字段集消费）
+  - T-4.3 scene_router.gd（T-3Y 字段集消费；ADR-034 协同）
   - T-4.4 多平台导出 + itch.io HTML5 跑通
 - 工程量预算：**1-2 天作者经验估时**（Godot demo 实测 5 分钟跑通验证；详调研报告 §8.4）
 - 阶段 4 完成定义 (d) itch.io 发布：Godot HTML5 export 路径
@@ -1044,13 +1162,13 @@ ADR-004 极薄运行时约束（≤ 500 行）继续生效；`/engine/` 仍是 F
 - 与 ADR-027（World-Agnostic Principle）协同 —— Godot 框架本身世界无关；具体游戏 instance 绑特定世界
 - 与 ADR-029（技能体系作为项目配置层）协同 —— Godot 宿主消费项目 skills.json；不内置技能列表
 - 与 ADR-031（GM 抉择空间结构化）协同 —— L3 宿主消费"预编排完的"dialogue_graph；NPC 状态机执行由 `/engine/` 层或宿主内嵌的等价代码完成
-- 与 **ADR-034（schema IR 选择；平行任务）有反向约束** —— v_godot_custom 路径下 Godot 偏好 Resource/JSON 结构；ADR-034 调研应纳入此输入；详调研报告 §5.6 争议点 3 + 附录 A
+- 与 **ADR-034（Schema 主体 AI 生成路线；同日 2026-05-18 立）协同** —— v_godot_custom 路径下 Godot 偏好 Resource/JSON 结构；ADR-034 D8 阶段 4 单向导出 shims (forgewright-to-twine / forgewright-to-dialogic) 与本 ADR 共存（Godot 是主宿主；shims 是次级开源剥离物）；scene_router.gd 消费 ADR-016 v0.4 `knowledge.*` 命名空间
 - 与 ROADMAP 阶段 4 切换协议协同 —— 北极星 = A 完成度；本 ADR 选 v_godot_custom 是可扩展性 + AI 加速工时双约束下的最优解
 - 与 ROADMAP 阶段 4 失败模式警示（"造工具滑回"）的平衡 —— v_godot_custom 自写代码 < 1000 行；不构成"造工具"；自写不依赖插件 = 避免 Dialogic 类的"插件适配滑回"
 
 **编号说明**：
 
-ADR-032 / 033 / 034 编号预留给其他平行任务（ADR-032 拟立节点级文本生成抽象总契约；ADR-033 拟立技能体系最小可启动定义；ADR-034 schema IR 选择）；这些 ADR 尚未立项，本 ADR 编号 ADR-035 顺延。
+ADR-034 同日（2026-05-18）立 schema IR 路线（v_incremental）；本 ADR 编号 ADR-035 顺延。ADR-032 / 033 编号仍预留给其他平行任务（ADR-032 拟立节点级文本生成抽象总契约；ADR-033 拟立技能体系最小可启动定义）。
 
 ---
 
@@ -1066,7 +1184,8 @@ ADR-032 / 033 / 034 编号预留给其他平行任务（ADR-032 拟立节点级�
 - 2026-05-11：作者明确授权新增 ADR-029（技能体系作为项目配置层），属 CLAUDE.md 规则 10 的明示例外。落地时按 ADR-028 风格统一删除原稿底部"版本/引入时间"两行；"关联讨论"段"ADR-011 / ADR-028（引擎与宿主分离原则）"占位修正为"ADR-028"（ADR-011 实为 LLM 提供商，非引擎与宿主分离）。
 - 2026-05-12：作者明确授权新增 ADR-030（AestheticPreference schema；字段集留空预留，待 T-3X-1 实证归纳）+ 修订 ADR-020 v0.2（X4 闭环；阶段 2/3/4 三阶段口径），属 CLAUDE.md 规则 10 的明示例外。审美层决策于 2026-05-09 签字（v0.2）；ADR-028 + ADR-029 同期由产品线讨论起草并于 2026-05-10/11 push 到 main，占用编号 028/029；本 ADR 顺延为 ADR-030。整合自 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.4 + §6.5。T-3X L2 校准会话起草 L3 fixation PR paste-ready prompt（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2 修订包含产品线 ADR-028/029 联动校准）→ L1 fixation 执行会话（本 PR）落地。
 - 2026-05-13：作者明确授权新增 ADR-031（GM 抉择空间结构化方案；混合方案 D = A 基础层 + B NPC 状态机增强层），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（5.1 立 ADR-031 / 5.2 T-3X-1 拆 a+b / 5.3 跳 critique / 5.4 DEBATE §10 同期立 / 5.5 ROADMAP 时长 5-9 → 6-11 周）。同期落地：DEBATE_NOTES.md §10 核心赌注段 + STAGE_3_TASKS.md v1.0.2（T-3X-1 拆分）+ ROADMAP §阶段 3 时长校准。后续 T-3X-1a / T-3X-1b L3 工程会话基于本 ADR 启动。
-- 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-032 / 033 / 034 编号预留给平行任务（节点级文本生成抽象 / 技能体系最小可启动定义 / schema IR 选择），本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。
+- 2026-05-18：作者明确授权新增 ADR-034（Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims；v_incremental 路线）+ 修订 ADR-016 v0.4（新增第 6 个 state path 命名空间 `knowledge.*` + monotonic 命名空间清单），属 CLAUDE.md 规则 10 的明示例外。整合自 ADR-034 调研报告 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2（4 工具 per-tool 机制清单 + 3 distinct 候选评估 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）+ 作者 2026-05-18 拍板（5 争议点全部接受 Agent A 倾向：Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。ADR-034 调研会话（claude/wonderful-proskuriakova-e68be2）产出 + 同会话落地。
+- 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-034 同日立项（编号 ADR-032 / 033 仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）；本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。ADR-035 调研会话（claude/vigorous-varahamihira-f6f2f6）产出 + 同会话落地。
 
 ## 版本
 
