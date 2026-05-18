@@ -1,0 +1,6 @@
+# Godot 自动生成的缓存 / 导入元数据；不入库
+.godot/
+*.import
+.import/
+export.cfg
+export_presets.cfg

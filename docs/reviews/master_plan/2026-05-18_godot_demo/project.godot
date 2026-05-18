@@ -1,0 +1,15 @@
+; Forgewright Godot Demo — ADR-035 v_godot_custom 体感验证用
+; 跑完即丢的 throwaway 原型；不是正式 /host/godot_first_game/ 实施
+
+config_version=5
+
+[application]
+
+config/name="Forgewright Godot Demo (ADR-035)"
+run/main_scene="res://main.tscn"
+config/features=PackedStringArray("4.6")
+
+[display]
+
+window/size/viewport_width=1024
+window/size/viewport_height=768

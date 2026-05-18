@@ -1090,6 +1090,88 @@ Schema 层强制——LLM 生成的 state effects 在以下 **monotonic 命名�
 
 ---
 
+## ADR-035：第一款游戏 L3 宿主程序选型
+
+**状态**：已接受（2026-05-18）
+
+**背景**：
+
+ADR-028（引擎与宿主分离原则；2026-05-10 立）规定 Forgewright 引擎不实现任何具体 IO 形态；宿主是适配层。本 ADR-035 是 ADR-028 的首次具体化——为**第一款游戏**（克苏鲁版极乐迪斯科 spiritual successor）选定一个具体 L3 宿主程序。
+
+调研详细分析见 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4：§2 4 候选能力清单（Godot 4.x / Ren'Py 8.5.x / Dialogic 2.x / 自研）+ §3 3 distinct 立场方案（v_godot_custom / v_renpy / v_godot_dialogic）+ §4 7 维度评分表（21 评分 + 21 理由）+ §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测（5 分钟跑通；估时高度可信）。
+
+作者拍板路径（2026-05-15 ~ 2026-05-18）：
+
+1. 2026-05-15 T-3Y L2 会话推荐 v_renpy（主推荐）→ 作者明示偏好 Godot
+2. 2026-05-18 v3 提示词 + 3 distinct 方案对比 → 报告 v0.3 主推荐切换 v_godot_custom
+3. 2026-05-18 作者明示"保留可扩展性"硬约束（克苏鲁 / 探案 / 极乐迪斯科 / 未来 DND 都含物品 + 技能 + 检定，不是纯 VN）
+4. 2026-05-18 Godot demo 5 分钟跑通 → 估时校准 + 可行性验证
+5. 2026-05-18 作者明示授权立 ADR-035
+
+**决策**：
+
+第一款游戏 L3 宿主 = **Godot 4.6 + 自写最小 Control nodes**（方案 v_godot_custom；不使用任何 dialogue 插件）。
+
+具体规定：
+
+1. Godot 4.6.2（2026-04-01 发布）或更高版本作为第一款游戏的 L3 宿主程序
+2. 新建 `/host/godot_first_game/` 子目录（与 `/engine` 平行；不在 ADR-004 极薄运行时约束内；与 ROADMAP 阶段 4 "游戏内容填充" 同期落地）
+3. 5-7 个 GDScript 文件（~500-700 行总）：`main.gd` + `main.tscn` 入口 / `dialogue_player.gd` 节点渲染 + 选项 / `world_state.gd` state 引擎（移植自 `/engine/state/`） / `ontology_resolver.gd` 本体引用解析 / `scene_router.gd` T-3Y scene_branches + scene_metaparams + actual_inputs/outputs / `font_loader.gd` 中文字体打包
+4. **不使用 Dialogic 插件**（详否决理由见调研报告 §3.3 + §5.4）；如阶段 4 实测发现需要 dialogue 插件辅助，候选为 Dialogue Manager 4 (nathanhoad) 作 hybrid 形态
+5. T-3Y 字段集（scene_branches / scene_metaparams / scene_actual_inputs/outputs / included_node_ids）映射由自写代码实现；与 ADR-034 v_incremental 路线 + ADR-016 v0.4 `knowledge.*` 命名空间协同（具体字段在 T-3Y-1 工程会话落地时统一）
+6. Godot 项目内承担：富文本渲染（RichTextLabel + BBCode）/ 选项呈现（VBoxContainer + Button）/ state 内部表达 / 多平台导出（itch.io HTML5 + macOS + Windows binary + 可选 iOS/Android）
+7. 第一款游戏的"参考宿主"地位明确——开源框架剥离时（阶段 4 后期），Godot 宿主作为 Forgewright 的**第一个参考适配实现**
+8. **可扩展性预留**：自写代码完全可控；未来扩展物品系统 / 技能 UI / DND 风格库存装备槽 / 探索范式时无插件锁定阻碍——这是作者明示"保留可扩展性"硬约束的工程层落地
+
+**`/engine/` 模块命运**：
+
+`/engine/player.py` **(a) + (b) 合并保留**——不删；同时承担两个角色：
+
+- **(a) Reference player 参考实现**：Forgewright JSON 规范的"最小可执行说明书"；v_godot_custom 实施时 GDScript 1:1 翻译参照；开源剥离时第三方宿主的"对照黄金参考"
+- **(b) Generator 期 dry-run 工具**：生产期 generator / validator / scene_review_cli / T-3.6 审阅 UI 调用的底层 dry-run 后端；`python -m engine /path/to/scene.json` 不需开 Godot 项目即可玩通
+
+ADR-004 极薄运行时约束（≤ 500 行）继续生效；`/engine/` 仍是 Forgewright 的极薄运行时定义。但它**不是第一款游戏的真实运行时**——真实运行时是 `/host/godot_first_game/`。
+
+**替代方案及否决理由**：
+
+- **v_renpy（Ren'Py 8.5.x）**：22 年成熟 + 工程量最低（demo 实测后 1-2 天估时高度可信 vs Ren'Py 应该更快）+ multi-platform 最强；但 Ren'Py 主打 VN 范式，复杂 UI（DND 风格库存 / 装备槽 / 自由探索）偏弱；作者明示"保留可扩展性"硬约束。**次决策备选退路**:如阶段 4 起手期 v_godot_custom 进度严重卡了（2 周内未达 50%）+ 复杂 UI 短期不需要 → 可切换 v_renpy
+- **v_godot_dialogic（Godot 4.6 + Dialogic 2.x 插件 / 原 T-3Y L2 推荐）**：Dialogic 16 月发版停滞（最新 Alpha 19 = 2025-01-12）+ 28 个月全程 Alpha 未发 Beta + 80% 功能 Forgewright 用不到 + 数据格式 `.dtl` 不兼容 + 存档系统重写预告。**明确否决**
+- **Godot + Dialogue Manager 4 (nathanhoad)**：可行 hybrid 形态（活跃维护 + stateless branching + 与 Forgewright 哲学同源）；保留作 v_godot_custom 的 plugin-assisted 补充选项（如未来需要 dialogue 插件辅助）
+- **保留现有 Python CLI 播放器作唯一运行时**：分发难（朋友 3-5 玩通 + itch.io 发布均做不到）—— 但 `/engine/player.py` 以 (a)+(b) 合并保留作 reference + dry-run 工具角色继续存在
+- **自研 Web / Electron**：性价比低于 Godot 自写
+
+**后果**：
+
+- 新建 `/host/godot_first_game/` 子目录（阶段 4 起手期落地）
+- `/engine/` 保留 (a)+(b) 双角色；不 deprecated；ADR-004 极薄运行时约束继续生效
+- 阶段 4 起手期工程任务（推到阶段 3 → 4 切换会话拆解；本 ADR 不立刻拆 T-x.y）：
+  - T-4.1 Godot 项目骨架 + 中文字体打包
+  - T-4.2 dialogue_player.gd + world_state.gd + ontology_resolver.gd
+  - T-4.3 scene_router.gd（T-3Y 字段集消费；ADR-034 协同）
+  - T-4.4 多平台导出 + itch.io HTML5 跑通
+- 工程量预算：**1-2 天作者经验估时**（Godot demo 实测 5 分钟跑通验证；详调研报告 §8.4）
+- 阶段 4 完成定义 (d) itch.io 发布：Godot HTML5 export 路径
+- **ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 ADR 不动这些 L1 文档）
+- 调研物证保留：`/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md` v0.4 + `/docs/reviews/master_plan/2026-05-18_godot_demo/`
+
+**关联讨论**：
+
+- 与 ADR-002（运行时无 LLM）协同 —— Godot 自写代码不引入 LLM 调用
+- 与 ADR-004（运行时与生产期分离）协同 —— L3 宿主属运行时；如未来加 forgewright_to_godot_resource.py 转换器属生产期
+- 与 ADR-028（引擎与宿主分离原则）协同 —— **本 ADR 是 ADR-028 的首次具体化**
+- 与 ADR-027（World-Agnostic Principle）协同 —— Godot 框架本身世界无关；具体游戏 instance 绑特定世界
+- 与 ADR-029（技能体系作为项目配置层）协同 —— Godot 宿主消费项目 skills.json；不内置技能列表
+- 与 ADR-031（GM 抉择空间结构化）协同 —— L3 宿主消费"预编排完的"dialogue_graph；NPC 状态机执行由 `/engine/` 层或宿主内嵌的等价代码完成
+- 与 **ADR-034（Schema 主体 AI 生成路线；同日 2026-05-18 立）协同** —— v_godot_custom 路径下 Godot 偏好 Resource/JSON 结构；ADR-034 D8 阶段 4 单向导出 shims (forgewright-to-twine / forgewright-to-dialogic) 与本 ADR 共存（Godot 是主宿主；shims 是次级开源剥离物）；scene_router.gd 消费 ADR-016 v0.4 `knowledge.*` 命名空间
+- 与 ROADMAP 阶段 4 切换协议协同 —— 北极星 = A 完成度；本 ADR 选 v_godot_custom 是可扩展性 + AI 加速工时双约束下的最优解
+- 与 ROADMAP 阶段 4 失败模式警示（"造工具滑回"）的平衡 —— v_godot_custom 自写代码 < 1000 行；不构成"造工具"；自写不依赖插件 = 避免 Dialogic 类的"插件适配滑回"
+
+**编号说明**：
+
+ADR-034 同日（2026-05-18）立 schema IR 路线（v_incremental）；本 ADR 编号 ADR-035 顺延。ADR-032 / 033 编号仍预留给其他平行任务（ADR-032 拟立节点级文本生成抽象总契约；ADR-033 拟立技能体系最小可启动定义）。
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -1103,6 +1185,7 @@ Schema 层强制——LLM 生成的 state effects 在以下 **monotonic 命名�
 - 2026-05-12：作者明确授权新增 ADR-030（AestheticPreference schema；字段集留空预留，待 T-3X-1 实证归纳）+ 修订 ADR-020 v0.2（X4 闭环；阶段 2/3/4 三阶段口径），属 CLAUDE.md 规则 10 的明示例外。审美层决策于 2026-05-09 签字（v0.2）；ADR-028 + ADR-029 同期由产品线讨论起草并于 2026-05-10/11 push 到 main，占用编号 028/029；本 ADR 顺延为 ADR-030。整合自 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.4 + §6.5。T-3X L2 校准会话起草 L3 fixation PR paste-ready prompt（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2 修订包含产品线 ADR-028/029 联动校准）→ L1 fixation 执行会话（本 PR）落地。
 - 2026-05-13：作者明确授权新增 ADR-031（GM 抉择空间结构化方案；混合方案 D = A 基础层 + B NPC 状态机增强层），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（5.1 立 ADR-031 / 5.2 T-3X-1 拆 a+b / 5.3 跳 critique / 5.4 DEBATE §10 同期立 / 5.5 ROADMAP 时长 5-9 → 6-11 周）。同期落地：DEBATE_NOTES.md §10 核心赌注段 + STAGE_3_TASKS.md v1.0.2（T-3X-1 拆分）+ ROADMAP §阶段 3 时长校准。后续 T-3X-1a / T-3X-1b L3 工程会话基于本 ADR 启动。
 - 2026-05-18：作者明确授权新增 ADR-034（Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims；v_incremental 路线）+ 修订 ADR-016 v0.4（新增第 6 个 state path 命名空间 `knowledge.*` + monotonic 命名空间清单），属 CLAUDE.md 规则 10 的明示例外。整合自 ADR-034 调研报告 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2（4 工具 per-tool 机制清单 + 3 distinct 候选评估 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）+ 作者 2026-05-18 拍板（5 争议点全部接受 Agent A 倾向：Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。ADR-034 调研会话（claude/wonderful-proskuriakova-e68be2）产出 + 同会话落地。
+- 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-034 同日立项（编号 ADR-032 / 033 仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）；本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。ADR-035 调研会话（claude/vigorous-varahamihira-f6f2f6）产出 + 同会话落地。
 
 ## 版本
 
