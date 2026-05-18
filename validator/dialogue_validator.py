@@ -10,15 +10,23 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, Optional
+
+from validator.state_path_validator import is_monotonic_path
 
 
 Severity = Literal["error", "warning"]
 
-_PATH_NAMESPACES = ("world", "faction", "relationship", "flag", "player")
+# Codex review PR #66 finding 3.1：ADR-016 v0.4 第 6 命名空间 knowledge.* 加入；
+# 同时新增 monotonic 检查（ADR-034 D11）：LLM 生成内容禁 dec/remove
+# flag.player_* / knowledge.* path（human-source 豁免）。
+_PATH_NAMESPACES = ("world", "faction", "relationship", "flag", "player", "knowledge")
 _UNAVAIL_BEHAVIORS = ("hide", "disable", "disable_with_hint")
 _EFFECT_OPS = ("set", "inc", "dec", "add", "remove")
 _CONDITION_OPS = ("eq", "neq", "gt", "gte", "lt", "lte", "has", "has_not")
+
+# Monotonic 命名空间下禁用的 op（与 state_path_validator.FORBIDDEN_OPS_MONOTONIC 同源）
+_FORBIDDEN_OPS_MONOTONIC = frozenset({"dec", "remove"})
 
 
 @dataclass(frozen=True)
@@ -101,6 +109,8 @@ def _check_effect(
     where: str,
     slugs: set[str] | None,
     issues: list[ValidationIssue],
+    *,
+    generation_source: str = "llm",
 ) -> None:
     if not isinstance(eff, dict):
         return
@@ -117,6 +127,27 @@ def _check_effect(
     p = eff.get("path")
     if isinstance(p, str):
         _check_path_namespace(p, f"{where}.path", slugs, issues)
+        # Codex review PR #66 finding 3.1：monotonic 校验（ADR-034 D11）
+        # LLM 生成内容禁 dec/remove flag.player_* / knowledge.* path；
+        # human-source（作者手填）豁免。
+        if (
+            generation_source != "human"
+            and isinstance(op, str)
+            and op in _FORBIDDEN_OPS_MONOTONIC
+            and is_monotonic_path(p)
+        ):
+            issues.append(
+                ValidationIssue(
+                    severity="error",
+                    code="MONOTONIC_VIOLATION",
+                    field_path=where,
+                    message=(
+                        f"monotonic 违反：path {p!r} 属于 monotonic 命名空间 "
+                        f"(flag.player_* / knowledge.*)，ADR-034 D11 禁止 LLM "
+                        f"生成内容使用 op={op!r}；允许的 op = ['set', 'inc', 'add']"
+                    ),
+                )
+            )
 
 
 def _check_condition(
@@ -169,12 +200,17 @@ def validate_node_mechanical(
     *,
     ontology: dict | None = None,
     known_node_ids: set[str] | None = None,
+    generation_source: str = "llm",
 ) -> ValidationResult:
     """机械预检 dialogue node。返回多 issue 列表（不短路）。
 
     `known_node_ids` 提供时跑 C4 TARGET_UNREACHABLE；None 时跳过——单 node 调用方
     通常没有同图节点集合，C4 由 graph 入口聚合。
     `ontology` 提供时跑 C3 BOND_ID_UNKNOWN；None 时跳过该条。
+
+    `generation_source`（Codex review finding 3.1 新增）：'llm'（默认）跑
+    monotonic 校验（ADR-034 D11 禁 dec/remove flag.player_* / knowledge.*）；
+    'human'（作者手填）豁免该校验。
     """
     issues: list[ValidationIssue] = []
     slugs = _extract_slugs(ontology)
@@ -206,7 +242,10 @@ def validate_node_mechanical(
     on_enter = node.get("on_enter_effects") or []
     if isinstance(on_enter, list):
         for idx, eff in enumerate(on_enter):
-            _check_effect(eff, f"on_enter_effects[{idx}]", slugs, issues)
+            _check_effect(
+                eff, f"on_enter_effects[{idx}]", slugs, issues,
+                generation_source=generation_source,
+            )
 
     # node 级 reachability_condition 同样是 StateCondition——必须进 C2/C3/C6/C8 否则
     # 节点入口条件能绕过 R8 机械预检（review 4.1）。
@@ -271,10 +310,14 @@ def validate_node_mechanical(
             )
 
         # C7 EFFECT_OP_INVALID + C2 PATH_NS_INVALID + C3 BOND_ID_UNKNOWN（路径段）
+        # + Codex review finding 3.1 MONOTONIC_VIOLATION (ADR-034 D11)
         effects = opt.get("effects") or []
         if isinstance(effects, list):
             for e_idx, eff in enumerate(effects):
-                _check_effect(eff, f"{prefix}.effects[{e_idx}]", slugs, issues)
+                _check_effect(
+                    eff, f"{prefix}.effects[{e_idx}]", slugs, issues,
+                    generation_source=generation_source,
+                )
 
         # C6 STATE_CONDITION_FORM_MIX + C8 CONDITION_OP_INVALID + C2/C3（路径段）
         cond = opt.get("condition")
@@ -285,12 +328,18 @@ def validate_node_mechanical(
 
 
 def validate_graph_mechanical(
-    graph: dict, *, ontology: dict | None = None
+    graph: dict,
+    *,
+    ontology: dict | None = None,
+    generation_source: str = "llm",
 ) -> dict[str, ValidationResult]:
     """对图内每个 node 跑 validate_node_mechanical，返回 node_id → result 字典。
 
     `known_node_ids` 由本函数从 graph["nodes"] 自动构造，避开 C4 在单 node 入口缺
     上下文的问题。非 dict 节点跳过（schema 层会抓）。
+
+    `generation_source`（Codex review finding 3.1 新增）：'llm' 跑 monotonic
+    校验；'human' 豁免（作者手填内容不受 ADR-034 D11 约束）。
     """
     nodes = graph.get("nodes")
     if not isinstance(nodes, dict):
@@ -298,7 +347,8 @@ def validate_graph_mechanical(
     known = set(nodes.keys())
     return {
         nid: validate_node_mechanical(
-            node, ontology=ontology, known_node_ids=known
+            node, ontology=ontology, known_node_ids=known,
+            generation_source=generation_source,
         )
         for nid, node in nodes.items()
         if isinstance(node, dict)

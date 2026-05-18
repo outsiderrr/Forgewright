@@ -37,20 +37,20 @@
       "uniqueItems": true
     },
     "state_paths_read": {
-      "description": "context assembly 阶段读取的 state path 全集（ADR-016 五命名空间 pattern：world.* / faction.<id>.* / relationship.<slug>.<field> / flag.* / player.*）。pattern 与 ontology 模块（character.state_path_slug + clock.tick_effects[].path）的命名空间合法性回归同源（schema/tests/test_stage2_ontology_schema.py:test_gold_scene_paths_all_within_state_namespace_whitelist）。F15 加严：sidecar 自身 path 也必须落入合法命名空间且**至少一个段**，**裸 namespace（如 'world' / 'flag' / 'relationship.vellin'）拒收**——避免 propagate 工具语义紊乱（GPT-5.5 review 3.1 修订）。relationship.* 至少需 slug + field 两段，与 gold scene `relationship.vellin.trust` 形态对齐。",
+      "description": "context assembly 阶段读取的 state path 全集（ADR-016 v0.4 六命名空间 pattern：world.* / faction.<id>.* / relationship.<slug>.<field> / flag.* / player.* / knowledge.*）。pattern 与 ontology 模块（character.state_path_slug + clock.tick_effects[].path）的命名空间合法性回归同源（schema/tests/test_stage2_ontology_schema.py:test_gold_scene_paths_all_within_state_namespace_whitelist）。F15 加严：sidecar 自身 path 也必须落入合法命名空间且**至少一个段**，**裸 namespace（如 'world' / 'flag' / 'relationship.vellin'）拒收**——避免 propagate 工具语义紊乱（GPT-5.5 review 3.1 修订）。relationship.* 至少需 slug + field 两段，与 gold scene `relationship.vellin.trust` 形态对齐。__Codex review PR #66 finding 4.3__：加入 ADR-016 v0.4 第 6 命名空间 knowledge.*（pattern ^knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$）；T-3Y 场景 player_known_info / scene_reveals 派生的 knowledge.* state path 不再在 sidecar 校验阶段被拒。",
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
+        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
       },
       "uniqueItems": true
     },
     "state_paths_written": {
-      "description": "scene effect 写入的 state path 全集（ADR-016 五命名空间 pattern）。来源 = scene.json `on_enter_effects` + `option.effects` 内 path 字段的并集（写入侧反推；与 read 侧 over-approx 不同，write 侧从产物可精确反推）。F15 加严同 state_paths_read（裸 namespace 拒收；relationship.* 至少需 slug + field 两段）。",
+      "description": "scene effect 写入的 state path 全集（ADR-016 v0.4 六命名空间 pattern）。来源 = scene.json `on_enter_effects` + `option.effects` 内 path 字段的并集（写入侧反推；与 read 侧 over-approx 不同，write 侧从产物可精确反推）。F15 加严同 state_paths_read（裸 namespace 拒收；relationship.* 至少需 slug + field 两段）。__Codex review PR #66 finding 4.3__：加入 knowledge.* 第 6 命名空间。",
       "type": "array",
       "items": {
         "type": "string",
-        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
+        "pattern": "^(world\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|faction\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|relationship\\.[a-z0-9_]+\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|flag\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|player\\.[a-z0-9_]+(\\.[a-z0-9_]+)*|knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*)$"
       },
       "uniqueItems": true
     },

@@ -58,6 +58,7 @@ coverage.xml
 !.env.example
 /generator/cost_log.jsonl
 /generator/playtest_cost_log.jsonl
+*.jsonl.lock
 /generator/experiments/
 
 # Stage 1.5 visual assets — directories tracked, contents not (copyright + temp artifacts)
@@ -70,3 +71,8 @@ coverage.xml
 # T-3.6a review UI — generated smoke-test screenshots (PR description carries copies)
 /tools/review_ui/tests/_screenshots/
 /tools/review_ui/tests/_screenshots_pr/
+
+# Local secrets (T-3Y-1 + future LLM keys)
+.env
+.env.*
+!.env.example

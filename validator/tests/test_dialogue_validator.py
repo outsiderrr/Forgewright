@@ -624,3 +624,148 @@ def test_gold_scene_only_known_c1_issues(capsys):
         f"  expected = {known_c1}\n"
         f"  actual   = {actual_c1}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Codex review PR #66 finding 3.1:
+#   knowledge.* 第 6 命名空间（ADR-016 v0.4）
+# + MONOTONIC_VIOLATION（ADR-034 D11 flag.player_* / knowledge.* 禁 dec/remove）
+# ---------------------------------------------------------------------------
+
+
+def test_finding_3_1_set_knowledge_namespace_passes():
+    """ADR-016 v0.4：knowledge.* path 是第 6 命名空间，不应触发 PATH_NS_INVALID。"""
+    eff = {"op": "set", "path": "knowledge.npc_is_killer", "value": True}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "PATH_NS_INVALID" not in _codes(res)
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_inc_knowledge_passes():
+    """inc / set / add 在 monotonic namespace 下允许（ADR-034 D11）."""
+    eff = {"op": "inc", "path": "knowledge.wright_dead", "value": 1}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_add_knowledge_passes():
+    eff = {"op": "add", "path": "knowledge.evidence_list", "value": "lucy_card"}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_remove_knowledge_llm_source_fails():
+    """LLM source 下 remove knowledge.* 应 MONOTONIC_VIOLATION 拒收。"""
+    eff = {"op": "remove", "path": "knowledge.foo", "value": None}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]),
+        known_node_ids={"next"},
+        # generation_source 默认 'llm'
+    )
+    assert "MONOTONIC_VIOLATION" in _codes(res)
+
+
+def test_finding_3_1_dec_knowledge_llm_source_fails():
+    eff = {"op": "dec", "path": "knowledge.foo", "value": 1}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" in _codes(res)
+
+
+def test_finding_3_1_dec_flag_player_llm_source_fails():
+    """flag.player_* 在 monotonic 清单内（ADR-034 D11）."""
+    eff = {"op": "dec", "path": "flag.player_saw_blood_letter", "value": 1}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" in _codes(res)
+
+
+def test_finding_3_1_remove_flag_player_llm_source_fails():
+    eff = {"op": "remove", "path": "flag.player_got_vick_card", "value": None}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" in _codes(res)
+
+
+def test_finding_3_1_human_source_exempts_monotonic():
+    """human 源（generation_trace.source == 'human'）豁免 monotonic 校验。"""
+    eff = {"op": "remove", "path": "knowledge.foo", "value": None}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]),
+        known_node_ids={"next"},
+        generation_source="human",
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_dec_non_player_flag_allowed():
+    """flag.lucy_alerted（非 flag.player_*）允许 dec/remove。"""
+    eff = {"op": "dec", "path": "flag.lucy_alerted", "value": 1}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_dec_player_traits_allowed():
+    """ADR-034 D11 明示 player.traits 不在 monotonic 清单（喝酒 → 观察能力下降允许）."""
+    eff = {"op": "dec", "path": "player.traits", "value": "observant"}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_dec_relationship_allowed():
+    """relationship.* 允许双向变化（信任崩塌）."""
+    eff = {"op": "dec", "path": "relationship.vellin.trust", "value": 999}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    assert "MONOTONIC_VIOLATION" not in _codes(res)
+
+
+def test_finding_3_1_on_enter_effects_also_checked():
+    """on_enter_effects 也走 monotonic 校验（非仅 option.effects）."""
+    bad_eff = {"op": "remove", "path": "knowledge.foo", "value": None}
+    node = _node(on_enter_effects=[bad_eff])
+    res = validate_node_mechanical(node, known_node_ids={"next"})
+    assert "MONOTONIC_VIOLATION" in _codes(res)
+
+
+def test_finding_3_1_graph_entry_threads_generation_source():
+    """validate_graph_mechanical 也传递 generation_source 到所有节点。"""
+    bad_eff = {"op": "remove", "path": "knowledge.foo", "value": None}
+    graph = {
+        "graph_id": "g",
+        "nodes": {
+            "n1": _node(options=[_option(effects=[bad_eff])]),
+        },
+    }
+    # LLM source（默认）→ 触发
+    results = validate_graph_mechanical(graph)
+    assert "MONOTONIC_VIOLATION" in _codes(results["n1"])
+
+    # human source → 豁免
+    results = validate_graph_mechanical(graph, generation_source="human")
+    assert "MONOTONIC_VIOLATION" not in _codes(results["n1"])
+
+
+def test_finding_3_1_path_ns_invalid_message_lists_6_namespaces():
+    """PATH_NS_INVALID 消息体现 6 个命名空间（不再只 5 个）."""
+    eff = {"op": "set", "path": "stats.hp", "value": 1}
+    res = validate_node_mechanical(
+        _node(options=[_option(effects=[eff])]), known_node_ids={"next"}
+    )
+    msgs = [i.message for i in res.issues if i.code == "PATH_NS_INVALID"]
+    assert msgs
+    assert "knowledge" in msgs[0]

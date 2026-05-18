@@ -97,6 +97,18 @@ class Node(BaseModel):
     on_enter_effects: list[state_effect.StateEffect] | None = Field(
         None, description="🟡 D3：进入节点时按数组顺序应用的状态效果。可空数组。"
     )
+    background_seeds: list[constr(pattern=r"^[a-zA-Z0-9_-]+$", min_length=1)] | None = (
+        Field(
+            None,
+            description="⭐ T-3Y-1 / T-3Y 进展报告 §5.1：本节点承载的 seed_id 列表；与父图 scene_seeds[].planted_in_node_ids 双向引用。__留给 /validator__：(1) 每个 seed_id 必须在父图 scene_seeds 列表里存在；(2) 父图 scene_seeds 中 planted_in_node_ids 含本节点 ⇒ 本节点 background_seeds 必含该 seed_id（双向一致性）。本字段 optional，仅给 generator prompt 用，runtime engine 不读。",
+        )
+    )
+    foreground_goal: (
+        constr(pattern=r"^[a-z0-9_]+(\.stage_[1-9][0-9]*)?$", min_length=1) | None
+    ) = Field(
+        None,
+        description="⭐ T-3Y-1 / T-3Y 进展报告 §5.1：本节点的前景目标，形如 '<reveal_id>.stage_<n>'（如 'r1_wright_double_life.stage_2'），声明本节点承载哪个 reveal 的哪个 stage。stage 后缀 optional（不分阶段的 reveal 可省略）。__留给 /validator__：(1) reveal_id 必须在父图 scene_reveals 列表内可解析；(2) stage 必须在 scene_reveals[].required_stages 范围内；(3) 父图 scene_reveals[].trigger_node_ids 含本节点 ⇒ 本节点 foreground_goal 必指向该 reveal。本字段 optional，仅给 generator prompt 用。__Codex review finding 4.2 收紧__：pattern 只允许小写蛇形 [a-z0-9_]，与 dialogue_graph.scene_reveals.reveal_id pattern 对齐（确保 D5 派生 knowledge.<reveal_id>.stage_<n> 合法）。",
+    )
     plugin_metadata: dict[str, Any] | None = Field(
         None, description="🟡 编剧理论插件的挂载点。"
     )

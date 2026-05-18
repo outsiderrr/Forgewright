@@ -252,6 +252,58 @@ def test_state_paths_read_accepts_all_five_namespaces() -> None:
     )
 
 
+def test_state_paths_read_accepts_knowledge_namespace() -> None:
+    """Codex review PR #66 finding 4.3 正样本：第 6 命名空间 knowledge.*（ADR-016 v0.4）
+    sidecar state_paths_read 接受 knowledge.* 路径——T-3Y 场景 player_known_info
+    + scene_reveals 派生的 state path 不再在 sidecar 校验阶段被拒。"""
+    v = _validator()
+    sidecar = make_minimal_sidecar()
+    sidecar["state_paths_read"] = [
+        "knowledge.wright_dead",
+        "knowledge.lucy_known_to_player",
+        "knowledge.r1_wright_double_life.stage_1",  # 嵌套（reveal_id.stage_n）
+        "knowledge.r1_wright_double_life.stage_2",
+    ]
+    errors = sorted(v.iter_errors(sidecar), key=lambda e: list(e.path))
+    assert errors == [], (
+        "knowledge.* namespace should be accepted in state_paths_read: "
+        + "; ".join(f"{list(e.path)}: {e.message}" for e in errors)
+    )
+
+
+def test_state_paths_written_accepts_knowledge_namespace() -> None:
+    """Codex review PR #66 finding 4.3 正样本：sidecar state_paths_written 也接受
+    knowledge.*（T-3Y 场景 effect set knowledge.* 进入 over-approx trace）。"""
+    v = _validator()
+    sidecar = make_minimal_sidecar()
+    sidecar["state_paths_written"] = [
+        "knowledge.wright_dead",
+        "knowledge.r1_wright_double_life.stage_1",
+    ]
+    errors = sorted(v.iter_errors(sidecar), key=lambda e: list(e.path))
+    assert errors == [], (
+        "knowledge.* namespace should be accepted in state_paths_written: "
+        + "; ".join(f"{list(e.path)}: {e.message}" for e in errors)
+    )
+
+
+def test_state_paths_knowledge_uppercase_rejected() -> None:
+    """与 ADR-016 v0.4 knowledge.* pattern ^knowledge\\.[a-z0-9_]+ 一致——
+    大写不接受（保证 reveal_id 收紧规则跨 schema 一致）。"""
+    v = _validator()
+    bad = make_minimal_sidecar()
+    bad["state_paths_read"] = ["knowledge.R1_Wright"]
+    assert not v.is_valid(bad)
+
+
+def test_state_paths_knowledge_bare_namespace_rejected() -> None:
+    """与其他 5 命名空间一致——裸 'knowledge' 拒收（必须至少一个段）。"""
+    v = _validator()
+    bad = make_minimal_sidecar()
+    bad["state_paths_read"] = ["knowledge"]
+    assert not v.is_valid(bad)
+
+
 @pytest.mark.parametrize("bare_path", [
     "world",  # 裸 world 拒收（GPT-5.5 review 3.1）
     "flag",   # 裸 flag 拒收

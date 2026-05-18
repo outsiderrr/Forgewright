@@ -48,6 +48,43 @@ def _minimal_scene() -> dict:
 # ---------------------------------------------------------------------------
 
 
+def test_payload_accepts_knowledge_namespace(tmp_path):
+    """Codex review PR #66 finding 4.3：dep_index_writer 接受 knowledge.*
+    命名空间（ADR-016 v0.4 第 6）path 进入 trace + sidecar payload。"""
+    template_file = tmp_path / "system.py"
+    template_file.write_text("SCENE_SYSTEM_PROMPT = 'x'", encoding="utf-8")
+    trace = GenerationDependencyTrace(
+        ontology_ids_read={"char_lucy"},
+        state_paths_read={
+            "knowledge.wright_dead",
+            "knowledge.r1_wright_double_life.stage_1",
+            "flag.met_lucy",  # 混合：其他命名空间不受影响
+        },
+        state_paths_written={
+            "knowledge.lucy_known_to_player",
+        },
+        prompt_template_files=[template_file],
+    )
+    # 不抛 ValueError；payload 正常含 knowledge.* paths
+    payload = build_sidecar_payload(
+        scene={
+            "graph_id": "scene_inn_meet_lucy",
+            "schema_version": "0.1.1",
+            "scene_anchor": "scene_inn",
+            "nodes": {},
+        },
+        trace=trace,
+        prior_scene_summaries=None,
+        token_metrics=None,
+        chapter_id=None,
+        act_id=None,
+        generated_at="2026-05-18T10:00:00+00:00",
+    )
+    assert "knowledge.wright_dead" in payload["state_paths_read"]
+    assert "knowledge.r1_wright_double_life.stage_1" in payload["state_paths_read"]
+    assert "knowledge.lucy_known_to_player" in payload["state_paths_written"]
+
+
 def test_payload_required_fields_only(tmp_path):
     trace = _make_trace(tmp_path)
     payload = build_sidecar_payload(
