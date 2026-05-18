@@ -80,6 +80,9 @@ _STATE_PATH_RE = re.compile(
     r"|relationship\.[a-z0-9_]+\.[a-z0-9_]+(\.[a-z0-9_]+)*"
     r"|flag\.[a-z0-9_]+(\.[a-z0-9_]+)*"
     r"|player\.[a-z0-9_]+(\.[a-z0-9_]+)*"
+    # Codex review PR #66 finding 4.3：ADR-016 v0.4 第 6 命名空间 knowledge.*
+    # 加入；T-3Y 场景写入 knowledge.* state path 不应在 sidecar 落盘阶段被拒
+    r"|knowledge\.[a-z0-9_]+(\.[a-z0-9_]+)*"
     r")$"
 )
 
