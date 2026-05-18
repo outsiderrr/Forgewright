@@ -103,7 +103,7 @@ AP-4 假靶子否定 / AP-5 总结代细节 / AP-6 锚定未说明标准 / AP-9 
 
 ---
 
-## 6. 待人工审稿 [A]/[R]/[S] 段（accept / revise / scrap）
+## 6. 人工审稿 [A]/[R]/[S] 段（accept / revise / scrap）
 
 > 作者按以下三档标注，作为 T-3Y-1 实证完成的最后一步：
 >
@@ -111,15 +111,37 @@ AP-4 假靶子否定 / AP-5 总结代细节 / AP-6 锚定未说明标准 / AP-9 
 > - **[R] Revise**：需要小修订
 > - **[S] Scrap**：需要重生成
 
-| 段落 | 内容片段 | 你的标注 |
-|---|---|---|
-| Narration | （见上文 §1） | [_] |
-| opt_continue_press | `我还要那张名片。` | [_] |
-| opt_warn_about_vick | `我会让你避开维克。` | [_] |
-| opt_press_for_cache | `我想知道小屋位置。` | [_] |
-| opt_betray_lucy_to_eyes | `我去和那桌人谈谈。` | [_] |
+### 6.1 作者评审结果（outsiderrr 2026-05-18）
 
-整体接受率（gross_pass_rate）= [A] / ([A] + [R] + [S]) = _____
+| 段落 | 内容片段 | 标注 |
+|---|---|---|
+| Narration | （见上文 §1） | **[A]** |
+| opt_continue_press | `我还要那张名片。` | **[A]** |
+| opt_warn_about_vick | `我会让你避开维克。` | **[A]** |
+| opt_press_for_cache | `我想知道小屋位置。` | **[A]** |
+| opt_betray_lucy_to_eyes | `我去和那桌人谈谈。` | **[A]** |
+
+**整体接受率（gross_pass_rate）** = 5 [A] / (5 [A] + 0 [R] + 0 [S]) = **100%**
+
+### 6.2 作者评审理由
+
+- 222 字 narration 文本质感 / 节奏 / 措辞 OK
+- 4 options 第一人称自然
+- AP-7 detector 真实捕获到违规，验证 detector 有效
+- 0 评价词 + 0 比喻词，白描合规
+
+### 6.3 作者观察 — L2 follow-up TODO（不影响 [A] / 不阻塞本任务）
+
+作者评审时识别 3 条 follow-up（属于 **信息分配 + 信息呈现形式**问题，不是文本质感问题；
+责任在 Forward Planner（信息分配）+ skill prompt（信息呈现形式约束），不在本次
+dry-run 单节点 scope）：
+
+1. **Forward Planner 加约束**：每节点 reveal 数 / seeds 数硬上限（如每节点 ≤ 1 主 reveal + ≤ 2 seeds）；防止信息分配过载
+2. **skill prompt 强化 AP-7 约束**：当前 anti-pattern blacklist 是软提醒；建议增加正向引导段「信息属于 NPC 的，必须放在引号内由 NPC 自己说；narration 仅描述物理细节 + 玩家可观察行为」
+3. **AP-7 detector 精度提升**：当前 detector 抓 narration 含「她说 / 他说」句式；建议未来增加「narration 句含 NPC 角色名 + 陈述性事实」的语义检测（LLM-as-judge 层）
+
+观察依据：单节点 narration 信息量偏多 + 部分信息走旁白概括而不走 NPC 对白 —— 跟
+A1 §AP-7 精神有距离。
 
 ---
 
