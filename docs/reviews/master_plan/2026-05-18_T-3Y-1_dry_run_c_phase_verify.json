@@ -1,0 +1,312 @@
+{
+  "status": "success",
+  "completed_node": {
+    "node_id": "node_3_info_offer",
+    "type": "dialogue",
+    "narration": "厨房后门半掩，雨水在门槛外积成一条暗线。露西把托盘扣在水槽边，袖口沾着啤酒沫，目光越过你的肩头，停在角落那两件深色西装上。她从围裙内袋摸出一张黑边名片，先用杯底压住，只露出一个烫银的“V”。「莱特白天讲古文字，夜里换一件旧外套，从后巷上车。他不让人叫教授，只让人叫赖特先生。」她把声音压低，指节贴着杯沿。「有一次他醉了，提到乡下那间小屋，说壁炉后面比银行安静。第二天，给他递名片的人就来这里找我。」",
+    "speaker_ref": "char_lucy",
+    "location_ref": "scene_inn",
+    "on_enter_effects": [
+      {
+        "op": "set",
+        "path": "flag.lucy_opened_up",
+        "value": true
+      }
+    ],
+    "options": [
+      {
+        "option_id": "opt_continue_press",
+        "text": "我还要知道他夜里的事。",
+        "target_node_id": "node_5_end_ally",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.lucy_knows_wright_lower_life",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          }
+        ],
+        "unavailable_behavior": "hide"
+      },
+      {
+        "option_id": "opt_warn_about_vick",
+        "text": "我能让你避开那两人。",
+        "target_node_id": "node_5_end_ally",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.lucy_alerted",
+            "value": true
+          },
+          {
+            "op": "inc",
+            "path": "relationship.lucy.trust",
+            "value": 1
+          }
+        ],
+        "unavailable_behavior": "hide"
+      },
+      {
+        "option_id": "opt_press_for_cache",
+        "text": "[察言观色]我想听小屋的事。",
+        "target_node_id": "node_5_end_ally",
+        "condition": {
+          "op": "gte",
+          "path": "relationship.lucy.trust",
+          "value": 2
+        },
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.cache_known",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          }
+        ],
+        "unavailable_behavior": "disable_with_hint"
+      },
+      {
+        "option_id": "opt_betray_lucy_to_eyes",
+        "text": "我去和角落那两人谈。",
+        "target_node_id": "node_6_end_cold",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.lucy_betrayed_to_gangs",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": false
+          },
+          {
+            "op": "dec",
+            "path": "relationship.lucy.trust",
+            "value": 999
+          }
+        ],
+        "unavailable_behavior": "hide"
+      }
+    ],
+    "background_seeds": [
+      "S2_vick_dangerous",
+      "S4_country_cottage_cache"
+    ],
+    "foreground_goal": "r1_wright_double_life.stage_2"
+  },
+  "anti_pattern_flags": [],
+  "rubric": {
+    "information_density": {
+      "score": 8.71,
+      "trace": {
+        "narration_char_count": 171,
+        "option_count": 4,
+        "quote_count": 3,
+        "formula": "(chars/50)*0.5 + options*1.0 + quotes*1.0",
+        "raw_base_before_clamp": 8.71
+      }
+    },
+    "baimiao_compliance": {
+      "score": 10.0,
+      "trace": {
+        "narration_char_count": 171,
+        "evaluation_word_count": 0,
+        "figurative_word_count": 0,
+        "violation_density_per_100_chars": 0.0,
+        "formula": "10 - (eval+figurative)/(chars/100) * 2"
+      }
+    }
+  },
+  "raw_llm_output": {
+    "node_id": "node_3_info_offer",
+    "type": "dialogue",
+    "narration": "厨房后门半掩，雨水在门槛外积成一条暗线。露西把托盘扣在水槽边，袖口沾着啤酒沫，目光越过你的肩头，停在角落那两件深色西装上。她从围裙内袋摸出一张黑边名片，先用杯底压住，只露出一个烫银的“V”。「莱特白天讲古文字，夜里换一件旧外套，从后巷上车。他不让人叫教授，只让人叫赖特先生。」她把声音压低，指节贴着杯沿。「有一次他醉了，提到乡下那间小屋，说壁炉后面比银行安静。第二天，给他递名片的人就来这里找我。」",
+    "speaker_ref": "char_lucy",
+    "location_ref": "scene_inn",
+    "on_enter_effects": [
+      {
+        "op": "set",
+        "path": "flag.lucy_opened_up",
+        "value": true
+      }
+    ],
+    "options": [
+      {
+        "option_id": "opt_continue_press",
+        "text": "我还要知道他夜里的事。",
+        "target_node_id": "node_5_end_ally",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.lucy_knows_wright_lower_life",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          }
+        ],
+        "unavailable_behavior": "hide"
+      },
+      {
+        "option_id": "opt_warn_about_vick",
+        "text": "我能让你避开那两人。",
+        "target_node_id": "node_5_end_ally",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.lucy_alerted",
+            "value": true
+          },
+          {
+            "op": "inc",
+            "path": "relationship.lucy.trust",
+            "value": 1
+          }
+        ],
+        "unavailable_behavior": "hide"
+      },
+      {
+        "option_id": "opt_press_for_cache",
+        "text": "[察言观色]我想听小屋的事。",
+        "target_node_id": "node_5_end_ally",
+        "condition": {
+          "op": "gte",
+          "path": "relationship.lucy.trust",
+          "value": 2
+        },
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.cache_known",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": true
+          }
+        ],
+        "unavailable_behavior": "disable_with_hint"
+      },
+      {
+        "option_id": "opt_betray_lucy_to_eyes",
+        "text": "我去和角落那两人谈。",
+        "target_node_id": "node_6_end_cold",
+        "condition": null,
+        "effects": [
+          {
+            "op": "set",
+            "path": "flag.lucy_betrayed_to_gangs",
+            "value": true
+          },
+          {
+            "op": "set",
+            "path": "flag.player_got_vick_card",
+            "value": false
+          },
+          {
+            "op": "dec",
+            "path": "relationship.lucy.trust",
+            "value": 999
+          }
+        ],
+        "unavailable_behavior": "hide"
+      }
+    ],
+    "background_seeds": [
+      "S2_vick_dangerous",
+      "S4_country_cottage_cache"
+    ],
+    "foreground_goal": "r1_wright_double_life.stage_2"
+  },
+  "metadata": {
+    "model_id": "gpt-5.5",
+    "input_tokens": 3966,
+    "output_tokens": 1190,
+    "actual_cost_usd": 0.022212,
+    "elapsed_sec_total": 25.439125061035156,
+    "elapsed_sec_llm": 25.433834075927734,
+    "finish_reason": "stop",
+    "started_at": "2026-05-18 20:34:42"
+  },
+  "trace": {
+    "started_at": "2026-05-18 20:34:42",
+    "model_id": "gpt-5.5",
+    "steps": [
+      {
+        "step": "env_loaded",
+        "base_url": "https://poloai.top/v1",
+        "model_id": "gpt-5.5"
+      },
+      {
+        "step": "scene_loaded",
+        "graph_id": "scene_inn_meet_lucy",
+        "node_id": "node_3_info_offer",
+        "scene_seeds": 2,
+        "scene_reveals": 1
+      },
+      {
+        "step": "forward_planner",
+        "foreground_goal": "r1_wright_double_life.stage_2",
+        "background_seeds": [
+          "S2_vick_dangerous",
+          "S4_country_cottage_cache"
+        ],
+        "relevant_known_count": 3,
+        "reconcile_verdict": "pass"
+      },
+      {
+        "step": "prompt_rendered",
+        "system_chars": 3984,
+        "user_chars": 3723
+      },
+      {
+        "step": "budget_charged",
+        "record_id": "1c9910a9e45a474d8a2924179f187220",
+        "estimated_cost_usd": 0.021852,
+        "est_input_tokens": 1926,
+        "est_output_tokens": 1500
+      },
+      {
+        "step": "llm_call_complete",
+        "input_tokens": 3966,
+        "output_tokens": 1190,
+        "actual_cost_usd": 0.022212,
+        "elapsed_sec_llm": 25.433834075927734,
+        "finish_reason": "stop"
+      },
+      {
+        "step": "evaluation_complete",
+        "anti_pattern_flags": 0,
+        "rubric_information_density": 8.71,
+        "rubric_baimiao_compliance": 10.0
+      }
+    ]
+  }
+}
