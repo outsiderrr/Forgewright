@@ -1,0 +1,23 @@
+# v0.1 D1 字面直达 补丁白名单
+#
+# 用途：CC-CEDICT 未充分覆盖但 v0.1 D1 应 pass 的死比喻 / 词典化用法。
+# Review pipeline 在 CC-CEDICT 查不到或释义不全时兜底查这里。
+#
+# 维护原则：
+# - 不放活比喻 / 创造性修辞
+# - 只放"实际上已经词典化但 CC-CEDICT 漏掉 / 释义不完整"的条目
+# - 跑实战项目时遇到漏判再加，预期不超 50 条
+# - 每条配 note 说明 v0.1 允许的理由
+
+allowed:
+  - word: 凛然
+    note: CC-CEDICT 未收录；字面"严肃可敬畏"已词典化（《现代汉语词典》收录）
+
+  - word: 头疼
+    note: CC-CEDICT 只字面"headache"；口语中"烦恼"引申义已词典化
+
+  - word: 出口
+    note: CC-CEDICT 有字面 exit / to speak；"解决之道"借代义已词典化
+
+  - word: 白宫
+    note: CC-CEDICT 给字面"White House"；"美国当局"借代义已词典化（见《现代汉语词典》收录）
