@@ -17,6 +17,7 @@ dependencies = [
     "Pillow>=10",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.23",
+    "zh-dict-mcp>=0.1.0",
 ]
 
 [project.optional-dependencies]
