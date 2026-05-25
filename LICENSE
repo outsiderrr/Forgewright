@@ -1,0 +1,75 @@
+================================================================================
+FORGEWRIGHT MULTI-MODULE LICENSE 多模块许可
+================================================================================
+
+Copyright (c) 2026 outsiderrr.
+
+Forgewright 是分模块许可项目，不同模块采用不同 license。
+每个模块的具体 license 见该模块目录下的 LICENSE 文件。
+
+模块 license 总览:
+
+| 模块         | License        | 角色                                |
+|--------------|----------------|-------------------------------------|
+| /engine      | Apache 2.0     | 运行时 JSON 对话图播放器            |
+| /state       | Apache 2.0     | 状态总线（运行时也用）              |
+| /schema      | Apache 2.0     | 数据格式定义                        |
+| /generator   | AGPL v3        | AI 生成管线（开发期）               |
+| /validator   | AGPL v3        | 校验器（开发期）                    |
+| /tools       | AGPL v3        | 作家工坊（开发期）                  |
+| /docs        | CC-BY 4.0      | 项目文档                            |
+| /content     | CC-BY-NC 4.0   | 作者私人创作内容                    |
+| /game        | Proprietary    | 作者本人游戏实例（私有）            |
+
+--------------------------------------------------------------------------------
+设计原理：运行时-生产期分离
+--------------------------------------------------------------------------------
+
+Forgewright 实现 "运行时-生产期分离":
+
+  - 运行时模块（/engine + /state + /schema）= 玩家 game binary 必含
+    → 采用 Apache 2.0 让用户的商业游戏可闭源销售
+  - 生产期工具（/generator + /validator + /tools）= 仅开发期使用，
+    不进入玩家 game binary
+    → 采用 AGPL v3 防止他人 fork 做闭源 AI 服务
+
+Build pipeline 输出的 game binary 只 bundle runtime 模块 + content，
+不含 dev tools 模块。这是标准 game engine pattern（参考 Godot / Unity /
+Unreal）。
+
+--------------------------------------------------------------------------------
+依赖说明
+--------------------------------------------------------------------------------
+
+Forgewright /generator 引用 dialogue-flow-skill (AGPL v3 / Commercial Dual)，
+license-compatible. dialogue-flow-skill 不进入 game binary（是 dev-time
+spec），不传染用户游戏。
+
+详见: https://github.com/outsiderrr/dialogue-flow-skill
+
+--------------------------------------------------------------------------------
+给独立 RPG 开发者的简短承诺
+--------------------------------------------------------------------------------
+
+  - 用 Forgewright 做的游戏可闭源商业销售
+  - 不需付任何 license 费
+  - 不需开源你的游戏
+  - 详见 /docs/FAQ-LICENSE.md
+
+--------------------------------------------------------------------------------
+License 详情查询
+--------------------------------------------------------------------------------
+
+见各模块目录下 LICENSE 文件:
+
+  - /engine/LICENSE     (Apache 2.0)
+  - /state/LICENSE      (Apache 2.0)
+  - /schema/LICENSE     (Apache 2.0)
+  - /generator/LICENSE  (AGPL v3)
+  - /validator/LICENSE  (AGPL v3)
+  - /tools/LICENSE      (AGPL v3)
+  - /docs/LICENSE       (CC-BY 4.0)
+  - /content/LICENSE    (CC-BY-NC 4.0)
+  - /game/LICENSE       (Proprietary - All Rights Reserved)
+
+================================================================================

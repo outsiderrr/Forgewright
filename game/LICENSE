@@ -1,0 +1,89 @@
+Copyright (c) 2026 outsiderrr
+
+PROPRIETARY SOFTWARE LICENSE — ALL RIGHTS RESERVED
+（专有软件许可 —— 保留所有权利）
+
+================================================================================
+
+This directory (/game/) contains the author's personal game instance built on
+top of the Forgewright framework. It is NOT open source and is NOT covered by
+any of the open-source licenses applied to the rest of this repository.
+
+本目录（/game/）包含作者本人基于 Forgewright 框架构建的游戏实例。本目录不是
+开源软件，亦不受本仓库其他目录所采用的任何开源 license 约束。
+
+--------------------------------------------------------------------------------
+1. SCOPE / 适用范围
+--------------------------------------------------------------------------------
+
+This proprietary license applies ONLY to files inside the /game/ directory.
+The Forgewright framework itself (everything outside /game/) is governed by
+the licenses listed in the root /LICENSE file and in each module's own
+LICENSE file.
+
+本专有 license 仅适用于 /game/ 目录内的文件。Forgewright 框架本身（/game/
+目录外的所有内容）受根目录 /LICENSE 文件以及各模块自有 LICENSE 文件中所列
+license 的约束。
+
+--------------------------------------------------------------------------------
+2. RESTRICTIONS / 限制
+--------------------------------------------------------------------------------
+
+Without prior written permission from the copyright holder, you may NOT:
+
+  - copy, reproduce, or distribute any portion of this directory;
+  - modify, adapt, translate, or create derivative works;
+  - merge, publish, sublicense, or sell copies;
+  - reverse engineer, decompile, or disassemble compiled artifacts;
+  - use any portion of this directory in another product, whether
+    commercial or non-commercial.
+
+未经版权所有人事先书面授权，禁止:
+
+  - 复制、再现或分发本目录任何部分;
+  - 修改、改编、翻译或创建衍生作品;
+  - 合并、发布、再许可或销售副本;
+  - 对编译产物进行逆向工程、反编译或反汇编;
+  - 在其他任何产品（无论商业或非商业）中使用本目录任何部分。
+
+--------------------------------------------------------------------------------
+3. RESERVATION OF RIGHTS / 权利保留
+--------------------------------------------------------------------------------
+
+All rights are reserved by the copyright holder. No license, express or
+implied, is granted to any party for any purpose, except as explicitly
+stated in a separate written agreement signed by the copyright holder.
+
+版权所有人保留所有权利。除版权所有人签署的独立书面协议明确授权外，任何
+人均未被授予任何明示或默示的 license。
+
+--------------------------------------------------------------------------------
+4. LICENSING INQUIRIES / 授权咨询
+--------------------------------------------------------------------------------
+
+For licensing inquiries, contact the author via the Forgewright repository
+on GitHub (https://github.com/outsiderrr/Forgewright).
+
+如需授权咨询，请通过 Forgewright GitHub 仓库
+（https://github.com/outsiderrr/Forgewright）联系作者。
+
+--------------------------------------------------------------------------------
+5. NO WARRANTY / 免责声明
+--------------------------------------------------------------------------------
+
+THE SOFTWARE IN THIS DIRECTORY IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY
+KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN
+NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE,
+ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+本目录下的软件按"原样"提供，不附带任何明示或默示的担保，包括但不限于适
+销性、特定用途适用性和不侵权的担保。版权所有人在任何情况下均不对因使用
+本软件或与本软件相关的任何索赔、损害或其他责任承担责任，无论该责任是基
+于合同、侵权或其他法律理论。
+
+================================================================================
+END OF /game/ PROPRIETARY LICENSE
+================================================================================
