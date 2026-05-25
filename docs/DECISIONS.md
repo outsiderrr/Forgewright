@@ -1172,6 +1172,89 @@ ADR-034 同日（2026-05-18）立 schema IR 路线（v_incremental）；本 ADR 
 
 ---
 
+## ADR-036：Forgewright 采用分模块 license
+
+**状态**：已接受（2026-05-25）
+
+**背景**：
+
+Forgewright 长期目标是开源框架供独立 RPG 开发者复用（CLAUDE.md 项目愿景）；同时支持 dialogue-flow-skill 集成（外部独立仓库 [outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill) Phase 3 Dual Licensing AGPL v3 + Commercial）。
+
+整体单一 license 不足：
+
+- **整体 AGPL v3**：用户的商业 RPG 游戏 link `/engine` runtime → AGPL 传染 → 与"独立 RPG 开发者可做闭源商业游戏"设计初衷冲突
+- **整体 Apache 2.0 / MIT**（ROADMAP 阶段 4 §完成标志原占位）：失去 `/generator` 等开发期工具的 AGPL 防 SaaS 滥用能力
+
+按 CLAUDE.md 架构共识第 4 条「运行时和生产期分离」（含 ADR-002 + ADR-004 落地），分模块 license 可同时满足两类需求。
+
+**决策**：
+
+各模块 license 分配：
+
+| 模块 | License | 角色 |
+|---|---|---|
+| `/engine` | Apache 2.0 | 运行时 JSON 对话图播放器 |
+| `/state` | Apache 2.0 | 状态总线（运行时也用）|
+| `/schema` | Apache 2.0 | 数据格式定义 |
+| `/generator` | AGPL v3 | AI 生成管线（开发期）|
+| `/validator` | AGPL v3 | 校验器（开发期）|
+| `/tools` | AGPL v3 | 作家工坊（开发期）|
+| `/docs` | CC-BY 4.0 | 项目文档 |
+| `/content` | CC-BY-NC 4.0 | 作者私人创作内容（克苏鲁世界）|
+| `/game` | Proprietary | 作者本人游戏实例（私有）|
+
+根目录 `/LICENSE` 为 multi-module 总览；`/docs/FAQ-LICENSE.md` 11 题作用户答疑（PR #71 落地）。
+
+**设计原理 — 运行时 vs 生产期分离**：
+
+- **运行时模块**（`/engine` / `/state` / `/schema`）= **Apache 2.0** → 用户的商业游戏 binary 只 link 这些模块 → 可闭源商业销售
+- **开发期工具**（`/generator` / `/validator` / `/tools`）= **AGPL v3** → 防止他人 fork 做闭源 AI 服务；不进入玩家 binary，所以用户的商业游戏不被传染
+- **文档 / 内容 / 游戏实例**走单独 CC / Proprietary license
+
+**替代方案及否决理由**：
+
+- **整体 AGPL v3**：传染用户游戏；违反"独立 RPG 开发者可做闭源商业游戏"设计初衷；否决
+- **整体 Apache 2.0**：失去 `/generator` AGPL 防 SaaS 滥用能力；否决
+- **整体 MIT**（ROADMAP 阶段 4 §完成标志原占位）：同 Apache 2.0 缺点；过宽松；否决
+
+**后果**：
+
+- 用户 export 的 game binary 只含 runtime 模块（Apache 2.0）+ content → 可闭源商业销售
+- 他人 fork `/generator` 做 SaaS → 被 AGPL v3 强制开源
+- dialogue-flow-skill (AGPL v3 / Commercial Dual) 在 `/generator` (AGPL v3) 中集成 → license-compatible（详 dialogue-flow-skill 仓库 LICENSING.md §3.3）
+- 同一仓库 mixed license 模式:每模块独立 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 答疑（已 PR #71 落地）
+
+**关联讨论**：
+
+- 与 **ADR-002**（运行时无 LLM）协同 —— runtime 模块严格独立，license 边界清晰
+- 与 **ADR-004**（运行时与生产期分离）协同 —— **本 ADR 是 ADR-004 的 license 层具体化**
+- 与 **ADR-027**（World-Agnostic Principle）协同 —— `/content` CC-BY-NC 4.0 防作者私人世界设定被商用 fork
+- 与 ROADMAP 阶段 4 §完成标志「开源框架仓库独立 + LICENSE（推荐 MIT）」协同 —— 分模块 license 是开源剥离的法律基础设施；MIT 原占位被本 ADR 取代
+
+**外部依赖**：
+
+- dialogue-flow-skill 仓库（private）：[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill) —— Phase 3 Dual Licensing（AGPL v3 + Commercial）；通过 `/generator` (AGPL v3) 集成 license-compatible
+
+**编号说明 + 落地破例**：
+
+ADR-035 后顺延为 ADR-036（ADR-032 / 033 编号仍预留给平行任务）。
+
+**落地破例**（参 brief 2026-05-25 + governance v0.4.1）：
+
+- PR #71（merge commit `9190fff` / 业务 commit `b14ad15`）走 **L1 直签 main 的 fixation 模式**（参 `aeea12e docs(L1): 升格 governance` 先例），跳过标准 ABC 闭环
+- 破例理由:
+  - 决策在外部讨论中已充分完成（A 阶段隐含完成）
+  - 任务低风险（仅文件创建 / 不动业务代码）
+  - L3 自己 over-reach 完成 C 阶段（结果 acceptable）
+- 不归 STAGE_3_TASKS.md §1.5.4 跳 BC 破例 5 类；属"L1 fixation 直签 main"特殊模式（参 aeea12e 先例）
+
+**Follow-up（不阻塞）**：
+
+- 阶段 4 itch.io 发布前:法律 review LICENSE 文件 + per-module README 标注 license 边界
+- 开源剥离时（阶段 4 末）:分模块 license 兼容性最终验证 + per-directory README 加 license header
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -1186,6 +1269,7 @@ ADR-034 同日（2026-05-18）立 schema IR 路线（v_incremental）；本 ADR 
 - 2026-05-13：作者明确授权新增 ADR-031（GM 抉择空间结构化方案；混合方案 D = A 基础层 + B NPC 状态机增强层），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（5.1 立 ADR-031 / 5.2 T-3X-1 拆 a+b / 5.3 跳 critique / 5.4 DEBATE §10 同期立 / 5.5 ROADMAP 时长 5-9 → 6-11 周）。同期落地：DEBATE_NOTES.md §10 核心赌注段 + STAGE_3_TASKS.md v1.0.2（T-3X-1 拆分）+ ROADMAP §阶段 3 时长校准。后续 T-3X-1a / T-3X-1b L3 工程会话基于本 ADR 启动。
 - 2026-05-18：作者明确授权新增 ADR-034（Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims；v_incremental 路线）+ 修订 ADR-016 v0.4（新增第 6 个 state path 命名空间 `knowledge.*` + monotonic 命名空间清单），属 CLAUDE.md 规则 10 的明示例外。整合自 ADR-034 调研报告 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2（4 工具 per-tool 机制清单 + 3 distinct 候选评估 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）+ 作者 2026-05-18 拍板（5 争议点全部接受 Agent A 倾向：Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。ADR-034 调研会话（claude/wonderful-proskuriakova-e68be2）产出 + 同会话落地。
 - 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-034 同日立项（编号 ADR-032 / 033 仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）；本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。ADR-035 调研会话（claude/vigorous-varahamihira-f6f2f6）产出 + 同会话落地。
+- 2026-05-25：作者明确授权新增 ADR-036（Forgewright 采用分模块 license：runtime Apache 2.0 / 开发期工具 AGPL v3 / 文档 CC-BY 4.0 / content CC-BY-NC 4.0 / game Proprietary），属 CLAUDE.md 规则 10 的明示例外。设计原理 = ADR-002 + ADR-004 运行时 vs 生产期分离的 license 层具体化。落地走 **L1 直签 main fixation 模式**（参 `aeea12e docs(L1): 升格 governance` 先例），破例跳过标准 ABC 闭环；不归 STAGE_3_TASKS.md §1.5.4 跳 BC 破例 5 类。PR #71 merged 2026-05-25（merge commit `9190fff` / 业务 commit `b14ad15`）实际落地 9 模块 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 11 题 + README 开发者承诺段。外部依赖：dialogue-flow-skill 仓库（private；[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill)）Phase 3 Dual Licensing 通过 `/generator` AGPL v3 集成。本 fixation 会话仅做 governance record keeping（DECISIONS / ROADMAP / CLAUDE.md），不改业务代码。
 
 ## 版本
 

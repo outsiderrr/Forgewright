@@ -82,6 +82,7 @@
 - `/docs/DEBATE_NOTES.md`：四轮对抗性评审的关键结论，作为反悔前必读。
 - `/docs/SCHEMA_v0.md`：Schema 设计说明（配合 `/schema` 下的 JSON Schema 文件阅读）。
 - `/docs/governance.md`：项目治理（v0.4.1）—— ABC 闭环 / prompt 文件化 / L2 / L3 角色定义 / 跳 BC 破例清单 等核心治理规则。
+- dialogue-flow-skill 仓库（private；外部独立仓库）：[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill) —— Phase 3 Dual Licensing（AGPL v3 + Commercial）；通过 `/generator` (AGPL v3) 集成；详 ADR-036（Forgewright 采用分模块 license）。
 
 ## 版本
 
