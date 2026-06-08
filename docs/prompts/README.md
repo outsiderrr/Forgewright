@@ -1,15 +1,20 @@
-# /docs/prompts/ — L3 paste-ready prompt artifacts
+# /docs/prompts/ — 项目 AI 生成提示词归档
 
-> 阶段 3 起新规范：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。
+> **本目录定位（v0.2 起 broaden）**：存放本项目里**所有 AI 生成 / 供 AI 复用的提示词**，集中归档便于复盘、跨阶段对比、单文件修订。
 >
-> v0.4 governance 修订记录见 [/docs/governance.md](../governance.md) §11 v0.4 段。
+> 当前两类：
+> - `stage_N/` —— **L3 任务 paste-ready prompt**（本目录原始用途；受治理 §11 工作流约束；命名 `T-N.X.md`）。
+> - 根目录其他 `.md` —— **L1 / 治理类起手 prompt 与 meta-prompt**（轻量归档，不绑 §11 工作流）。
+>
+> v0.4 「L3 prompt 文件化」的 governance 修订记录见 [/docs/governance.md](../governance.md) §11。
 
 ## 目录结构
 
 ```
 /docs/prompts/
-├── README.md                    # 本文件
-├── stage_3/                     # 阶段 3 paste-ready prompts (14 个文件)
+├── README.md                          # 本文件
+├── L1_KICKOFF_ABC_PROPOSAL.md         # L1/治理类起手 prompt（提案，未应用）
+├── stage_3/                           # 阶段 3 L3 paste-ready prompts (14 个文件)
 │   ├── T-3.0.md                 # 起手清理 PATCH
 │   ├── T-3.1.md                 # ADR-022~026 立项
 │   ├── T-3.2.md                 # content_dependency_index sidecar schema
@@ -26,6 +31,8 @@
 │   └── T-3.12.md                # 阶段 3 验收报告
 └── stage_4/                     # （阶段 4 起手时由 L2 整合规划师落地）
 ```
+
+> ⬇️ 下列各节（L3 会话起步模板 / 命名规范 / 与 STAGE_N_TASKS / 历史不回填 / 修订流程 / 跳 BC 破例 / 工作流图）**只适用于 `stage_N/` 下的 L3 任务 prompt**；根目录的 L1/治理类 prompt 不受这些约束（见文末「其他 AI 生成 prompt」）。
 
 ## L3 会话起步模板（v0.4 工作流）
 
@@ -107,6 +114,15 @@ A 阶段产出 = PR URL + commit hash + 测试输出
 L2 验收过关 → merge PR → 进下一个 L3
 ```
 
+## 其他 AI 生成 prompt（非 L3）
+
+根目录直接存放 L3 之外的「AI 生成、供 AI 复用」prompt（L1 治理起手、meta-prompt 等）。**不绑** §11 的 T-N.X 命名 / STAGE_N_TASKS / ABC 闭环；命名用描述性全大写（仿 [/docs/REVIEW_PROMPT_CODE_GPT.md](../REVIEW_PROMPT_CODE_GPT.md) 风格）。
+
+当前内容：
+
+- [`L1_KICKOFF_ABC_PROPOSAL.md`](L1_KICKOFF_ABC_PROPOSAL.md) —— 「ABC 阶段层级化 + 设计先于施工」提案的 L1 会话起手 prompt（提案，未拍板/未应用；配套提案全文在作者个人 vault）。
+
 ## 版本
 
-本文件版本：v0.1（首次落盘 — Wave 6 prompt 文件化工作流升级；2026-05-08）
+- **v0.2（2026-06-08）**：作者授权 broaden 目录定位——从「仅 L3 paste-ready prompt」扩为「项目所有 AI 生成提示词归档」。新增根目录 L1/治理类 prompt（首个：`L1_KICKOFF_ABC_PROPOSAL.md`）。⚠️ **待同步**：governance.md §11 仍按「L3 prompt 文件化」框定本目录，对应措辞同步留待作者授权的 L1 会话处理（§11 属 L1 文档，不在本次 README 改动范围）。
+- v0.1（2026-05-08）：首次落盘 — Wave 6 prompt 文件化工作流升级。
