@@ -156,6 +156,7 @@
 
 ## 9. 修订记录
 
+- **2026-06-08 v0.4.2**：作者授权同步 §11 目录定位——`/docs/prompts/` 从「仅 L3 paste-ready prompt」broaden 为「项目所有 AI 生成提示词归档」（详 `/docs/prompts/README.md` v0.2）。§11 明确仅约束 `stage_N/` L3 prompt；根目录新增 L1/治理类起手 prompt（首个 `L1_KICKOFF_ABC_PROPOSAL.md` = ABC 阶段层级化提案的 L1 会话起手 prompt，提案未拍板/未应用）。**破例说明**：本次在 dev 对话会话内经作者明示授权直接修订，未走专门 L1 会话——因属目录定位"措辞同步"级、非 ABC 工作流实质变更；ABC 层级化提案本身仍走专门 L1 会话（见 `L1_KICKOFF_ABC_PROPOSAL.md`）。**默认行为**：prompt 归档目录定位 broaden 即时生效。
 - **2026-05-08 v0.4.1**：作者拍板 gap #2 + gap #3 修补 patch（v0.5 完整 B/C prompt 文件化升级暂缓决策的 interim solution）。修订点：`/docs/REVIEW_PROMPT_CODE_GPT.md` v0.1 → v0.2（末尾加 "报告 push 到 main 独立 commit" 段 + `{{REVIEW_TARGET}}` 段加 "可附 L2 视角补充上下文"）+ governance §10 加第 7 条 + 新增 §12 v0.4.1 patch 段。**默认行为**：B 阶段 Codex 自动 commit + push；作者填 REVIEW_TARGET 时可附 L2 视角补充上下文。详 §12。
 - **2026-05-08 v0.4**：作者拍板把 L3 paste-ready prompt 从 `STAGE_X_TASKS.md` §8 内嵌的 ` ```text` 代码块拆出，每个 L3 任务单独存为 `/docs/prompts/stage_N/T-N.X.md` 文件。L3 会话起步标准格式从"复制粘贴 paste-ready prompt 块"改为"读 prompt 文件"。触发：阶段 3 起手期（PR #33 merge 后）作者发现复制粘贴 14 长 prompt 块辛苦 + 复盘困难。修订点：**新增 §11 L3 prompt 文件化工作流（v0.4 新增）**；§3 / §5 引用文件路径形态调整；§10 ABC 流程图 A 阶段首条消息形态改"读 prompt 文件 OR 直接说执行 T-N.X"。**默认行为**：阶段 3 起手新规范——所有 L3 prompt 单独文件；阶段 0/1/1.5/2 历史 prompts 不回填；阶段 4+ 复用同款规范（modifier `/docs/prompts/stage_N/`）。Meta task 落地：`claude/meta-prompt-extract` 分支整合（含 14 个 stage_3 prompt 文件 + STAGE_3_TASKS.md §8 改表格引用 + governance v0.4 修订；详见 PR）。
 - **2026-05-03 v0.3**：作者拍板（1）任务分类制度保留作为概念参考，但实操不依赖分类——routines 不再尝试串行跑 L3 任务；（2）所有 L3 一律跑统一 §10 ABC 三阶段流程，不按 [A-execute] / [B-author-gate] 差异化。触发：阶段 1.5 实操（commit `33611cd` 9 份 codex review backfill）确认 9 个 L3 都跑了同一 ABC 流程，与 v0.2 "A 类省 cross-LLM" 矛盾；作者认为按分类调度 routine 是结构复杂化没带来效率提升。修订点：§1 核心结论 / §2 状态 / §3 review tier 表格 / §4 routines 边界明示 / §5 L2 规划师约束 / §6 待办时机 / §7 决策表 3b/4 + 新增项 / **新增 §10 L3 ABC 三阶段流程**。**默认行为**：所有 L3 PR 都必须跑完 ABC 三阶段才算闭环。
@@ -252,6 +253,8 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 ## 11. L3 prompt 文件化工作流（v0.4 新增）
 
 > 阶段 3 起手期（2026-05-08 PR #33 merge 后）作者拍板：每个 L3 任务的 paste-ready prompt 单独存为文件，便于复盘 + 跨阶段对比 + 单文件修订。本节明文化 v0.4 工作流。
+>
+> **v0.2 目录定位 broaden（2026-06-08，作者授权）**：`/docs/prompts/` 已从「仅 L3 paste-ready prompt」扩为「项目所有 AI 生成提示词归档」（详 `/docs/prompts/README.md` v0.2）。**本 §11 工作流仅约束 `stage_N/` 下的 L3 任务 prompt**；根目录的 L1/治理类 prompt（如 `L1_KICKOFF_ABC_PROPOSAL.md`）不走本节的 T-N.X / STAGE_N_TASKS / ABC 流程。
 
 ### 目录结构
 
@@ -362,5 +365,5 @@ T-3.11 L2 验收（2026-05-08）第一次踩到 gap #2（B 报告全网 0 命中
 
 ## 版本
 
-本文件版本：v0.4.1
-最后更新：2026-05-08
+本文件版本：v0.4.2
+最后更新：2026-06-08
