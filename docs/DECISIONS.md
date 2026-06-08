@@ -1255,6 +1255,73 @@ ADR-035 后顺延为 ADR-036（ADR-032 / 033 编号仍预留给平行任务）�
 
 ---
 
+## ADR-037：ABC 阶段层级化 + 设计先于施工（含软地基）
+
+**状态**：已接受（2026-06-08）
+
+**背景**：
+
+现行治理（governance §10）把完整 ABC 三阶段（A=Claude 开发 / B=cross-LLM 独立评审 / C=Claude 吃反馈修 / L2 验收）钉死在每一个工程 L3 任务上。项目真瓶颈是作者审阅带宽（governance §1 第 4 条）；把 ABC 钉在最碎的 L3 层 = 为"没有单独规划的小任务"凑全套仪式，花掉稀缺带宽。需解两件事：(1) 低风险小任务的仪式成本；(2) 在"还会变的地基"上施工的风险。
+
+**如实认知（收益边界，不可夸大）**：
+
+- 攒批省的是**会话管理开销**（少起会话、少重复交代背景），**不省作者审阅的内容量**；改为一次性大块审，整批认知负荷反而更重。
+- "错了 AI 返工、不耗作者带宽"**只对普通施工成立**；对"给别人定规矩"的任务不成立——那种错会埋进整批、被一致性掩盖、溜过评审进成品（见决策二软地基 carve-out）。
+- "设计先于施工"原本只覆盖**硬地基**（数据格式/schema、L1 文档）；**软地基**（共享函数行为、校验器语义、生成器输出契约等）同样是"别人遵守的规矩"，必须一并前置。
+
+**决策**：
+
+**一、ABC 粒度跟随规划粒度**
+- ABC 放在最具体且有规划的层级跑。"算不算有独立规划"按**实质**判定（是否有独立规格需求），**不以"有没有 prompt 文件"为唯一标准**（防止"为攒批而故意不写文件"绕过评审）。
+- L2 有规划、底下若干子任务无独立规格需求 → L2 跑一次攒批 ABC（一次 A→B→C→L2 验收）。**B 保留（攒批，非跳过）。**
+- L3 有独立规格 → L3 跑 ABC（现状）。
+- 粒度由 L2 规划师**规划时一次性决定**，执行中不重判。
+- **仅适用工程/代码任务**；内容生成创作会话仍每单元一个新会话。
+
+**二、设计先于施工（含硬地基 + 软地基）**
+- **硬地基**（数据格式/schema、共享状态、L1 文档）上提设计/规划层，专门 schema-only ABC 先浇好、按 ADR-015 串行 commit 原则（本 ADR 一般化为常驻规则）串行落定，先于依赖它的施工批。
+- **软地基 carve-out**：子任务触及下列任一项，单独先审/先落定（独立 ABC 或 foundation 子批），不得混进攒批——① 改数据格式（schema）；② 改校验器语义；③ 改共享函数行为（public helper 契约）；④ 改生成器输出 / 生成 trace 语义；⑤ 需迁移已有内容。（校准：仅当该契约被批内其它子任务或后续工作依赖时触发；纯内部、无人依赖的小函数不算。）
+- **foundation 子批不是 schema-only**：须含保持 main 绿的最小 validator/model/fixture 适配。
+
+**三、安全阀 = 硬闸（不靠会话自觉）**
+- 施工批禁止触碰 `/schema`、`/docs/DECISIONS.md`、`/docs/governance.md`、共享 state 契约。
+- 施工批 diff 若出现这些路径或等价语义变更 → B 阶段直接 🔴 + 停批 → 上提回设计层 → 专门 ABC 浇好 → 再回来施工。
+- 如实成本：安全阀不便宜（全停 + 一个地基 ABC + 上下文切回）；大幅降低"在流动地基上施工"的频率，但**不宣称从根上消除**——残余非零、由本硬闸 + 软地基 carve-out 承接。
+
+**四、攒批护栏**
+- (a) 批量上限 ≤ 8 个子任务；软地基 carve-out 任一项触发、或跨多个核心模块、或需迁移老内容 → 不到 8 也拆。
+- (b) 回滚单位 = 依赖闭包（不声称"每子任务一个 commit 即可单独 revert"）：批计划写明依赖图；若 T2 依赖 T1，回滚单位 = T1+T2。强依赖链超过 3 个子任务建议拆批。
+- (c) 集成评审：B 扇出（并行评审各子任务）时，至少一个评审者看整合后整批 diff。
+- (d) 模式标签：每批 / 每 PR 加一行——`mode = batch-ABC / skip-BC / L1-fixation` + B 是否保留 + 授权来源。
+- 依赖性不作一刀切约束：普通环环相扣的活可攒批；唯"给别人定规矩"的活按决策二前置。
+
+**五、不变的护城河**：B 阶段 cross-LLM 独立评审（评审者 ≠ 构建者，攒批 ≠ 跳过）；L2 验收 gate；动地基/L1 文档需作者授权（CLAUDE.md 规则 2/9/10）；B 报告 push 到 main 独立 commit。
+
+**六、与既有两种破例模式的区分**（由决策四(d) 模式标签显式标注）：
+- **跳 BC**（STAGE_3_TASKS §1.5.4）：A→直接 merge，B 和 C 全丢。用于反向修复 / ergonomic / 验收报告。
+- **L1 直签 main fixation**（ADR-036 / `aeea12e` 先例）：作者直接把 L1 文档/license 提交进 main，跳过 ABC。**仅用于已在外部完成决策的 L1 record keeping**，不是普通文档捷径。
+- **攒批 ABC**（本 ADR 新增）：一次 A→B→C→L2 验收，**B 保留**。用于一个 L2 计划下若干工程子任务。
+
+**替代方案及否决理由**：
+
+- **替代①：扩"跳 BC"清单代替新增模式**。否决：跳 BC 丢独立评审（护城河）；需评审的活该攒批（保留 B），不需的活跳 BC 已覆盖。
+- **替代②：维持 per-L3、把 B/C 做便宜**（B/C prompt 文件化 + L2 验收自动化，governance §12 gap #1 暂缓项）。否决：另一杠杆可并存，但不解决低风险 L3 的仪式成本。
+- **替代③：要求"只攒互不依赖的活"**（更严版本）。否决：暗含"作者肉眼早期纠错"，对非程序员作者不成立；返工由 AI 承担。但其合理内核由决策二**软地基 carve-out** 以更窄形态承接（只前置"给别人定规矩"的活，不禁止普通依赖攒批）。
+
+**后果**：
+
+- 变易：攒批低风险工程活少起会话；地基（硬+软）改动集中、前置评审；模式标签使三模式可审计。
+- 变难/成本（如实）：作者审阅阅读量不减、整批认知更重；安全阀触发是昂贵中断；治理比"单一 ≤8"略复杂（代价基本是补真洞，非镀金）。
+- 回滚：批内有依赖时回滚单位是依赖闭包、非单 commit。
+- follow-up：L2 计划的 cross-LLM critique 增一项粒度检查（切得对吗 / ≤8 吗 / 软地基拉出去了吗 / 集成评审安排了吗 / 模式标签对吗）。
+- 落地：本 ADR + governance v0.5 + 三处既有文档债修复，走 L1 直签 main fixation 模式 + 作者 2026-06-08 明示授权。
+
+**编号说明**：ADR-036 后顺延为 ADR-037（ADR-032 / 033 编号仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）。
+
+**追溯**：vault 提案 2026-06-08（《ABC 阶段层级化 + 设计先于施工》）；本 L1 治理会话；cross-LLM critique（GPT-5.5/Codex）8 finding 已消化（finding 1/2/4/5/7/8 接受并入，3 合并进决策四(a)，6 精简为模式标签，1 的链长上限降为建议）。
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -1270,6 +1337,7 @@ ADR-035 后顺延为 ADR-036（ADR-032 / 033 编号仍预留给平行任务）�
 - 2026-05-18：作者明确授权新增 ADR-034（Schema 主体 AI 生成路线 + 局部对齐主流原语 + 阶段 4 单向导出 shims；v_incremental 路线）+ 修订 ADR-016 v0.4（新增第 6 个 state path 命名空间 `knowledge.*` + monotonic 命名空间清单），属 CLAUDE.md 规则 10 的明示例外。整合自 ADR-034 调研报告 [/docs/reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md](reviews/master_plan/2026-05-15_ADR-034_schema_ir_research.md) v0.2（4 工具 per-tool 机制清单 + 3 distinct 候选评估 + 7 维度评分 + 5 个 T-3Y 设计争议点作者拍板）+ 作者 2026-05-18 拍板（5 争议点全部接受 Agent A 倾向：Gap 5 dict 形态 / Gap 6 ordered flag set / Gap 7 v0.1 弱保证 / Gap 9 player-monotonic 原则落地为 D11 / Gap 10 player_known_info 拆分）。ADR-034 调研会话（claude/wonderful-proskuriakova-e68be2）产出 + 同会话落地。
 - 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-034 同日立项（编号 ADR-032 / 033 仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）；本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。ADR-035 调研会话（claude/vigorous-varahamihira-f6f2f6）产出 + 同会话落地。
 - 2026-05-25：作者明确授权新增 ADR-036（Forgewright 采用分模块 license：runtime Apache 2.0 / 开发期工具 AGPL v3 / 文档 CC-BY 4.0 / content CC-BY-NC 4.0 / game Proprietary），属 CLAUDE.md 规则 10 的明示例外。设计原理 = ADR-002 + ADR-004 运行时 vs 生产期分离的 license 层具体化。落地走 **L1 直签 main fixation 模式**（参 `aeea12e docs(L1): 升格 governance` 先例），破例跳过标准 ABC 闭环；不归 STAGE_3_TASKS.md §1.5.4 跳 BC 破例 5 类。PR #71 merged 2026-05-25（merge commit `9190fff` / 业务 commit `b14ad15`）实际落地 9 模块 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 11 题 + README 开发者承诺段。外部依赖：dialogue-flow-skill 仓库（private；[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill)）Phase 3 Dual Licensing 通过 `/generator` AGPL v3 集成。本 fixation 会话仅做 governance record keeping（DECISIONS / ROADMAP / CLAUDE.md），不改业务代码。
+- 2026-06-08：作者明确授权新增 ADR-037（ABC 阶段层级化 + 设计先于施工（含软地基）），属 CLAUDE.md 规则 10 的明示例外。整合自 vault 提案《ABC 阶段层级化 + 设计先于施工》（2026-06-08）+ 本 L1 治理会话 cross-LLM critique（GPT-5.5/Codex 8 finding）消化。同期 governance v0.4.2 → v0.5（§1/§2/§3 + 新增 §10.6/§10.7 + §11 兼容注）+ 三处既有文档债修复（STAGE_3_TASKS §1.5.4 加"攒批≠跳BC"注 + §1.5.1 C 阶段措辞 / prompts README C 阶段措辞 / REVIEW_PROMPT_CODE_GPT.md "不要 commit/push" vs "报告 push 到 main"自相矛盾理顺）。落地走 L1 直签 main fixation 模式（作者明示授权 + 本 PR merge）。
 
 ## 版本
 

@@ -108,7 +108,7 @@ A 阶段产出 = PR URL + commit hash + 测试输出
 作者起 Codex 会话 review (B 阶段) → /docs/reviews/<date>_T-N.X_review.md
      │
      ▼
-作者起 Claude Code 会话 (C 阶段) → 追加 commit 到原 PR
+作者回 A 原会话/原分支 (C 阶段) → 追加 commit 到原 PR
      │
      ▼
 L2 验收过关 → merge PR → 进下一个 L3
