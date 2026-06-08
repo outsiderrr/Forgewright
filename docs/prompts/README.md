@@ -120,9 +120,10 @@ L2 验收过关 → merge PR → 进下一个 L3
 
 当前内容：
 
-- [`L1_KICKOFF_ABC_PROPOSAL.md`](L1_KICKOFF_ABC_PROPOSAL.md) —— 「ABC 阶段层级化 + 设计先于施工」提案的 L1 会话起手 prompt（提案，未拍板/未应用；配套提案全文在作者个人 vault）。
+- [`L1_KICKOFF_ABC_PROPOSAL.md`](L1_KICKOFF_ABC_PROPOSAL.md) —— 「ABC 阶段层级化 + 设计先于施工」L1 会话起手 prompt（**提案已落地 = ADR-037 / governance v0.5；PR #73 merged 2026-06-08**；保留作历史记录）。
 
 ## 版本
 
-- **v0.2（2026-06-08）**：作者授权 broaden 目录定位——从「仅 L3 paste-ready prompt」扩为「项目所有 AI 生成提示词归档」。新增根目录 L1/治理类 prompt（首个：`L1_KICKOFF_ABC_PROPOSAL.md`）。⚠️ **待同步**：governance.md §11 仍按「L3 prompt 文件化」框定本目录，对应措辞同步留待作者授权的 L1 会话处理（§11 属 L1 文档，不在本次 README 改动范围）。
+- **v0.3（2026-06-08）**：「ABC 阶段层级化」提案已落地 = ADR-037 / governance v0.5（PR #73 merged）。清理本 README 过期态：§11 同步状态 待同步→已同步、`L1_KICKOFF_ABC_PROPOSAL.md` 状态注更新、移除已删除的 vault 备料引用。
+- **v0.2（2026-06-08）**：作者授权 broaden 目录定位——从「仅 L3 paste-ready prompt」扩为「项目所有 AI 生成提示词归档」。新增根目录 L1/治理类 prompt（首个：`L1_KICKOFF_ABC_PROPOSAL.md`）。✅ **已同步（见 v0.3）**：governance.md §11 已纳入本目录 broaden 定位 + governance v0.5 / ADR-037「与攒批 ABC 的兼容」段。
 - v0.1（2026-05-08）：首次落盘 — Wave 6 prompt 文件化工作流升级。
