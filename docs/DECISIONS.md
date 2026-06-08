@@ -1322,6 +1322,45 @@ ADR-035 后顺延为 ADR-036（ADR-032 / 033 编号仍预留给平行任务）�
 
 ---
 
+## ADR-038：结构层采纳"分拍节点图"生成（choice 节点 + 单选项 beat 链）
+
+**状态**：已接受（2026-06-08）
+
+**背景**：
+
+Phase 1 design-first 多 pass 结构层原型落地后（多 pass 较单一大 prompt 改善结构；FINDINGS 见 `/generator/experiments/multipass_structure/`），作者审阅露西全场发现：把一个剧情阶段塞进"一个节点 + 一锅端揭露"（露西在 N3 一口气 7 句独白 + 底下一次性 5 选项）不符合 CRPG 习惯。CRPG（博德之门 3 / 极乐迪斯科 / 永恒之柱）里一段对话是节点图，每个节点 = 一个对话节拍（NPC 文本 + 1~N 个玩家回应）；单选项"继续/追问"节拍是标配，用来把信息一拍拍铺开。需明确 node 定义，并让结构层生成符合此习惯的节点图。
+
+**决策**：
+
+一、**node 定义** = 一个玩家面对的对话节拍（NPC 文本 + ≥1 个玩家回应）。**分叉是某些节点的属性，不是节点的定义**；单选项节点（"继续"/短追问）合法且必要，用于铺陈。
+
+二、**结构层生成"分拍节点图"**：
+- **choice 节点**（多选项）= 真分叉的决策点（开场怎么接近、枢纽软问 vs 施压）。
+- **单选项 beat 节点**（continue）= 把信息密集内容自动分拍成 2-3 拍（露西说一点 → 玩家接一句 → 再说一点），不再一锅端。
+
+三、**"路径/路线" = 涌现**，不另立 schema 概念：分叉已由 `option.target_node_id` 表达，路径 = 从某选项分出去后走的节点链。
+
+四、**schema 不变**：`node.schema.json` 已支持（`type=dialogue ⇒ options minItems:1` 即单选项合法；旁白 = `speaker_ref=null`）。原型里"固定 4 节点 / 每节点 ≥3 选项"是 generator 原型 + 实验 DOC 的脚手架，非 schema 约束。本 ADR **不触及 `/schema`**。
+
+**替代方案及否决理由**：
+
+- **替代①：新增"过场 / cutscene"node 类型**（非交互、自动播）。否决：CRPG 通常用更多单选项节点表达过场，schema 已够用，不需新类型；完全非交互过场以后按需再议。
+- **替代②：把"路径"做成正式 schema 概念**。否决：图已能表达（`option.target_node_id` → 节点链），另立概念是镀金。
+
+**后果**：
+
+- 变易：信息密集场景读起来符合 CRPG 习惯（分拍、来回）；每拍更小，顺带更不易触中转站生成超时。
+- 变难/成本（如实）：节点数变多（一场从 ~4 个粗节点 → ~8-10 个细节拍 + choice 节点）；生成调用数与成本上升（露西全场 v1 = 7 次调用 / $0.18）。
+- **v1 边界（如实）**：`/generator/scripts/multipass_paced_lucy.py` 的拓扑是**半固定脚手架**（开场 → 枢纽 → 软/硬两分支 → end），用已验证 call 类型规避超时；**"完全动态拓扑（LLM 自决每场节点数/结构）"是后续 refinement，不在 v1**。
+- 选项第一人称：beat 选项已去冗余"我"（"楼下是谁？"）；choice 节点选项仍带"我" → 全面统一是 **Phase 2 文风/约定层**（与 AP-8 反模式规则联动）。
+- follow-up：(1) 完全动态拓扑；(2) 选项"我"统一到 Phase 2；(3) 把 beat-pacing 固化进 generator 正式管线（替换/并存 `system.py` 单 pass）；(4) 扩多场景复核接受率。
+
+**编号说明**：ADR-037 后顺延为 ADR-038（ADR-032 / 033 编号仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）。
+
+**追溯**：Phase 1 结构层原型执行会话（claude/amazing-nobel-93f98b worktree）2026-06-08；作者审阅露西全场 + N3 分拍样例 + 露西全场分拍（`/generator/experiments/multipass_structure/`）后拍板"采纳为默认"；schema 读证（`node.schema.json` type 枚举 dialogue/end + options minItems 条件约束）。本 ADR 走作者明示授权的规则 10 例外，与 generator 内同步 note（`DECISION_paced_nodes.md`）双写。
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -1338,6 +1377,7 @@ ADR-035 后顺延为 ADR-036（ADR-032 / 033 编号仍预留给平行任务）�
 - 2026-05-18：作者明确授权新增 ADR-035（第一款游戏 L3 宿主程序选型；方案 v_godot_custom = Godot 4.6 + 自写最小 Control nodes / 不用 Dialogic 插件），属 CLAUDE.md 规则 10 的明示例外。整合自 [/docs/reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md](reviews/master_plan/2026-05-15_ADR-035_l3_host_research.md) v0.4（L3 宿主调研会话产出；含 §2 4 候选能力清单 + §3 3 distinct 方案 + §4 7 维评分表 + §5 推荐 + §6 ADR 草案 + §8.4 Godot demo 实测）+ 作者 2026-05-18 拍板路径（v0.2 主推荐 v_renpy → v0.3 切换 v_godot_custom 基于"保留可扩展性"硬约束 → v0.4 demo 5 分钟跑通验证 → 立项）。ADR-034 同日立项（编号 ADR-032 / 033 仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）；本 ADR 编号顺延 ADR-035。同期落地：`/engine/player.py` (a)+(b) 合并保留判定（reference player + dry-run 工具双重角色；不 deprecated）。**ROADMAP / HANDOFF_STAGE_3_TO_4 / STAGE_4_TASKS 修订推到阶段 3 → 4 切换会话**（本 fixation 范围仅含 DECISIONS.md + 调研报告 v0.4 + Godot demo 物证）。ADR-035 调研会话（claude/vigorous-varahamihira-f6f2f6）产出 + 同会话落地。
 - 2026-05-25：作者明确授权新增 ADR-036（Forgewright 采用分模块 license：runtime Apache 2.0 / 开发期工具 AGPL v3 / 文档 CC-BY 4.0 / content CC-BY-NC 4.0 / game Proprietary），属 CLAUDE.md 规则 10 的明示例外。设计原理 = ADR-002 + ADR-004 运行时 vs 生产期分离的 license 层具体化。落地走 **L1 直签 main fixation 模式**（参 `aeea12e docs(L1): 升格 governance` 先例），破例跳过标准 ABC 闭环；不归 STAGE_3_TASKS.md §1.5.4 跳 BC 破例 5 类。PR #71 merged 2026-05-25（merge commit `9190fff` / 业务 commit `b14ad15`）实际落地 9 模块 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 11 题 + README 开发者承诺段。外部依赖：dialogue-flow-skill 仓库（private；[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill)）Phase 3 Dual Licensing 通过 `/generator` AGPL v3 集成。本 fixation 会话仅做 governance record keeping（DECISIONS / ROADMAP / CLAUDE.md），不改业务代码。
 - 2026-06-08：作者明确授权新增 ADR-037（ABC 阶段层级化 + 设计先于施工（含软地基）），属 CLAUDE.md 规则 10 的明示例外。整合自 vault 提案《ABC 阶段层级化 + 设计先于施工》（2026-06-08）+ 本 L1 治理会话 cross-LLM critique（GPT-5.5/Codex 8 finding）消化。同期 governance v0.4.2 → v0.5（§1/§2/§3 + 新增 §10.6/§10.7 + §11 兼容注）+ 三处既有文档债修复（STAGE_3_TASKS §1.5.4 加"攒批≠跳BC"注 + §1.5.1 C 阶段措辞 / prompts README C 阶段措辞 / REVIEW_PROMPT_CODE_GPT.md "不要 commit/push" vs "报告 push 到 main"自相矛盾理顺）。落地走 L1 直签 main fixation 模式（作者明示授权 + 本 PR merge）。
+- 2026-06-08：作者明确授权新增 ADR-038（结构层采纳"分拍节点图"生成：choice 节点 + 单选项 beat 链；node = 对话节拍、分叉是属性非定义；路径涌现；schema 不变），属 CLAUDE.md 规则 10 的明示例外。来自 Phase 1 多 pass 结构层原型执行会话（claude/amazing-nobel-93f98b）2026-06-08 作者审阅 N3 分拍样例 + 露西全场分拍后拍板"采纳为默认"。同期 `/generator/experiments/multipass_structure/DECISION_paced_nodes.md` 同步 note 双写。v1 实现（`multipass_paced_lucy.py`）拓扑半固定；完全动态拓扑 + 选项"我"统一（Phase 2）+ beat-pacing 固化进正式管线 + 多场景复核列为 follow-up。
 
 ## 版本
 
