@@ -99,7 +99,7 @@
 
 - **A 开发阶段**：作者起 Claude Code worktree 会话；按对应 paste-ready prompt 开发 + 测试 + commit + push + 开 PR（base = `main`，head = worktree 分支名）。**A 阶段完成 ≠ L3 通过**。
 - **B review 阶段**：作者另起 **Codex 会话（GPT-5.5）**；用 [/docs/REVIEW_PROMPT_CODE_GPT.md](REVIEW_PROMPT_CODE_GPT.md)（commit `8842c43`）作 review prompt 模板；review A 阶段 PR diff；report 落 `/docs/reviews/<ISO_DATE>_T-3.X_<topic>_review.md`。
-- **C 修复阶段**：作者另起 Claude Code 会话；吃 B 报告改代码 + **追加 commit 到原 PR**（不开新 PR）。
+- **C 修复阶段**：作者**默认回 A 原会话/原分支**（必要时新会话同分支）；吃 B 报告改代码 + **追加 commit 到原 PR**（不开新 PR）。
 
 ### 1.5.2 L2 验收
 
@@ -124,6 +124,8 @@ L2 拿 ABC 全部产出判断；过关 → 通知作者 merge PR + 进下一个 
 **跳 BC 模式工作流**：A 阶段会话主动修 + 拆 commit 标注 finding（如 `fix: R3.X xxx (baseline_NNN finding)`）+ L2 quick check + 作者授权 merge。
 
 **默认 ABC 闭环**：T-3.0 ~ T-3.11（**含 T-3.6a / T-3.6b / T-3.8a / T-3.8b**）一律走完整 ABC（**T-3.0 是阶段 3 主线起手任务，不是 R3.X follow-up；F11 修订**）；T-3.10 实测期为 ABC 变体（详 T-3.10 prompt）。
+
+> **攒批 ABC ≠ 跳 BC（v0.5 / ADR-037）**：本节"跳 BC 5 类"是 A→直接 merge、**丢 B/C**；governance §10.6 的"攒批 ABC"是一次 A→一次 B→一次 C→一次验收、**B 保留**。两者别混——需要独立评审的活用攒批，不需要的活才走本节跳 BC。
 
 ### 1.5.5 routine 兼容性
 

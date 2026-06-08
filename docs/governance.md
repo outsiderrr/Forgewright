@@ -11,7 +11,7 @@
 
 ## 1. 核心结论
 
-**routines 不接 L1→L2→L3 主链；只跑仓库维护层（validate-all 日跑 + memory consolidate 周跑）。所有 L3 一律走统一 ABC 三阶段流程（见 §10），不按任务类型差异化。**
+**routines 不接 L1→L2→L3 主链；只跑仓库维护层（validate-all 日跑 + memory consolidate 周跑）。ABC 三阶段（见 §10）的运行粒度跟随规划粒度——放在"最具体且有规划"的层级（§10.6，ADR-037）；同一层级内不按任务类型差异化。需独立评审的工程任务，B 阶段 cross-LLM 评审一律保留——攒批也只是"一次审一批"，绝不跳过。**
 
 四个理由（详见对话记录，此处略）：
 
@@ -54,6 +54,14 @@
 - **不用于 routine 调度**——routine 不再"串行跑 A 类、跳过 B 类"
 - **不用于改变 review 流程**——A 类 / B 类 L3 一律走 §10 ABC 三阶段，不区分
 
+### 设计先于施工（v0.5 新增，ADR-037）
+
+`[B-author-gate]` 类里的**地基改动**不再散在各 L3 各自串行处理，而是**上提到设计/规划层先落定**：
+
+- **硬地基**（数据格式/schema、共享状态、L1 文档）：设计层用专门 schema-only ABC 先浇好，按 ADR-015 串行 commit 原则串行落定，先于依赖它的施工批。
+- **软地基 carve-out**：子任务触及下列任一项，单独先审/先落定（独立 ABC 或 foundation 子批），不得混进攒批——① 改数据格式（schema）；② 改校验器语义；③ 改共享函数行为（public helper 契约）；④ 改生成器输出 / 生成 trace 语义；⑤ 需迁移已有内容。（校准：仅当该契约被批内其它子任务或后续工作依赖时触发；纯内部、无人依赖的小函数不算。）
+- 施工中意外挖出地基需求 → 安全阀（停批 → 上提 → 浇好 → 回来）。详 §10.7。
+
 ---
 
 ## 3. Review tier 分层（v0.3 修订）
@@ -62,7 +70,7 @@
 |---|---|---|---|---|
 | **L1** | 路线图 / 跨阶段 sequencing / 整体架构 | cross-LLM（Claude × GPT-5.5） | 作者主动起会话 | 项目周期共 1–3 次（Round 5 已 1 次） |
 | **L2** | `STAGE_X_TASKS.md` 草稿 | cross-LLM 手动跑 | L2 规划师草稿合入前必经 | 每阶段 1 次（5–6 次） |
-| **L3** | 每个 L3 任务（PR）| ABC 三阶段（见 §10）：A 阶段 = Claude Code 开发；B 阶段 = Codex GPT review；C 阶段 = Claude Code 吃反馈改代码 | L2 规划师起 L3 后逐个跑 | 每阶段 5–15 次 |
+| **L3 / 攒批** | 最具体且有规划的层级（单个 L3 PR，或一个 L2 计划下 ≤8 个无独立规格需求子任务的一批；ADR-037 §10.6）| ABC 三阶段（见 §10）：A = Claude Code 开发；B = Codex GPT review（攒批时可扇出 + 集成评审）；C = Claude Code 吃反馈改代码 | L2 规划师**规划时定粒度** | 每阶段 5–15 次（攒批后作者触点下降）|
 
 **v0.3 关键变更**：
 
@@ -156,6 +164,7 @@
 
 ## 9. 修订记录
 
+- **2026-06-08 v0.5**：作者拍板 ABC 阶段层级化 + 设计先于施工（含软地基）（ADR-037 落地承接，经 cross-LLM critique 消化）。修订点：§1 核心结论 ABC 句 / §2 新增"设计先于施工"段 / §3 review tier 表 L3 行 / **新增 §10.6（ABC 粒度跟随规划 + 攒批护栏 + 三模式区分）+ §10.7（设计先于施工 + 安全阀硬闸）** / §11 新增"与攒批 ABC 的兼容" / §10 B 报告路径 `_targets/` → `<ISO_DATE>` 统一 + C 阶段措辞"新会话"→"默认回原会话"。同期顺手修既有文档债：STAGE_3_TASKS §1.5.4 加"攒批 ABC ≠ 跳 BC"区分注 + §1.5.1 C 阶段措辞；prompts/README.md C 阶段措辞；REVIEW_PROMPT_CODE_GPT.md "不要 commit/push" vs "报告 push 到 main"自相矛盾理顺。**默认行为**：工程类 ABC 粒度跟随规划、≤8 子任务可攒批（B 保留）、地基（硬+软）改动设计层先落定、安全阀硬闸。落地走 L1 直签 main fixation 模式（作者 2026-06-08 明示授权 + 本 PR merge）。
 - **2026-06-08 v0.4.2**：作者授权同步 §11 目录定位——`/docs/prompts/` 从「仅 L3 paste-ready prompt」broaden 为「项目所有 AI 生成提示词归档」（详 `/docs/prompts/README.md` v0.2）。§11 明确仅约束 `stage_N/` L3 prompt；根目录新增 L1/治理类起手 prompt（首个 `L1_KICKOFF_ABC_PROPOSAL.md` = ABC 阶段层级化提案的 L1 会话起手 prompt，提案未拍板/未应用）。**破例说明**：本次在 dev 对话会话内经作者明示授权直接修订，未走专门 L1 会话——因属目录定位"措辞同步"级、非 ABC 工作流实质变更；ABC 层级化提案本身仍走专门 L1 会话（见 `L1_KICKOFF_ABC_PROPOSAL.md`）。**默认行为**：prompt 归档目录定位 broaden 即时生效。
 - **2026-05-08 v0.4.1**：作者拍板 gap #2 + gap #3 修补 patch（v0.5 完整 B/C prompt 文件化升级暂缓决策的 interim solution）。修订点：`/docs/REVIEW_PROMPT_CODE_GPT.md` v0.1 → v0.2（末尾加 "报告 push 到 main 独立 commit" 段 + `{{REVIEW_TARGET}}` 段加 "可附 L2 视角补充上下文"）+ governance §10 加第 7 条 + 新增 §12 v0.4.1 patch 段。**默认行为**：B 阶段 Codex 自动 commit + push；作者填 REVIEW_TARGET 时可附 L2 视角补充上下文。详 §12。
 - **2026-05-08 v0.4**：作者拍板把 L3 paste-ready prompt 从 `STAGE_X_TASKS.md` §8 内嵌的 ` ```text` 代码块拆出，每个 L3 任务单独存为 `/docs/prompts/stage_N/T-N.X.md` 文件。L3 会话起步标准格式从"复制粘贴 paste-ready prompt 块"改为"读 prompt 文件"。触发：阶段 3 起手期（PR #33 merge 后）作者发现复制粘贴 14 长 prompt 块辛苦 + 复盘困难。修订点：**新增 §11 L3 prompt 文件化工作流（v0.4 新增）**；§3 / §5 引用文件路径形态调整；§10 ABC 流程图 A 阶段首条消息形态改"读 prompt 文件 OR 直接说执行 T-N.X"。**默认行为**：阶段 3 起手新规范——所有 L3 prompt 单独文件；阶段 0/1/1.5/2 历史 prompts 不回填；阶段 4+ 复用同款规范（modifier `/docs/prompts/stage_N/`）。Meta task 落地：`claude/meta-prompt-extract` 分支整合（含 14 个 stage_3 prompt 文件 + STAGE_3_TASKS.md §8 改表格引用 + governance v0.4 修订；详见 PR）。
@@ -186,7 +195,7 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
               │ 产出：review 报告（finding 清单 red/yellow/green）
               ▼
         ┌─────────────┐
-        │ C 阶段：修复 │  Claude Code 新会话（吃 B 反馈）
+        │ C 阶段：修复 │  默认回 A 原会话（吃 B 反馈）
         └─────────────┘
               │ 产出：追加 commit 到原 PR / 新 PR
               ▼
@@ -215,7 +224,7 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 | **谁做** | 作者起 Codex 会话（OpenAI GPT-5.5 命令行） |
 | **review prompt 来源** | 当前已落盘的 cross-LLM code review prompt（commit `8842c43`，`/docs/REVIEW_PROMPT_CODE_GPT.md`）；如有版本更新参考最新版 |
 | **review 输入** | A 阶段 PR 的 diff + 相关代码上下文 + 该 L3 任务的原 paste-ready prompt（让 GPT 知道目标） |
-| **review 报告落盘** | `/docs/reviews/_targets/T-X.X_review_<topic>.md`（参考阶段 1.5 commit `33611cd` 落盘格式）|
+| **review 报告落盘** | `/docs/reviews/<ISO_DATE>_T-X.X_<topic>_review.md`（与 STAGE_3_TASKS §1.5.1 + REVIEW_PROMPT_CODE_GPT.md 统一；旧 `_targets/` 写法 v0.5 废止）|
 | **报告内容** | finding 清单（red / yellow / green 严重度）+ 建议改动 |
 | **完成判定** | 报告落盘 + 作者扫一眼总结 |
 
@@ -223,8 +232,8 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 
 | 项 | 内容 |
 |---|---|
-| **谁做** | 作者起 Claude Code 新会话（可同 worktree 分支或新会话同分支） |
-| **首条消息** | "吃 `/docs/reviews/_targets/T-X.X_review_<topic>.md` 的 review 报告，按 finding 清单修代码"+ 相关上下文 |
+| **谁做** | 默认回 A 原会话/原分支（吃 B 反馈续做）；必要时新会话同分支 |
+| **首条消息** | "吃 `/docs/reviews/<ISO_DATE>_T-X.X_<topic>_review.md` 的 review 报告，按 finding 清单修代码"+ 相关上下文 |
 | **会话工作** | 按 review 反馈修代码 + 跑测试 + commit + push（追加到原 PR）|
 | **产出** | C 阶段 commit hash + PR 已更新 |
 | **完成判定** | 所有 red finding 修复 + 重要 yellow finding 修复或显式拒收（带理由）|
@@ -247,6 +256,44 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 5. **L3 包含 schema commit / ADR 立项** 等仍走相同 ABC 流程——A 阶段 commit 后 B 阶段 review 看一致性 / 设计；不需要因为是"架构级"就走不同流程
 6. **反向回退（隐藏第三类）**：如某 L3 跑完 ABC 才发现前面 L3 有 bug，开新 L3 修复，新 L3 同样走 ABC
 7. **B 阶段 review 报告必须 commit + push 到 main 独立 commit**（不是 PR 分支；不是仅在 Codex 工作目录）—— L2 验收 first step = `gh api repos/.../contents/docs/reviews?ref=main` 验证报告物理位置；commit message 模板：`docs(review): T-X.X cross-LLM review report (B-phase output for PR #N)`。`/docs/REVIEW_PROMPT_CODE_GPT.md` v0.2 已在末尾加 explicit 段；Codex 评审完成后自动执行。
+
+---
+
+## 10.6 ABC 粒度跟随规划（v0.5 新增，ADR-037）
+
+ABC 放在**最具体且有规划**的层级跑，不再一律钉死每个 L3。**仅适用工程/代码任务**；内容生成创作会话仍每单元一个新会话。
+
+- **判定"算不算有独立规划"按实质**（是否有独立规格需求），**不以"有没有 prompt 文件"为唯一标准**——prompt 文件只是证据之一，防止"为攒批而故意不写 prompt 文件"绕过应有评审。下列一律视为有独立规格需求、必须单审：改 schema / 改 validator 语义 / 改共享函数行为 / 改生成器输出契约 / 迁移已有内容 / 需作者签字的决策（见 §10.7 软地基 carve-out）。
+- **L3 有独立规格** → 在 L3 跑 ABC（现状）。
+- **L2 有规划、底下若干子任务无独立规格需求** → 在 L2 跑**一次攒批 ABC**（一次 A→一次 B→一次 C→一次 L2 验收）。**B 保留（攒批，非跳过）。**
+- **粒度由 L2 规划师规划时一次性决定**，执行中不重判；L2 计划的 cross-LLM critique 增一项粒度检查（切得对吗 / ≤8 吗 / 软地基拉出去了吗 / 集成评审安排了吗 / 模式标签对吗）。
+
+**攒批护栏**：
+
+1. **批量上限 ≤ 8 个子任务**；且软地基 carve-out 任一项触发、或跨多个核心模块、或需迁移老内容 → 不到 8 也拆。
+2. **回滚单位 = 依赖闭包**（不声称"每子任务一个 commit 即可单独 revert"）：批计划写明子任务依赖图；若 T2 依赖 T1，回滚单位 = T1+T2。强依赖链超过 3 个子任务建议拆批。
+3. **集成评审**：B 扇出（并行评审各子任务）时，至少一个评审者看整合后整批 diff。
+4. **模式标签**：每批 / 每 PR 加一行——`mode = batch-ABC / skip-BC / L1-fixation` + B 是否保留 + 授权来源。
+
+**依赖性不作一刀切约束**：普通环环相扣的活可攒批（返工由 AI 承担、不耗作者带宽）；唯"给别人定规矩"的活按 §10.7 前置。
+
+**三模式区分**（由模式标签显式标注，便于审计）：
+
+- **攒批 ABC**（本节）：一次 A→B→C→L2 验收，**B 保留**；用于一个 L2 计划下若干工程子任务。
+- **跳 BC**（STAGE_3_TASKS §1.5.4）：A→直接 merge，**B 和 C 全丢**；用于反向修复 / ergonomic / 验收报告。
+- **L1 直签 main fixation**（ADR-036 / `aeea12e` 先例）：作者直接把 L1 文档提交进 main，跳过 ABC；**仅用于已在外部完成决策的 L1 record keeping**，不是普通文档捷径。
+
+---
+
+## 10.7 设计先于施工 + 安全阀（v0.5 新增，ADR-037）
+
+把"地基"改动挡在施工之前，从根上**降低**"在流动地基上施工"的频率（**注意：是大幅降频，不是结构性消除**——残余由本节安全阀 + 软地基 carve-out 承接）。
+
+- **硬地基**（数据格式/schema、共享状态、L1 文档）→ 上提设计/规划层，用专门 schema-only ABC 先浇好，按 ADR-015 串行 commit 原则（v0.5 一般化为常驻规则）串行落定，先于依赖它的施工批。
+- **软地基 carve-out**（§2 + §10.6）→ 改 validator 语义 / 共享函数行为 / 生成器输出契约 / 生成 trace 语义 / 迁移已有内容，同样前置单审。
+- **foundation 子批不是 schema-only**：必须含保持 main 绿的最小 validator / model / fixture 适配。
+- **安全阀 = 硬闸（不靠会话自觉）**：施工批**禁止触碰** `/schema`、`/docs/DECISIONS.md`、`/docs/governance.md`、共享 state 契约。施工批 diff 若出现这些路径或等价语义变更 → **B 阶段直接 🔴 + 停批** → 把地基改动上提回设计层 → 专门 ABC 浇好 → 再回来施工。
+- **如实成本**：安全阀不便宜（全停 + 一个地基 ABC + 上下文切回）；触发频率取决于设计层预见质量。schema 的仪式因此被**集中强化**（自己的完整 ABC），不是削弱——把评审搬到风险最高处。
 
 ---
 
@@ -309,6 +356,10 @@ L2 规划师产 STAGE_X_TASKS.md → 每个 L3 paste-ready prompt
 
 §10 ABC 流程**不变**——仅 A 阶段首条消息形态从"复制粘贴 prompt 块"改为"读 prompt 文件"。B/C/L2 验收阶段流程完全继承 v0.3。
 
+### 与攒批 ABC 的兼容（v0.5 新增，ADR-037）
+
+L2 规划师**可以**故意不为某批低风险工程子任务各拆 prompt 文件，而写**一个 batch-level 规格**（涵盖 ≤8 子任务）→ 该批走 §10.6 攒批 ABC。**"有没有自己的 prompt 文件 / 规格"是"算不算有独立规划"的证据之一，不是唯一标准**——§10.6 + §10.7 列的软地基 carve-out 类任务，无论有没有 prompt 文件，一律单审。
+
 ### 与跳 BC 破例 5 类的关系（详 STAGE_3_TASKS.md §1.5.4）
 
 - prompt 文件本身的 ergonomic 微调（措辞 / 引用路径 / 示例补充）属"审阅 UI 工坊化 ergonomic 改进"延伸 → 跳 BC 破例第 4 类
@@ -365,5 +416,5 @@ T-3.11 L2 验收（2026-05-08）第一次踩到 gap #2（B 报告全网 0 命中
 
 ## 版本
 
-本文件版本：v0.4.2
+本文件版本：v0.5
 最后更新：2026-06-08
