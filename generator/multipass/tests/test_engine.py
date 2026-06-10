@@ -120,7 +120,7 @@ class MockProvider:
         elif required == ["narration", "dialogue", "options"]:
             kind, content = "prose", {
                 "narration": _NARRATION_260,
-                "dialogue": ["要喝什么就坐吧，外头冷。", "「教授的朋友可真多。」"],
+                "dialogue": ["要喝什么就坐吧，外头冷。", "「教授的朋友可真多。」", "“弯引号句要被归一。”"],
                 "options": [
                     {"intent": "INTENT_A", "text": "我想找个人，打听点事。"},
                     {"intent": "INTENT_B", "text": "[观察] 先看看角落那个人。"},
@@ -210,9 +210,11 @@ def test_end_to_end_dynamic_topology(isolated_budget, tmp_path) -> None:
     targets = {o["target_node_id"] for o in nodes["opening"]["options"]}
     assert targets == {"soft_line_b1", "press_line_b1"}
 
-    # NPC 对白归一化进 narration（裸句被加「」；已带引号的不重复包）
+    # NPC 对白归一化进 narration（裸句加「」；已带「」不重复包；弯引号整句换「」）
     assert "「要喝什么就坐吧，外头冷。」" in nodes["opening"]["narration"]
     assert "「「" not in nodes["opening"]["narration"]
+    assert "「弯引号句要被归一。」" in nodes["opening"]["narration"]
+    assert "“" not in nodes["opening"]["narration"]
 
     # 落盘四件产物
     paths = write_artifacts(result, tmp_path / "out")
@@ -274,6 +276,44 @@ def test_structured_call_size_guard(isolated_budget) -> None:
             label="too_big",
         )
     assert provider.calls == []  # provider 未被触碰
+
+
+def test_scene_anchor_injected_into_beats_and_end(isolated_budget) -> None:
+    """复核根因④修复：分拍/收束调用注入场景锚定事实（character_state）+ 禁新增人物规则."""
+
+    class CapturingProvider(MockProvider):
+        def __init__(self):
+            super().__init__()
+            self.user_prompts: dict[str, list[str]] = {}
+
+        def generate_structured(self, *, system_prompt, user_prompt, json_schema):  # type: ignore[override]
+            resp = super().generate_structured(
+                system_prompt=system_prompt, user_prompt=user_prompt, json_schema=json_schema
+            )
+            self.user_prompts.setdefault(self.calls[-1], []).append(user_prompt)
+            return resp
+
+    provider = CapturingProvider()
+    run_multipass_scene(provider, _SPEC, _CONFIG)
+    for kind in ("beats", "end"):
+        for u in provider.user_prompts[kind]:
+            assert "场景锚定事实" in u
+            assert _SPEC["character_state"] in u
+
+
+def test_prompts_carry_anchor_and_second_person_rules() -> None:
+    """机械修复回归锁：称'你'规则 + 禁新增人物/转场规则在 prompt 内."""
+    from generator.prompts.node.multipass import PASS2_PROSE_SYSTEM
+    from generator.prompts.node.multipass.beat_pacing import BEAT_PACING_SYSTEM
+    from generator.prompts.node.multipass.pass2_prose import build_end_prose_user_prompt
+
+    assert "一律写\"你\"" in PASS2_PROSE_SYSTEM or "一律写“你”" in PASS2_PROSE_SYSTEM
+    assert "不替玩家总结选择结构" in PASS2_PROSE_SYSTEM
+    assert "不得新增任何人物" in BEAT_PACING_SYSTEM
+    end_u = build_end_prose_user_prompt(
+        scene_contract={}, node_function="F", path_summary="P", scene_anchor_facts="ANCHOR_MARK"
+    )
+    assert "ANCHOR_MARK" in end_u and "不得新增人物" in end_u
 
 
 def test_render_smoke(isolated_budget) -> None:

@@ -42,6 +42,9 @@ intent 都已固定），你只写这个节点的：
 - 每一句至少承担一个功能：空间信息 / 视线与听觉风险 / NPC 物理状态 / 行动机会 /
   可回收线索 / 物理异常（少量，需有人注意或回避）。
 - **不替 NPC 转述信息**：NPC 知道的事让 NPC 在 dialogue 引号里自己说，narration 不抢答。
+- **旁白中的玩家一律写"你"**，不得出现"玩家"二字（"视线越过玩家肩侧"是错的，要写"越过你的肩侧"）。
+- **不替玩家总结选择结构**：不写"谈话到了可进可退的位置""再多一句就如何"这类元叙述；
+  选择压力用在场的物理事实呈现，判断留给玩家。
 
 ## 玩家选项规则
 - 逐条对应骨架的 option：把它的 `intent` 转写成玩家**第一人称**可说出口的台词，或直接行动语言。
@@ -151,6 +154,7 @@ def build_end_prose_user_prompt(
     scene_contract: dict[str, Any],
     node_function: str,
     path_summary: str,
+    scene_anchor_facts: str | None = None,
 ) -> str:
     """end（终止）节点收束旁白的 user prompt.
 
@@ -158,19 +162,29 @@ def build_end_prose_user_prompt(
         scene_contract: 契约 pass 产出（固定上下文）。
         node_function: 本 end 节点一句话功能（来自 TopologyPlan，如"带完整线索离开"）。
         path_summary: 到达本结局的路径摘要（走了什么分支、拿到了什么）。
+        scene_anchor_facts: 在场人物/空间锚定事实（复核根因④：收束段最易凭空加人/转场）。
     """
     import json
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
+    anchor_block = (
+        f"""
+## 场景锚定事实（以此为准；不得新增人物、不得转移空间）
+{scene_anchor_facts}
+"""
+        if scene_anchor_facts
+        else ""
+    )
     return f"""## 场景契约（固定上下文）
 {sc}
-
+{anchor_block}
 ## 你要写的：一个**终止节点（end）**的收束旁白
 - 本结局功能：{node_function}
 - 玩家到达路径：{path_summary}
 
 要求：
-1. narration：80-200 汉字收束旁白（白描；交代玩家带着什么离开 / 场景怎么收）。
+1. narration：80-200 汉字收束旁白（白描；交代玩家带着什么离开 / 场景怎么收；
+   玩家一律写"你"，不得出现"玩家"二字）。
 2. dialogue：NPC 收尾的 0-2 句话（可为空数组；关键信息已在前文给过，这里不补新线索）。
 3. **没有玩家选项**（终止节点），不要输出 options。
 

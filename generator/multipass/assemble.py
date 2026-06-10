@@ -11,15 +11,17 @@ from __future__ import annotations
 
 from typing import Any
 
-_QUOTE_OPENERS = ("「", "“", "\"")
-
-
 def _quote(line: str) -> str:
-    """NPC 对白行归一化为「」引号（pass2 的行裸句、beat 的行常自带「」）。"""
+    """NPC 对白行归一化为「」引号（裸句包裹；弯/直引号整句换成「」——复核发现 3/6 候选体例混用）。"""
     line = line.strip()
     if not line:
         return line
-    if line.startswith(_QUOTE_OPENERS):
+    # 整句被弯引号 / 直引号包裹 → 换成「」（确定性体例归一，不改内容）
+    for opener, closer in (("“", "”"), ('"', '"')):
+        if line.startswith(opener) and line.endswith(closer) and len(line) >= 2:
+            line = line[len(opener) : -len(closer)].strip()
+            break
+    if line.startswith("「"):
         return line
     return f"「{line}」"
 

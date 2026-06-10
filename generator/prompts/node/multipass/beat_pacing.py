@@ -31,6 +31,9 @@ def _build_system() -> str:
 - 把线索清单**分散**到各拍，**每拍只揭 1-2 条**；不要一拍说完。
 - 各拍之间要有"露西说一点 → 玩家接一句 → 露西再说一点"的来回感。
 - 最后一拍的 continue_option 可以是收束（如"我记下了。"）。
+- **场景锚定**：在场人物与空间以任务给定的"场景锚定事实"为准——**不得新增任何人物**
+  （侍者/伙计/仆人等都不许凭空出现），**不得转移空间**；旁白中的玩家一律写"你"，
+  不得出现"玩家"二字。
 
 ## continue_option 文本规则（作者反馈）
 - 选项默认就是玩家的话，**第一人称隐含，别硬塞"我"**。
@@ -57,15 +60,29 @@ def build_beat_pacing_user_prompt(
     node_situation: str,
     reveals: list[str],
     npc_name: str = "露西",
+    scene_anchor_facts: str | None = None,
 ) -> str:
-    """拼接 beat pacing user message（要分拍的节点 = 局面 + 线索清单）。"""
+    """拼接 beat pacing user message（要分拍的节点 = 局面 + 线索清单 + 场景锚定）。
+
+    Args:
+        scene_anchor_facts: 在场人物/空间锚定事实（复核根因④：多 pass 后段会丢场景锚定、
+            凭空冒出侍者/仆人；注入后链内每拍都以此为准，不得新增人物/转场）。
+    """
     import json
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
     rv = "\n".join(f"- {r}" for r in reveals) if reveals else "（无）"
+    anchor_block = (
+        f"""
+## 场景锚定事实（每一拍都以此为准；不得新增人物、不得转移空间）
+{scene_anchor_facts}
+"""
+        if scene_anchor_facts
+        else ""
+    )
     return f"""## 场景契约（固定上下文）
 {sc}
-
+{anchor_block}
 ## 要分拍的节点
 当前局面：{node_situation}
 

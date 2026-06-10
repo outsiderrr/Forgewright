@@ -327,6 +327,7 @@ def run_multipass_scene(
                             node_situation=situation,
                             reveals=chunk,
                             npc_name=config.npc_name,
+                            scene_anchor_facts=scene_spec.get("character_state"),
                         ),
                         build_beat_pacing_schema(),
                     )
@@ -342,6 +343,7 @@ def run_multipass_scene(
                         scene_contract=contract,
                         node_function=pnode.get("function", ""),
                         path_summary="；".join(b for b in path_bits if b) or "（直达）",
+                        scene_anchor_facts=scene_spec.get("character_state"),
                     ),
                     build_end_prose_schema(),
                 )
