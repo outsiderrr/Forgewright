@@ -1,0 +1,449 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "whitcroft_morgue_multipass",
+  "entry_node_id": "opening",
+  "scene_anchor": "scene_miskatonic_morgue",
+  "character_refs": [
+    "char_whitcroft"
+  ],
+  "nodes": {
+    "opening": {
+      "node_id": "opening",
+      "type": "dialogue",
+      "narration": "办公室贴着冷藏库的外墙，墙面刷白，靠近门缝的地方有一圈潮气。桌上摊着几份空白病历纸，墨水瓶旁压着一串钥匙，金属牌上刻着冷藏库编号。走廊里的脚步声经过门外时会被瓷砖放大，又很快远去。惠特克罗夫特站在桌后，没有坐下，袖口卷到小臂，指节按在椅背上。他把死亡证明的副本翻到正面，又推回桌角，像是不愿让它离手太远。隔壁传来冷机低沉的震动，门框随之轻轻发颤；每一次震动停顿，他都会把视线转向那扇内门。你闻到消毒水、旧纸和低温金属混在一起的气味。窗帘半拉着，下午的光被切成窄条，落在他的领口和下颌上。他清了两次嗓子，目光从你的证件、手套、衣袖依次扫过，最后停在你是否带了记录本的位置。\n\n「莱特教授的遗体现在就在隔壁冷藏库。你进来之前，应该已经看见门牌了。」\n\n「我已经签过死亡证明，官方说法也很清楚。你如果是来问鬼神、诅咒或者报纸爱写的那些东西，我没有东西可给你。」\n\n「这间办公室里说的每一句话，都不能直接出现在走廊上。你先告诉我，你到底代表谁，又打算把我说的话带到哪里去。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_opening_1",
+          "text": "我懂程序，先由我接手判断。",
+          "target_node_id": "professional_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_2",
+          "text": "我不是来审你，先说你能说的。",
+          "target_node_id": "conscience_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_3",
+          "text": "这份证明和细节对不上。",
+          "target_node_id": "certificate_pressure_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_4",
+          "text": "你不开口，报社会替你开口。",
+          "target_node_id": "public_exposure_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b1": {
+      "node_id": "professional_line_b1",
+      "type": "dialogue",
+      "narration": "桌上的死亡证明副本被压在病历夹下，只露出签名和日期。惠特克罗夫特用指节按住纸边，目光短促地掠向隔壁冷藏库的门，又收回来。\n\n「你若只是来找一个丑闻，我现在就只能请你离开。」\n\n「但你若懂医学记录，或能按正式调查的规矩办事，我可以让你分担一部分责任。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b1_continue",
+          "text": "你可以把责任分给我。",
+          "target_node_id": "professional_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b2": {
+      "node_id": "professional_line_b2",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特松开手，纸页边角慢慢翘起。他没有把证明递出来，只把病历夹往你这边推了半寸，像是在试探距离。\n\n「分给你，就先从最脏的一页开始。」\n\n「死亡证明上的‘大面积突发心衰’是法伦院长要的官方说法，不是我的尸检结论。我执行了他的要求。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b2_continue",
+          "text": "尸检到底写了什么？",
+          "target_node_id": "professional_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b3": {
+      "node_id": "professional_line_b3",
+      "type": "dialogue",
+      "narration": "冷藏库方向传来一声金属轻响，惠特克罗夫特的肩膀绷了一下。他把病历夹翻到手写页，指尖停在几行被反复描重的字上。\n\n「你问尸检，那就按尸检说。」\n\n「莱特的心梗几乎是瞬间致命，同时有剧烈肌肉痉挛。视网膜组织遭高温损伤，像有什么把玻璃体液煮沸了。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b3_continue",
+          "text": "我记下这些异常。",
+          "target_node_id": "professional_line_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b4": {
+      "node_id": "professional_line_b4",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把尸检纸页重新叠齐，拇指压在页角，纸边被汗水浸得发软。他没有看门，只把听诊器从桌面推开，留出一小块空处。\n\n「你记下，就按医学事实记。不是心脏先坏、别的器官跟着坏，是全身器官几乎同时衰竭。」\n\n「肠道菌群也死了，可尸体腐败反而慢得不对。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b4_continue",
+          "text": "这种顺序不常见。",
+          "target_node_id": "professional_line_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b5": {
+      "node_id": "professional_line_b5",
+      "type": "dialogue",
+      "narration": "他说话时停了一下，指尖在纸面上点了两次。隔壁冷藏库的低声震动贴着墙传来，他的肩膀随那声音微微绷紧。\n\n「不只是不常见。没有毒物反应，没有电击痕迹，没有窒息证据，也没有足以解释高温损伤的外部来源。」\n\n「我能写进报告的原因，一个都没有。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b5_continue",
+          "text": "你为什么这么确定？",
+          "target_node_id": "professional_line_b6",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "professional_line_b6": {
+      "node_id": "professional_line_b6",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特抬起头，眼下的皮肤发青。他把一只手按在胸前口袋上，那里露出半截旧名片的边角。\n\n「因为我在波士顿当过助理验尸官，见过够多尸体，够多暴力、疾病和事故。」\n\n「莱特这具不一样。我不承认鬼神，可我也不能把它装成普通死亡。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_professional_line_b6_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_professional_cooperation",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_professional_cooperation": {
+      "node_id": "end_professional_cooperation",
+      "type": "end",
+      "narration": "惠特克罗夫特把尸检记录重新塞回牛皮纸袋，封口没有粘死，只用两枚回形针压住。他送你到门边，白瓷砖上的灯光被冷藏库门缝切成窄窄一段。走廊里消毒水味更重，你带走了死亡证明背后的名字、完整尸检要点，以及一条仍能回头敲响的门。\n\n「别在走廊里提我的名字。」惠特克罗夫特说。\n\n「但如果你真要继续查，先来找我，别让他们先找到你。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "conscience_line_b1": {
+      "node_id": "conscience_line_b1",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把死亡证明的副本翻到签名页，拇指压在墨迹旁边。隔壁冷藏库的低鸣隔着墙传来，他的视线在门缝处停了一下，又落回纸面。\n\n「你说得对，我不是不知道自己在做什么。证明上写的‘大面积突发心衰’，不是尸检结论。」\n\n「那是校方高层要维持的说法；法伦那边的意思，我只是照办。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b1_continue",
+          "text": "真正结论是什么？",
+          "target_node_id": "conscience_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "conscience_line_b2": {
+      "node_id": "conscience_line_b2",
+      "type": "dialogue",
+      "narration": "他合上副本，没有立刻放手。纸边在他指下弯出一道折痕，金属桌面反出冷白的灯光，把他的手背照得发青。\n\n「真正结论？如果它能叫结论的话。」\n\n「莱特的心梗来得太快，几乎是瞬间毙命；同时有剧烈肌肉痉挛，像全身在同一刻绷死。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b2_continue",
+          "text": "还有别的异常吗？",
+          "target_node_id": "conscience_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "conscience_line_b3": {
+      "node_id": "conscience_line_b3",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特转头看向冷藏库的方向，喉结动了一下。他从抽屉里抽出一页记录，又在递出前停住，只让纸角露在灯下。\n\n「有。眼部组织被热破坏，视网膜受损得不像正常死亡后的变化。」\n\n「不止心脏。多个系统同时衰竭，腐败也不按时序走，明显被延缓了。没有外部原因能解释这些。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "conscience_line_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "conscience_line_b4": {
+      "node_id": "conscience_line_b4",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把手边的笔盖按上，又立刻拔开。塑料轻响在桌面上重复了两次，他的视线越过你的肩头，停在通向冷藏库的那扇门上。\n\n「你知道了就好。别把它写进任何正式记录，至少现在别写。」\n\n「那具尸体不能一直放在隔壁。我已经在催手续，火化，或者转走，越快越好。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b4_continue",
+          "text": "你为什么这么着急？",
+          "target_node_id": "conscience_line_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "conscience_line_b5": {
+      "node_id": "conscience_line_b5",
+      "type": "dialogue",
+      "narration": "他没有马上回答，指节压在病历夹边缘，纸页被压出一道浅折。冷藏库那边没有声音，他却像听见了什么似的偏了一下头。\n\n「因为它在那儿。」\n\n「我做过助理验尸官，见过够多死人。可莱特不一样。只要他还在这栋楼里，我就没法假装那张证明解决了问题。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b5_continue",
+          "text": "那你准备怎么办？",
+          "target_node_id": "conscience_line_b6",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "conscience_line_b6": {
+      "node_id": "conscience_line_b6",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把病历夹合上，手掌停在封皮上，没有推给你。他看着桌面，声音压得更低。\n\n「怎么办？按校方能接受的方式让它离开这里。」\n\n「你要查，就去查火化许可、转运记录，或者谁签字让尸体继续留在冷藏库。别在这里逼我当场打开那扇门。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_conscience_line_b6_continue",
+          "text": "我记下了。",
+          "target_node_id": "end_conscience_trust",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_conscience_trust": {
+      "node_id": "end_conscience_trust",
+      "type": "end",
+      "narration": "惠特克罗夫特把尸检记录重新压进抽屉，钥匙在锁孔里转了两下。隔壁冷藏库的低响隔着墙传来，你的笔记本上已有心衰证明、异常尸检轮廓和尽快处理尸体的动机，却还缺少能让同行签字背书的细项。走廊的灯管闪了一下，他没有送你到门口。\n\n「别把我的名字先写上去。」惠特克罗夫特说。\n\n「等你真需要进那间冷藏库，再来找我。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "certificate_pressure_b1": {
+      "node_id": "certificate_pressure_b1",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把死亡证明翻到签名页，拇指压在墨迹旁，纸角被他按出一道折痕。隔壁冷藏库的金属门没有声音，他却又朝那边看了一眼。\n\n「你拿这张纸逼我，我只能说到这里：死亡证明上的说法受了校方压力影响。」\n\n「‘大面积突发心衰’是能写出去的版本，不是完整尸检结论。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_certificate_pressure_b1_continue",
+          "text": "那尸检真正写了什么？",
+          "target_node_id": "certificate_pressure_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "certificate_pressure_b2": {
+      "node_id": "certificate_pressure_b2",
+      "type": "dialogue",
+      "narration": "他没有立刻回答，先把证明合上，又用指节敲了敲桌面边缘。那几下很轻，停住后，房间里只剩冷藏库方向传来的低沉嗡声。\n\n「真正写下来的东西，比这张纸难看得多。」\n\n「心脏事件发生得异常快，快到不像一般病程；同时有强烈肌肉痉挛，死后姿势也对不上普通心衰。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_certificate_pressure_b2_continue",
+          "text": "还有别的异常吗？",
+          "target_node_id": "certificate_pressure_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "certificate_pressure_b3": {
+      "node_id": "certificate_pressure_b3",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特摘下眼镜，用衣袖擦了两下，又很快戴回去。桌上的记录本摊开着，几行字被他的手掌遮住，只露出检查项目的缩写。\n\n「有。视网膜有烧灼样损害，我找不到外部热源能解释。」\n\n「而且不止一个器官出了问题，是全身性的异常；这些我都不能写进正式报告。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_certificate_pressure_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "certificate_pressure_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "certificate_pressure_b4": {
+      "node_id": "certificate_pressure_b4",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把死亡证明翻到背面，拇指压着签名处，纸边在桌面上轻轻刮响。他没有看门，却又朝冷藏库那侧偏了一下头。\n\n「知道就别把它写成控告我的话。」\n\n「我查过常见外伤和毒物，没有足够痕迹能撑起这些结果。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_certificate_pressure_b4_continue",
+          "text": "疾病也解释不了吗？",
+          "target_node_id": "certificate_pressure_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "certificate_pressure_b5": {
+      "node_id": "certificate_pressure_b5",
+      "type": "dialogue",
+      "narration": "他把纸推回你面前，指节在桌沿停了停。隔壁的低响隔着墙传来，房间里只剩笔尖滚动后的细小停顿。\n\n「解释不了。」\n\n「已知疾病可以杀人，可以让器官衰竭；但不能把这些发现连成一条医学上站得住的链。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_certificate_pressure_b5_continue",
+          "text": "原来如此。",
+          "target_node_id": "end_pressure_guarded",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_pressure_guarded": {
+      "node_id": "end_pressure_guarded",
+      "type": "end",
+      "narration": "惠特克罗夫特把尸检纸页重新压进抽屉，钥匙在锁孔里转了两下。他没有送你到门口，只站在办公桌后，视线又偏向隔壁那扇冷藏库门。走廊里的灯管轻响，你把死亡证明被改写的方向、几项无法写进报告的异常碎片，以及尸体仍在医学院的事实带出房间。门在身后合上，冷气从门缝里退回去。\n\n「我已经说得太多了。」\n\n「接下来你要查什么，别从我这里开始。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "public_exposure_b1": {
+      "node_id": "public_exposure_b1",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特把手从桌沿收回，指节在袖口上擦了两下。他没有再看你手里的材料，目光停在桌面空白处，声音压得很低。\n\n「你要曝光就去吧，但死亡证明我只能说到这里：学校上面要求写成心衰。」\n\n「别逼我把名字写给你。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_public_exposure_b1_continue",
+          "text": "那尸体会怎么处理？",
+          "target_node_id": "public_exposure_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "public_exposure_b2": {
+      "node_id": "public_exposure_b2",
+      "type": "dialogue",
+      "narration": "他抬眼看向隔壁冷藏库的方向，又很快转回来。墙后的机器声隔着门板传来，他把桌上的纸角按平，按了两次才松手。\n\n「怎么处理？还在隔壁医学院冷藏库。」\n\n「但不会一直在那儿；很快可能火化，或者被转走。你听懂这点就够了。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_public_exposure_b2_continue",
+          "text": "为什么这么急着处理？",
+          "target_node_id": "public_exposure_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "public_exposure_b3": {
+      "node_id": "public_exposure_b3",
+      "type": "dialogue",
+      "narration": "惠特克罗夫特的下颌绷了一下。他把椅子往桌边拉近半寸，像是要把话压在两人之间，眼睛却又扫向那扇通往冷藏库的门。\n\n「因为报告里有东西不能写。心脏太快，眼睛不对，腐败也不对劲。」\n\n「按我见过的外因，没有一种能解释。我的职业判断到这里就断了。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_public_exposure_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_failsafe_strained",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_failsafe_strained": {
+      "node_id": "end_failsafe_strained",
+      "type": "end",
+      "narration": "惠特克罗夫特把抽屉推回去，钥匙串在木板上轻响。他没有送你到门口，只站在办公桌后，目光越过你的肩侧，停在通往冷藏库的那扇窄门上。走廊里的灯管嗡嗡作响，你把死亡证明签发流程、法伦的名字、冷藏库许可，以及可能的火化或转运记录一并记下。门合上前，他抬手按住喉结，像是要把一句话咽回去。\n\n「别再来这里吵我。要查，就去查那些纸。」",
+      "speaker_ref": "char_whitcroft",
+      "location_ref": "scene_miskatonic_morgue",
+      "on_enter_effects": [],
+      "options": []
+    }
+  }
+}
