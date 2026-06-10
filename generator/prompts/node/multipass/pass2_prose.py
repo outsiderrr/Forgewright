@@ -71,14 +71,18 @@ def build_pass2_user_prompt(
     node_skeleton: dict[str, Any],
     revealed_clues: list[str],
     used_option_intents: list[str],
+    scene_anchor_facts: str | None = None,
+    mid_scene: bool = False,
 ) -> str:
-    """拼接 Pass 2 user message（单节点 + 历史压缩摘要）.
+    """拼接 Pass 2 user message（单节点 + 历史压缩摘要 + 场景进度/锚定）.
 
     Args:
         scene_contract: Pass 1 产出的场景契约。
         node_skeleton: Pass 1 产出的**本节点**骨架。
         revealed_clues: 本节点之前已揭露的线索（历史压缩；几十字）。
         used_option_intents: 本节点之前已用过的选项 intent（历史压缩）。
+        scene_anchor_facts: 在场人物/空间锚定事实（复核根因④）。
+        mid_scene: True = 本节点不是场景开场（复核反馈：中段节点不得重新做进场式全景描写）。
     """
     import json
 
@@ -91,10 +95,27 @@ def build_pass2_user_prompt(
         for i, o in enumerate(node_skeleton.get("options", []))
     )
     speaker = node_skeleton.get("speaker_ref") or scene_contract.get("npc_name") or "NPC"
+    anchor_block = (
+        f"""
+## 场景锚定事实（以此为准；不得新增人物、不得转移空间）
+{scene_anchor_facts}
+"""
+        if scene_anchor_facts
+        else ""
+    )
+    progress_block = (
+        """
+## 场景进度提示
+本节点**不是场景开场**：空间与在场人物已在前文建立。narration **不要重新做进场式全景描写**
+（不要再从门、灯光、整间屋子的布置写起），只写此刻的变化、动作与新的可观察细节。
+"""
+        if mid_scene
+        else ""
+    )
 
     return f"""## 场景契约（固定上下文）
 {sc}
-
+{anchor_block}{progress_block}
 ## 本节点骨架（结构已定，不要改）
 node_id = {node_skeleton.get('node_id')} ；function = {node_skeleton.get('function')}
 {sk}

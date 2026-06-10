@@ -302,6 +302,8 @@ def run_multipass_scene(
                         node_skeleton=skeleton,
                         revealed_clues=revealed,
                         used_option_intents=used_intents,
+                        scene_anchor_facts=scene_spec.get("character_state"),
+                        mid_scene=(pid != plan["entry_node_id"]),
                     ),
                     build_pass2_schema(),
                 )
@@ -311,6 +313,8 @@ def run_multipass_scene(
                 collected: list[dict[str, Any]] = []
                 for ci, chunk in enumerate(chunks):
                     situation = pnode.get("function", "")
+                    if pid != plan["entry_node_id"]:
+                        situation += "\n（本链不是场景开场：空间与在场人物已建立，旁白不要重新做进场式描写）"
                     if revealed:
                         situation += f"\n（此前已揭露：{'、'.join(revealed[-6:])}）"
                     if len(chunks) > 1:
@@ -318,6 +322,11 @@ def run_multipass_scene(
                     if ci > 0 and collected:
                         prev = [r for c in chunks[:ci] for r in c]
                         situation += f"\n（本链前几拍已揭露：{'、'.join(prev)}）"
+                        last_continue = (collected[-1].get("continue_option") or {}).get("text", "")
+                        if last_continue:
+                            situation += (
+                                f"\n（上一拍玩家刚说：「{last_continue}」——本段第一拍的 NPC 对白必须先承接这句话）"
+                            )
                     out = _call(
                         "beats",
                         f"beats_{pid}_part{ci + 1}",

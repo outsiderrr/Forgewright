@@ -35,6 +35,11 @@
    要求开头对所有入口成立（不预设玩家说过什么）。
 4. **跨分支去重**：分拍 prompt 已有历史压缩；对"平行分支"（非祖先关系）补充
    "其他分支已用措辞"清单，要求改变完整度与措辞。
+5. **junction 承接**（2026-06-10 作者审阅追加，与 3 同族）：链内承接已修
+   （beat_pacing"第 N+1 拍必须承接玩家上一句"+ 引擎跨 chunk 传话），但**跨节点 junction**
+   仍不承接——链尾玩家接话 →下一个 choice/链首拍的 NPC 不回应（实证：whitcroft/c1
+   opening_b3 玩家"说报告。"→ approach_choice 未承接）。修法 = 把入边的玩家末句传给
+   下游节点的生成调用（与 3 的"入口清单"统一设计：单入口传原句，收敛多入口传姿态清单）。
 
 ## 4. 硬约束（沿用 2026-06-08 handoff）
 只在 `/generator`；schema/validator/engine/state 不动；LLM 走 `LLMProvider` + budget；

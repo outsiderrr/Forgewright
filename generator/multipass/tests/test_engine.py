@@ -301,6 +301,43 @@ def test_scene_anchor_injected_into_beats_and_end(isolated_budget) -> None:
             assert _SPEC["character_state"] in u
 
 
+def test_beat_layer_author_feedback_rules() -> None:
+    """2026-06-10 作者审阅反馈回归锁：A 电报体 / B 承接 / D 复述+疑问句 规则在分拍 prompt 内."""
+    from generator.prompts.node.multipass.beat_pacing import BEAT_PACING_SYSTEM
+
+    assert "别电报体" in BEAT_PACING_SYSTEM            # A：自然口语
+    assert "承接" in BEAT_PACING_SYSTEM                # B：下一拍必须承接玩家上一句
+    assert "变成问题再问一遍" in BEAT_PACING_SYSTEM     # D：不复述已答内容
+    assert "不用疑问句" in BEAT_PACING_SYSTEM           # D：确认类不用疑问句
+
+
+def test_mid_scene_prose_and_beats_no_reentry(isolated_budget) -> None:
+    """C 项修复：非入口节点的正文/分拍调用带"非开场"信号；跨 chunk 传上一拍玩家接话."""
+
+    class CapturingProvider(MockProvider):
+        def __init__(self):
+            super().__init__()
+            self.user_prompts: dict[str, list[str]] = {}
+
+        def generate_structured(self, *, system_prompt, user_prompt, json_schema):  # type: ignore[override]
+            resp = super().generate_structured(
+                system_prompt=system_prompt, user_prompt=user_prompt, json_schema=json_schema
+            )
+            self.user_prompts.setdefault(self.calls[-1], []).append(user_prompt)
+            return resp
+
+    provider = CapturingProvider()
+    run_multipass_scene(provider, _SPEC, _CONFIG)
+    # 入口 choice（opening）= 场景开场 → 不带"非开场"提示
+    assert "不是场景开场" not in provider.user_prompts["prose"][0]
+    # 非入口 beats 链 → 带"非开场"提示
+    for u in provider.user_prompts["beats"]:
+        assert "不是场景开场" in u
+    # soft_line 5 条线索分 2 块：第 2 块带"上一拍玩家刚说"承接提示（mock 末拍 continue = 我记下了。）
+    second_chunks = [u for u in provider.user_prompts["beats"] if "上一拍玩家刚说" in u]
+    assert second_chunks and "我记下了。" in second_chunks[0]
+
+
 def test_prompts_carry_anchor_and_second_person_rules() -> None:
     """机械修复回归锁：称'你'规则 + 禁新增人物/转场规则在 prompt 内."""
     from generator.prompts.node.multipass import PASS2_PROSE_SYSTEM
