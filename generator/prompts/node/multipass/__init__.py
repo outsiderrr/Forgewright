@@ -1,4 +1,4 @@
-"""多 pass 节点生成原型（multi-pass node generation prototype）— Phase 1 结构层.
+"""多 pass 节点生成 prompt（multi-pass node generation prompts）— 结构层正式路径.
 
 design-first 生成从"一个大 prompt"改造成 **2 遍**（参考 StoryWriter plan-compose-write）：
 
@@ -12,16 +12,20 @@ design-first 生成从"一个大 prompt"改造成 **2 遍**（参考 StoryWriter
       → **带瘦身后的文风规则**（AP-1~6 + AP-9；去掉 AP-7/8/10——validator 程序化抓）
       → 带**历史压缩**输入（前文已揭露线索 + 已用选项角度），避免节点间重复
 
-边界（CLAUDE.md 规则 2 / 3 + generator/CLAUDE.md）：
-  本子包是**隔离原型**，只在 /generator 内。**不修改**现有
-  system.py / anti_pattern_blacklist.py / role_rules.py 及其测试（T-3Y-1 定型代码）。
-  信号正向后再单独提正式落改。
+状态（2026-06-10 正式落地，作者批准的设计见
+generator/experiments/multipass_structure/DESIGN_2026-06-10_formal_landing.md）：
+  本子包已从"隔离原型"升格为 **generator 结构层正式生成路径**的 prompt 层，
+  由 generator/multipass/ 引擎编排（含动态拓扑 pass）。
+  system.py 单 pass 路径**并存**（不同工位："给定骨架填单节点正文"）。
 """
 from __future__ import annotations
 
 from generator.prompts.node.multipass.pass1_skeleton import (
     NODE_FUNCTIONS,
     PASS1_SKELETON_SYSTEM,
+    PASS1_SKELETON_SYSTEM_DYNAMIC,
+    build_dynamic_node_schema,
+    build_dynamic_node_user_prompt,
     build_pass1_contract_schema,
     build_pass1_contract_user_prompt,
     build_pass1_node_schema,
@@ -31,15 +35,23 @@ from generator.prompts.node.multipass.pass1_skeleton import (
 )
 from generator.prompts.node.multipass.pass2_prose import (
     PASS2_PROSE_SYSTEM,
-    SLIMMED_AP_KEEP,
+    build_end_prose_schema,
+    build_end_prose_user_prompt,
     build_pass2_schema,
     build_pass2_user_prompt,
-    slimmed_anti_patterns,
+)
+from generator.prompts.node.multipass.topology import (
+    TOPOLOGY_SYSTEM,
+    build_topology_schema,
+    build_topology_user_prompt,
 )
 
 __all__ = [
     "NODE_FUNCTIONS",
     "PASS1_SKELETON_SYSTEM",
+    "PASS1_SKELETON_SYSTEM_DYNAMIC",
+    "build_dynamic_node_schema",
+    "build_dynamic_node_user_prompt",
     "build_pass1_schema",
     "build_pass1_user_prompt",
     "build_pass1_contract_schema",
@@ -47,8 +59,11 @@ __all__ = [
     "build_pass1_node_schema",
     "build_pass1_node_user_prompt",
     "PASS2_PROSE_SYSTEM",
-    "SLIMMED_AP_KEEP",
     "build_pass2_schema",
     "build_pass2_user_prompt",
-    "slimmed_anti_patterns",
+    "build_end_prose_schema",
+    "build_end_prose_user_prompt",
+    "TOPOLOGY_SYSTEM",
+    "build_topology_schema",
+    "build_topology_user_prompt",
 ]

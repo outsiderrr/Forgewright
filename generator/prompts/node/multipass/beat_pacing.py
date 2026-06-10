@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from generator.prompts.node.multipass.pass2_prose import slimmed_anti_patterns
+from generator.prompts.node.anti_pattern_blacklist import ANTI_PATTERN_BLACKLIST_TEXT
 from generator.prompts.node.role_rules import ROLE_RULES_TEXT
 
 
@@ -39,8 +39,7 @@ def _build_system() -> str:
 
 {ROLE_RULES_TEXT}
 
-## Anti-pattern（瘦身版；AP-7 / AP-8 / AP-10 由 validator 程序化兜底，不在此列）
-{slimmed_anti_patterns()}
+{ANTI_PATTERN_BLACKLIST_TEXT}
 
 ## 输出格式
 - valid JSON 单对象，第一个字符 `{{`，最后一个字符 `}}`，无 markdown 围栏。

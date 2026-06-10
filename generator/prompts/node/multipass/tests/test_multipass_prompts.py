@@ -8,7 +8,6 @@ from generator.prompts.node.multipass import (
     NODE_FUNCTIONS,
     PASS1_SKELETON_SYSTEM,
     PASS2_PROSE_SYSTEM,
-    SLIMMED_AP_KEEP,
     build_pass1_contract_schema,
     build_pass1_contract_user_prompt,
     build_pass1_node_schema,
@@ -17,7 +16,6 @@ from generator.prompts.node.multipass import (
     build_pass1_user_prompt,
     build_pass2_schema,
     build_pass2_user_prompt,
-    slimmed_anti_patterns,
 )
 
 _SPEC = {
@@ -28,18 +26,6 @@ _SPEC = {
     "optional_clues": ["OPT1"],
     "forbidden_events": ["FORBID1"],
 }
-
-
-def test_slimmed_keep_set_is_1_to_6_and_9() -> None:
-    assert SLIMMED_AP_KEEP == frozenset({1, 2, 3, 4, 5, 6, 9})
-
-
-def test_slimmed_keeps_only_target_aps() -> None:
-    s = slimmed_anti_patterns()
-    for n in (1, 2, 3, 4, 5, 6, 9):
-        assert f"### AP-{n}:" in s, f"AP-{n} 应保留"
-    for n in (7, 8, 10):
-        assert f"### AP-{n}:" not in s, f"AP-{n} 应被瘦身掉（validator 程序化抓）"
 
 
 def test_pass1_carries_structure_rules_and_no_anti_pattern_block() -> None:
