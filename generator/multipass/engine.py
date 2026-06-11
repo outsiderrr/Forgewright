@@ -1,6 +1,8 @@
 """多 pass + 分拍场景生成引擎（结构层正式路径）—— 编排全部小调用.
 
-设计：generator/experiments/multipass_structure/DESIGN_2026-06-10_formal_landing.md（作者批准 2026-06-10）。
+设计：generator/experiments/multipass_structure/DESIGN_2026-06-10_formal_landing.md（作者批准 2026-06-10）；
+收敛路由 × junction 承接修复：DESIGN_2026-06-11_convergent_routes.md（作者批准 2026-06-11）——
+非入口节点的生成调用注入入口上下文（单入口 = 玩家原句承接；收敛多入口 = 收敛安全开头）。
 
 调用序列（全部小调用；DESIGN §5 超时架构化）：
   ①契约 → ②拓扑规划（确定性校验，重试 ≤2，仍败回退脚手架）
@@ -33,6 +35,7 @@ from generator.prompts.node.multipass import (
     build_pass1_contract_user_prompt,
     build_pass2_schema,
     build_pass2_user_prompt,
+    entry_context_block,
 )
 from generator.prompts.node.multipass.beat_pacing import (
     BEAT_PACING_SYSTEM,
@@ -229,6 +232,49 @@ def run_multipass_scene(
         beats_by_id: dict[str, list[dict[str, Any]]] = {}
         ends: dict[str, dict[str, Any]] = {}
 
+        def _entry_context(pid: str) -> dict[str, Any] | None:
+            """玩家是怎么走进节点 pid 的（收敛路由根因①⑥ + junction 承接的数据源）。
+
+            BFS 父先于子 → 父节点的骨架/正文/分拍此刻必已生成：
+              - 父 = choice：路由到 pid 的选项最终台词（1 条=单入口承接；≥2 条=收敛入口清单）；
+              - 父 = beats：链尾拍的 continue 文本（单入口承接）。
+            入口节点 / 无可用文本 → None（不注入）。
+            """
+            par = parents.get(pid)
+            if not par:
+                return None
+            pnode = by_id[par]
+            if pnode.get("kind") == "choice":
+                skel_opts = (skeletons.get(par) or {}).get("options") or []
+                prose_opts = (proses.get(par) or {}).get("options") or []
+                entries = []
+                for i, o in enumerate(skel_opts):
+                    if o.get("route_to") != pid:
+                        continue
+                    text = (prose_opts[i].get("text", "") if i < len(prose_opts) else "") or o.get(
+                        "intent", ""
+                    )
+                    if text:
+                        entries.append({"text": text, "intent": o.get("intent", "")})
+                if not entries:
+                    return None
+                stance = next(
+                    (r.get("stance") for r in pnode.get("routes") or [] if r.get("to") == pid),
+                    None,
+                )
+                return {
+                    "mode": "single" if len(entries) == 1 else "convergent",
+                    "entries": entries,
+                    "stance": stance,
+                }
+            if pnode.get("kind") == "beats":
+                beats = beats_by_id.get(par) or []
+                last = ((beats[-1].get("continue_option") or {}).get("text") or "").strip() if beats else ""
+                if not last:
+                    return None
+                return {"mode": "single", "entries": [{"text": last, "intent": ""}], "stance": None}
+            return None
+
         def _history(pid: str) -> tuple[list[dict[str, Any]], list[str], list[str]]:
             """祖先链 → (prior_nodes 摘要, 已揭露线索, 已用选项角度)。"""
             prior: list[dict[str, Any]] = []
@@ -258,6 +304,7 @@ def run_multipass_scene(
             pid = pnode["node_id"]
             kind = pnode.get("kind")
             prior, revealed, used_intents = _history(pid)
+            entry_ctx = _entry_context(pid)
 
             if kind == "choice":
                 allowed = [r.get("to") for r in pnode.get("routes") or []]
@@ -276,6 +323,7 @@ def run_multipass_scene(
                             planned_reveals=pnode.get("reveals") or [],
                             routes=pnode.get("routes") or [],
                             prior_nodes=prior,
+                            entry_context=entry_ctx,
                         )
                         + (
                             f"\n\n## ⚠️ 上一次输出的路由问题（必须修正）\n- "
@@ -304,6 +352,7 @@ def run_multipass_scene(
                         used_option_intents=used_intents,
                         scene_anchor_facts=scene_spec.get("character_state"),
                         mid_scene=(pid != plan["entry_node_id"]),
+                        entry_context=entry_ctx,
                     ),
                     build_pass2_schema(),
                 )
@@ -315,6 +364,10 @@ def run_multipass_scene(
                     situation = pnode.get("function", "")
                     if pid != plan["entry_node_id"]:
                         situation += "\n（本链不是场景开场：空间与在场人物已建立，旁白不要重新做进场式描写）"
+                    if ci == 0:
+                        eb = entry_context_block(entry_ctx)
+                        if eb:
+                            situation += "\n\n" + eb  # 链首拍承接入口（chunk>1 走跨 chunk 传话）
                     if revealed:
                         situation += f"\n（此前已揭露：{'、'.join(revealed[-6:])}）"
                     if len(chunks) > 1:
@@ -353,6 +406,7 @@ def run_multipass_scene(
                         node_function=pnode.get("function", ""),
                         path_summary="；".join(b for b in path_bits if b) or "（直达）",
                         scene_anchor_facts=scene_spec.get("character_state"),
+                        entry_context=entry_ctx,
                     ),
                     build_end_prose_schema(),
                 )
@@ -383,13 +437,18 @@ def run_multipass_scene(
     # ⑧ validator（只读调用；AP flag 记录不拦截——复核期信号）
     validation = _validate(graph)
 
+    metrics = _metrics(metas, graph, skeletons, fallback_used, validation)
+    metrics["cross_branch_line_similarity"] = _cross_branch_line_similarity(
+        parents, proses, beats_by_id, ends
+    )
+
     return MultipassSceneResult(
         status="success",
         graph=graph,
         design=design,
         call_metas=metas,
         validation=validation,
-        metrics=_metrics(metas, graph, skeletons, fallback_used, validation),
+        metrics=metrics,
         warnings=warnings,
         topology_fallback=fallback_used,
     )
@@ -453,6 +512,18 @@ def _metrics(
         m["narration_lengths"] = narr_lens
         m["narration_len_avg"] = (sum(narr_lens.values()) / len(narr_lens)) if narr_lens else 0
         m["option_counts"] = {nid: len(n.get("options") or []) for nid, n in nodes.items()}
+        # 出边收敛度：choice 节点"出边 → 路由到它的选项数"（≥2 = 有意收敛；
+        # 收敛稀释从此可量化跨 run 追踪——复核根因①观测项）
+        convergence: dict[str, dict[str, int]] = {}
+        for pid, sk in skeletons.items():
+            per_route: dict[str, int] = {}
+            for o in sk.get("options") or []:
+                rt = o.get("route_to")
+                if rt:
+                    per_route[rt] = per_route.get(rt, 0) + 1
+            if per_route:
+                convergence[pid] = per_route
+        m["route_convergence"] = convergence
         # choice 节点两两 intent 重叠（功能分化客观信号；越低越好）
         overlaps: dict[str, list[str]] = {}
         ids = sorted(skeletons)
@@ -468,6 +539,61 @@ def _metrics(
         m["hard_pass"] = validation.get("hard_pass")
         m["ap_flag_count"] = sum(len(v) for v in validation.get("ap_flags", {}).values())
     return m
+
+
+def _cross_branch_line_similarity(
+    parents: dict[str, str | None],
+    proses: dict[str, dict[str, Any]],
+    beats_by_id: dict[str, list[dict[str, Any]]],
+    ends: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """平行分支（非祖先关系节点）对白行两两最大相似度——近原文复制的客观信号（根因⑥观测项）。
+
+    纯本地计算（difflib，0 LLM）；只比 ≥8 字的对白行（短寒暄难免相似，不算信号）。
+    """
+    import difflib
+
+    lines_by_node: dict[str, list[str]] = {}
+    for pid, pr in proses.items():
+        lines_by_node.setdefault(pid, []).extend(pr.get("dialogue") or [])
+    for pid, beats in beats_by_id.items():
+        for b in beats:
+            lines_by_node.setdefault(pid, []).extend(b.get("dialogue") or [])
+    for pid, e in ends.items():
+        lines_by_node.setdefault(pid, []).extend(e.get("dialogue") or [])
+    lines_by_node = {
+        k: [s.strip() for s in v if len(s.strip()) >= 8] for k, v in lines_by_node.items()
+    }
+
+    def _ancestors(nid: str) -> set[str]:
+        seen: set[str] = set()
+        cur = parents.get(nid)
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            cur = parents.get(cur)
+        return seen
+
+    max_ratio, max_pair = 0.0, None
+    high_pairs: list[dict[str, Any]] = []
+    ids = sorted(lines_by_node)
+    for i, a in enumerate(ids):
+        for b in ids[i + 1 :]:
+            if a in _ancestors(b) or b in _ancestors(a):
+                continue
+            for la in lines_by_node[a]:
+                for lb in lines_by_node[b]:
+                    r = difflib.SequenceMatcher(None, la, lb).ratio()
+                    if r > max_ratio:
+                        max_ratio, max_pair = r, f"{a}↔{b}"
+                    if r >= 0.8:
+                        high_pairs.append(
+                            {"nodes": f"{a}↔{b}", "ratio": round(r, 3), "a": la, "b": lb}
+                        )
+    return {
+        "max_ratio": round(max_ratio, 3),
+        "max_pair": max_pair,
+        "high_similarity_lines": high_pairs[:10],
+    }
 
 
 def write_artifacts(result: MultipassSceneResult, out_dir: Path) -> dict[str, Path]:

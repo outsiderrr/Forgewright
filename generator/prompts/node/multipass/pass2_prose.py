@@ -73,8 +73,9 @@ def build_pass2_user_prompt(
     used_option_intents: list[str],
     scene_anchor_facts: str | None = None,
     mid_scene: bool = False,
+    entry_context: dict[str, Any] | None = None,
 ) -> str:
-    """拼接 Pass 2 user message（单节点 + 历史压缩摘要 + 场景进度/锚定）.
+    """拼接 Pass 2 user message（单节点 + 历史压缩摘要 + 场景进度/锚定 + 入口上下文）.
 
     Args:
         scene_contract: Pass 1 产出的场景契约。
@@ -83,8 +84,12 @@ def build_pass2_user_prompt(
         used_option_intents: 本节点之前已用过的选项 intent（历史压缩）。
         scene_anchor_facts: 在场人物/空间锚定事实（复核根因④）。
         mid_scene: True = 本节点不是场景开场（复核反馈：中段节点不得重新做进场式全景描写）。
+        entry_context: 玩家进入本节点的入口上下文（收敛路由根因①⑥ + junction 承接；
+            单入口=NPC 开场白必须承接玩家原句，收敛多入口=开场白必须对所有入口成立）。
     """
     import json
+
+    from generator.prompts.node.multipass.entry_context import entry_context_block
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
     sk = json.dumps(node_skeleton, ensure_ascii=False, indent=2)
@@ -112,10 +117,12 @@ def build_pass2_user_prompt(
         if mid_scene
         else ""
     )
+    eb = entry_context_block(entry_context)
+    entry_block = f"\n{eb}\n" if eb else ""
 
     return f"""## 场景契约（固定上下文）
 {sc}
-{anchor_block}{progress_block}
+{anchor_block}{progress_block}{entry_block}
 ## 本节点骨架（结构已定，不要改）
 node_id = {node_skeleton.get('node_id')} ；function = {node_skeleton.get('function')}
 {sk}
@@ -176,6 +183,7 @@ def build_end_prose_user_prompt(
     node_function: str,
     path_summary: str,
     scene_anchor_facts: str | None = None,
+    entry_context: dict[str, Any] | None = None,
 ) -> str:
     """end（终止）节点收束旁白的 user prompt.
 
@@ -184,8 +192,12 @@ def build_end_prose_user_prompt(
         node_function: 本 end 节点一句话功能（来自 TopologyPlan，如"带完整线索离开"）。
         path_summary: 到达本结局的路径摘要（走了什么分支、拿到了什么）。
         scene_anchor_facts: 在场人物/空间锚定事实（复核根因④：收束段最易凭空加人/转场）。
+        entry_context: 玩家进入本结局的入口上下文（通常 = 链尾玩家末句；
+            junction 承接：收束不得无视玩家最后说的话）。
     """
     import json
+
+    from generator.prompts.node.multipass.entry_context import entry_context_block
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
     anchor_block = (
@@ -196,9 +208,11 @@ def build_end_prose_user_prompt(
         if scene_anchor_facts
         else ""
     )
+    eb = entry_context_block(entry_context)
+    entry_block = f"\n{eb}\n" if eb else ""
     return f"""## 场景契约（固定上下文）
 {sc}
-{anchor_block}
+{anchor_block}{entry_block}
 ## 你要写的：一个**终止节点（end）**的收束旁白
 - 本结局功能：{node_function}
 - 玩家到达路径：{path_summary}

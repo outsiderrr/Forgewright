@@ -47,11 +47,15 @@ def test_fallback_topology_passes_validation() -> None:
 
 
 def test_fallback_clue_layering() -> None:
-    """软分支 = required + optional 全量；硬分支 = 仅 required。"""
+    """软分支 = required + optional 全量；硬分支 = required 的残缺记号版（不与软分支原文重复）。"""
     plan = fallback_topology(_SPEC)
     by_id = {n["node_id"]: n for n in plan["nodes"]}
     assert by_id["branch_soft"]["reveals"] == ["R1", "R2", "O1"]
-    assert by_id["branch_hard"]["reveals"] == ["R1", "R2"]
+    hard = by_id["branch_hard"]["reveals"]
+    assert len(hard) == 2
+    assert all(r.startswith(("R1", "R2")) and "残缺记号" in r for r in hard)
+    # 平行分支线索查重自洽：安全网自身永远过校验（test_fallback_topology_passes_validation 总闸）
+    assert not set(hard) & set(by_id["branch_soft"]["reveals"])
 
 
 def test_missing_end_rejected() -> None:
@@ -124,6 +128,34 @@ def test_node_count_caps() -> None:
         prev_node = new_node
     errs = validate_topology(plan)
     assert any("超界" in e for e in errs)
+
+
+def test_parallel_duplicate_reveal_rejected() -> None:
+    """同一线索原文分配给两个平行分支 = 硬错误（收敛路由根因⑥拓扑层强制）。"""
+    plan = _valid_plan()
+    by_id = {n["node_id"]: n for n in plan["nodes"]}
+    by_id["press_line"]["reveals"] = ["R1"]  # soft_line 也有 R1 原文
+    errs = validate_topology(plan)
+    assert any("R1" in e and "平行" in e for e in errs)
+
+
+def test_ancestor_chain_duplicate_reveal_allowed() -> None:
+    """祖先链上的线索重复不算平行复制（不构成平行分支）。"""
+    plan = _valid_plan()
+    by_id = {n["node_id"]: n for n in plan["nodes"]}
+    by_id["opening"]["reveals"] = ["R1"]  # opening 是 soft_line 的祖先
+    assert validate_topology(plan) == []
+
+
+def test_parallel_duplicate_reports_once_per_clue() -> None:
+    """一条线索复制到 3 个平行节点 → 1 条错误（列出全部节点），不刷屏。"""
+    plan = _valid_plan()
+    by_id = {n["node_id"]: n for n in plan["nodes"]}
+    by_id["press_line"]["reveals"] = ["R1"]
+    by_id["end_bad"]["reveals"] = ["R1"]
+    errs = [e for e in validate_topology(plan) if "R1」" in e]
+    assert len(errs) == 1
+    assert "end_bad" in errs[0] and "press_line" in errs[0] and "soft_line" in errs[0]
 
 
 def test_deep_copy_safety() -> None:

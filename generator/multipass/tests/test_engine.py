@@ -353,6 +353,62 @@ def test_prompts_carry_anchor_and_second_person_rules() -> None:
     assert "ANCHOR_MARK" in end_u and "不得新增人物" in end_u
 
 
+class _CapturingProvider(MockProvider):
+    """记录每类调用 user prompt 的 MockProvider（入口上下文注入断言用）。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.user_prompts: dict[str, list[str]] = {}
+
+    def generate_structured(self, *, system_prompt, user_prompt, json_schema):  # type: ignore[override]
+        resp = super().generate_structured(
+            system_prompt=system_prompt, user_prompt=user_prompt, json_schema=json_schema
+        )
+        self.user_prompts.setdefault(self.calls[-1], []).append(user_prompt)
+        return resp
+
+
+def test_entry_context_injected_at_junctions(isolated_budget) -> None:
+    """收敛路由根因①⑥ + junction 承接（DESIGN_2026-06-11）：
+    - 收敛入口（soft_line ← 选项 0/2）：链首拍带"对所有入口都成立"+ 两句选项台词；
+    - 单入口（press_line ← 选项 1）：链首拍带"先承接这句话"+ 玩家原句；
+    - end 节点：带链尾玩家末句（「我记下了。」）；
+    - 入口节点（opening）：不带入口上下文。
+    """
+    provider = _CapturingProvider()
+    run_multipass_scene(provider, _SPEC, _CONFIG)
+
+    beats_prompts = provider.user_prompts["beats"]
+    # MockProvider 骨架路由轮转：选项 0/2 → soft_line（收敛 2 入口），选项 1 → press_line（单入口）
+    conv = [u for u in beats_prompts if "对所有入口都成立" in u]
+    assert conv, "soft_line 链首拍应带收敛入口清单"
+    assert "我想找个人，打听点事。" in conv[0] and "我直说了：莱特的事。" in conv[0]
+    assert "低压软问" in conv[0]  # 该入边 stance 作为共同姿态注入
+    single = [u for u in beats_prompts if "先承接这句话" in u and "[观察] 先看看角落那个人。" in u]
+    assert single, "press_line 链首拍应带单入口玩家原句"
+    # 链首注入只发生在第 1 chunk（第 2 chunk 走既有跨 chunk 传话，不重复注入入口）
+    assert all("入口上下文" not in u for u in beats_prompts if "本链第 2/2 段" in u)
+
+    # end 节点承接链尾玩家末句
+    for u in provider.user_prompts["end"]:
+        assert "玩家刚说/刚做：「我记下了。」" in u
+
+    # 入口 choice（opening）骨架/正文均不带入口上下文
+    assert all("入口上下文" not in u for u in provider.user_prompts["skeleton"])
+    assert all("入口上下文" not in u for u in provider.user_prompts["prose"])
+
+
+def test_metrics_route_convergence_and_cross_branch_similarity(isolated_budget) -> None:
+    """D-2 可观测项：出边收敛度 + 平行分支对白行相似度（mock 两链对白相同 → 1.0）。"""
+    result = run_multipass_scene(MockProvider(), _SPEC, _CONFIG)
+    m = result.metrics
+    assert m["route_convergence"] == {"opening": {"soft_line": 2, "press_line": 1}}
+    sim = m["cross_branch_line_similarity"]
+    assert sim["max_ratio"] == 1.0  # mock 给两条平行链同一套对白 → 信号被抓到
+    assert sim["max_pair"] == "press_line↔soft_line"
+    assert sim["high_similarity_lines"]
+
+
 def test_render_smoke(isolated_budget) -> None:
     result = run_multipass_scene(MockProvider(), _SPEC, _CONFIG)
     md = render_scene_md(result)
