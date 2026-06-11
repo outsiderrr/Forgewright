@@ -297,8 +297,171 @@ def build_pass1_node_schema() -> dict[str, Any]:
     return _node_skeleton_schema()
 
 
+# ---------- (c) 动态拓扑版：单 choice 节点骨架（拓扑规划 pass 给定功能 + 出边）----------
+#
+# 与 (b) 的区别：节点功能/出边不再来自固定的 NODE_FUNCTIONS（露西 4 节点脚手架），
+# 而来自拓扑规划 pass 的 TopologyPlan；每个 option 必须声明 route_to ∈ 本节点出边目标集合，
+# 供组装层确定性接线（option.target_node_id 由代码填，LLM 不写状态）。
+
+PASS1_SKELETON_SYSTEM_DYNAMIC = """你是 Forgewright 的 design-first CRPG **骨架设计器**。
+
+## 你的任务
+只设计**单个 choice 节点**的 Interaction Skeleton（互动骨架）。
+**绝不写节点正文**——不写 narration（旁白）、不写 NPC 对白、不写玩家选项的最终台词。正文是下一遍的事。
+
+## 结构规则（只有结构，没有文风）
+
+### 1. 节点功能必须分化【最重要】
+- 严格扣住任务给定的本节点 `function`（拓扑规划已定），不要偏成别的节点的功能。
+- **严禁**与已设计的前序节点用同一套选项角度或同一个局面。
+- 开场类节点不得预先泄露深层线索。
+
+### 2. Choice pressure（每个选项的设计意图；第三人称设计语言即可）
+每个选项写清楚四问 + 路由：
+- `intent`：玩家**想做什么**（设计意图标签，第三人称 OK，如"软问路线"。这只是给写正文那遍用的，不是最终玩家台词。）
+- `payoff`：能得到什么
+- `cost`：要付出什么
+- `relationship_delta`：对 trust / fear / cooperability / affinity（信任/恐惧/合作度/好感）的影响 + 理由
+- `route_to`：本选项把玩家送往哪条出边（**必须**从任务给定的出边目标里选；每条出边至少被一个选项使用）
+
+### 3. 线索分层
+- 每个节点写明 `reveals`（本节点揭露哪些线索）和 `hides`（刻意不给哪些）。
+- 遵守任务给定的本节点线索分配；不要把别的分支的线索提前抖出来。
+- 同一线索**禁止**在多个分支里原文复制；不同分支必须改变完整度。
+
+## 不要做的事
+- 不要写 narration / 对白 / 选项最终台词（下一遍才写）。
+- 不要评论文风、AI 腔、白描（与本遍无关）。
+- 不要增删出边或发明新的 route 目标。
+
+## 输出格式
+- 必须是 valid JSON 单对象；第一个字符 `{`，最后一个字符 `}`。
+- 不含 markdown 围栏（```）、开场白、注释。
+"""
+
+
+def build_dynamic_node_user_prompt(
+    *,
+    scene_spec: dict[str, Any],
+    scene_contract: dict[str, Any],
+    node_id: str,
+    function: str,
+    planned_reveals: list[str],
+    routes: list[dict[str, str]],
+    prior_nodes: list[dict[str, Any]],
+) -> str:
+    """动态拓扑版：设计单个 choice 节点骨架的 user prompt.
+
+    Args:
+        scene_spec: 场景 spec。
+        scene_contract: 契约 pass 产出。
+        node_id: 本节点 id（来自 TopologyPlan）。
+        function: 本节点一句话功能（来自 TopologyPlan）。
+        planned_reveals: 拓扑规划分配给本节点的线索。
+        routes: 本节点出边（[{"to": ..., "stance": ...}]，来自 TopologyPlan）。
+        prior_nodes: 已设计的前序节点摘要（node_id / function / reveals / options[].intent）。
+    """
+    import json
+
+    sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
+    route_lines = "\n".join(
+        f"- route_to = `{r['to']}`：{r.get('stance', '')}" for r in routes
+    )
+    reveals_block = (
+        "\n".join(f"- {r}" for r in planned_reveals) if planned_reveals else "（本节点不揭露新线索）"
+    )
+    if prior_nodes:
+        prior_lines = []
+        for p in prior_nodes:
+            intents = "、".join(o.get("intent", "") for o in p.get("options", []))
+            prior_lines.append(
+                f"- {p.get('node_id')}（{p.get('function','')}）"
+                f"\n    已揭露线索：{('、'.join(p.get('reveals', []))) or '（无）'}"
+                f"\n    已用选项角度：{intents or '（无）'}"
+            )
+        prior_block = "\n".join(prior_lines)
+    else:
+        prior_block = "（这是第一个节点，前面还没有已设计的节点）"
+
+    return f"""请只设计**一个** choice 节点的 Interaction Skeleton（互动骨架），**不要写正文**。
+
+{_scene_spec_block(scene_spec)}
+
+## 场景契约（已定，固定上下文）
+{sc}
+
+## 你现在要设计的节点
+node_id = **{node_id}**
+固定功能（必须严格扣住）：{function}
+
+### 本节点的出边（拓扑已定；每个 option 的 route_to 必须从这里选，每条出边至少被一个选项使用）
+{route_lines}
+
+### 拓扑分配给本节点揭露的线索
+{reveals_block}
+
+## 已设计的前序节点（你必须与它们**功能不重叠**，并遵守**线索分层**）
+{prior_block}
+
+要求：
+- 写 function（一句话，呼应固定功能）/ situation（当前局面）/ choice_pressure（选择压力来源）/
+  3-5 个 option（每个含 intent / payoff / cost / relationship_delta / route_to）/ reveals / hides。
+- 不要重复前序节点的局面或选项角度；不要把别的分支线索提前抖出来。
+
+按下面的输出 JSON schema 返回**单个节点对象**。
+"""
+
+
+def build_dynamic_node_schema(allowed_route_targets: list[str]) -> dict[str, Any]:
+    """动态拓扑版单节点骨架输出契约：option 多一个 route_to（enum = 本节点出边目标）。"""
+    option_skeleton = {
+        "type": "object",
+        "required": ["intent", "payoff", "cost", "relationship_delta", "route_to"],
+        "properties": {
+            "intent": {"type": "string", "description": "设计意图标签（第三人称 OK），如'软问路线'"},
+            "payoff": {"type": "string", "description": "能得到什么"},
+            "cost": {"type": "string", "description": "要付出什么"},
+            "relationship_delta": {
+                "type": "string",
+                "description": "对 trust/fear/cooperability/affinity 的影响 + 理由",
+            },
+            "route_to": {
+                "enum": list(allowed_route_targets),
+                "description": "本选项路由到的出边目标（拓扑已定，不得发明）",
+            },
+        },
+    }
+    return {
+        "type": "object",
+        "required": [
+            "node_id",
+            "function",
+            "situation",
+            "choice_pressure",
+            "reveals",
+            "hides",
+            "options",
+        ],
+        "properties": {
+            "node_id": {"type": "string"},
+            "function": {"type": "string", "description": "一句话功能；与前序节点互不重叠"},
+            "situation": {"type": "string", "description": "当前局面（谁在场/空间/风险）"},
+            "choice_pressure": {"type": "string", "description": "本节点选择压力来源"},
+            "reveals": {"type": "array", "items": {"type": "string"}},
+            "hides": {"type": "array", "items": {"type": "string"}},
+            "options": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 5,
+                "items": option_skeleton,
+            },
+        },
+    }
+
+
 __all__ = [
     "PASS1_SKELETON_SYSTEM",
+    "PASS1_SKELETON_SYSTEM_DYNAMIC",
     "NODE_FUNCTIONS",
     "build_pass1_user_prompt",
     "build_pass1_schema",
@@ -306,4 +469,6 @@ __all__ = [
     "build_pass1_contract_schema",
     "build_pass1_node_user_prompt",
     "build_pass1_node_schema",
+    "build_dynamic_node_user_prompt",
+    "build_dynamic_node_schema",
 ]

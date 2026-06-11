@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from generator.prompts.node.multipass.pass2_prose import slimmed_anti_patterns
+from generator.prompts.node.anti_pattern_blacklist import ANTI_PATTERN_BLACKLIST_TEXT
 from generator.prompts.node.role_rules import ROLE_RULES_TEXT
 
 
@@ -30,17 +30,25 @@ def _build_system() -> str:
 ## 节拍规则
 - 把线索清单**分散**到各拍，**每拍只揭 1-2 条**；不要一拍说完。
 - 各拍之间要有"露西说一点 → 玩家接一句 → 露西再说一点"的来回感。
+- **承接**：第 N+1 拍的 NPC 对白必须先**承接第 N 拍玩家刚说的话**（回应它，或明确拒答），
+  再推进新线索；不许答非所问、不许自顾自往下讲。
 - 最后一拍的 continue_option 可以是收束（如"我记下了。"）。
+- **场景锚定**：在场人物与空间以任务给定的"场景锚定事实"为准——**不得新增任何人物**
+  （侍者/伙计/仆人等都不许凭空出现），**不得转移空间**；旁白中的玩家一律写"你"，
+  不得出现"玩家"二字。
 
-## continue_option 文本规则（作者反馈）
+## continue_option 文本规则（作者反馈 2026-06-08 / 2026-06-10）
 - 选项默认就是玩家的话，**第一人称隐含，别硬塞"我"**。
-- 写成一句**短追问 / 短回应 / 动作**：如"然后呢？""钥匙在哪？""[记下路标]""我记下了。"
-- ≤ 15 汉字。
+- **自然口语，别电报体**：追问写成一句自然的话（约 6-20 字），如"你为什么这么着急？"
+  "那里怎么走？"；不要压缩成"为什么急？""说报告。"这种电报体。
+- **不得把 NPC 刚说完的内容变成问题再问一遍**；上一拍已回答的话题不要再追问。
+- 没有新追问点时，用**简短确认**（"我知道了。""原来如此。"）或**动作**（"[接过副本]"
+  "[记下路标]"）推进，这时**不用疑问句**。
+- ≤ 20 汉字。
 
 {ROLE_RULES_TEXT}
 
-## Anti-pattern（瘦身版；AP-7 / AP-8 / AP-10 由 validator 程序化兜底，不在此列）
-{slimmed_anti_patterns()}
+{ANTI_PATTERN_BLACKLIST_TEXT}
 
 ## 输出格式
 - valid JSON 单对象，第一个字符 `{{`，最后一个字符 `}}`，无 markdown 围栏。
@@ -58,15 +66,29 @@ def build_beat_pacing_user_prompt(
     node_situation: str,
     reveals: list[str],
     npc_name: str = "露西",
+    scene_anchor_facts: str | None = None,
 ) -> str:
-    """拼接 beat pacing user message（要分拍的节点 = 局面 + 线索清单）。"""
+    """拼接 beat pacing user message（要分拍的节点 = 局面 + 线索清单 + 场景锚定）。
+
+    Args:
+        scene_anchor_facts: 在场人物/空间锚定事实（复核根因④：多 pass 后段会丢场景锚定、
+            凭空冒出侍者/仆人；注入后链内每拍都以此为准，不得新增人物/转场）。
+    """
     import json
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
     rv = "\n".join(f"- {r}" for r in reveals) if reveals else "（无）"
+    anchor_block = (
+        f"""
+## 场景锚定事实（每一拍都以此为准；不得新增人物、不得转移空间）
+{scene_anchor_facts}
+"""
+        if scene_anchor_facts
+        else ""
+    )
     return f"""## 场景契约（固定上下文）
 {sc}
-
+{anchor_block}
 ## 要分拍的节点
 当前局面：{node_situation}
 
@@ -98,7 +120,10 @@ def build_beat_pacing_schema() -> dict[str, Any]:
                             "type": "object",
                             "required": ["text"],
                             "properties": {
-                                "text": {"type": "string", "description": "玩家短追问/回应/动作；第一人称隐含；≤15 字"}
+                                "text": {
+                                    "type": "string",
+                                    "description": "玩家自然口语的一句追问/确认/动作；第一人称隐含；别电报体；≤20 字",
+                                }
                             },
                         },
                     },

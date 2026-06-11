@@ -1,0 +1,27 @@
+=== lucy candidate_2 ===
+provider: http://api.key77qiqi.com/v1 gpt-5.5 json_mode=prompt_only
+============================================================
+candidate 1: success
+节点 26 个 · 调用 15 次 · $0.3383 · 430.8s · 硬校验 ✅ · AP flag 1 · 拓扑 动态
+  scene: generator/experiments/multipass_structure/2026-06-10_review/lucy/candidate_2/scene.md
+=== whitcroft candidates 1-2 ===
+provider: http://api.key77qiqi.com/v1 gpt-5.5 json_mode=prompt_only
+============================================================
+candidate 1: success
+节点 27 个 · 调用 16 次 · $0.3682 · 226.7s · 硬校验 ✅ · AP flag 0 · 拓扑 动态
+  scene: generator/experiments/multipass_structure/2026-06-10_review/whitcroft/candidate_1/scene.md
+============================================================
+candidate 2: success
+节点 29 个 · 调用 16 次 · $0.3725 · 241.4s · 硬校验 ✅ · AP flag 1 · 拓扑 动态
+  scene: generator/experiments/multipass_structure/2026-06-10_review/whitcroft/candidate_2/scene.md
+=== vick candidates 1-2 ===
+provider: http://api.key77qiqi.com/v1 gpt-5.5 json_mode=prompt_only
+============================================================
+candidate 1: success
+节点 29 个 · 调用 18 次 · $0.4459 · 345.0s · 硬校验 ✅ · AP flag 1 · 拓扑 动态
+  scene: generator/experiments/multipass_structure/2026-06-10_review/vick/candidate_1/scene.md
+============================================================
+candidate 2: success
+节点 24 个 · 调用 17 次 · $0.4113 · 287.6s · 硬校验 ✅ · AP flag 3 · 拓扑 动态
+  scene: generator/experiments/multipass_structure/2026-06-10_review/vick/candidate_2/scene.md
+=== ALL DONE ===

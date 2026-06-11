@@ -59,6 +59,34 @@ def test_ap7_empty_narration_returns_empty() -> None:
     assert detect_ap7_narration_steals_npc_speech("") == []
 
 
+# ---- 2026-06-10 误报修复（结构层复核实证三种误报型；作者授权）----
+
+
+def test_ap7_exempts_comma_attribution() -> None:
+    """「…」她说，「…」是引语归属不是转述 → 不 flag."""
+    narration = "「不在主路旁。」她说，「从酒馆后方那条土路绕过去。」"
+    assert detect_ap7_narration_steals_npc_speech(narration) == []
+
+
+def test_ap7_exempts_speaking_as_physical_action() -> None:
+    """"她说话时没有抬头" 是言说动作的物理描写不是转述 → 不 flag."""
+    assert detect_ap7_narration_steals_npc_speech("她说话时没有抬头，声音被楼下的低音盖住。") == []
+    assert detect_ap7_narration_steals_npc_speech("他讲话的间隙，炉火响了一声。") == []
+
+
+def test_ap7_exempts_transcription_inside_quotes() -> None:
+    """引号内对白是 NPC 自己的话（如露西转述莱特），不属于旁白转述 → 不 flag."""
+    narration = "露西压低声音。\n\n「他说，屋子外面只有二十步宽，里面量出来却多了四步。」"
+    assert detect_ap7_narration_steals_npc_speech(narration) == []
+
+
+def test_ap7_still_flags_transcription_outside_quotes() -> None:
+    """引号外的真转述仍要抓（召回不降级）."""
+    narration = "她说莱特怕的不是打手。「坐下。」她指了指椅子。"
+    flags = detect_ap7_narration_steals_npc_speech(narration)
+    assert any(f.ap_id == "AP-7" for f in flags)
+
+
 # ---------- AP-8 ----------
 
 

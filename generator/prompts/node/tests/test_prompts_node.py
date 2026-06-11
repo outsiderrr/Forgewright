@@ -2,8 +2,9 @@
 
 覆盖：
   - role_rules 文本含 3 分类关键词
-  - anti_pattern_blacklist 文本含 10 条 AP-1 ~ AP-10
-  - system.NODE_SYSTEM_PROMPT 是 3 段拼接（CORE_INTRO + ROLE_RULES + AP_BLACKLIST + OUTPUT_FORMAT）
+  - anti_pattern_blacklist 提示词版含 7 条（AP-1~6 + AP-9）；AP-7/8/10 不在任何生成 prompt
+    （已由 validator/anti_pattern_detector.py 程序化检测——Phase 1 结构层落地瘦身）
+  - system.NODE_SYSTEM_PROMPT 是 4 段拼接（CORE_INTRO + ROLE_RULES + AP_BLACKLIST + OUTPUT_FORMAT）
   - fill.build_node_user_message 渲染 6 段（known_info / foreground_goal / background_seeds / npc_state / skeleton / 任务说明）
 """
 from __future__ import annotations
@@ -48,17 +49,20 @@ def test_role_rules_forbids_narration_stealing_npc_speech() -> None:
 # ---------- anti_pattern_blacklist ----------
 
 
-def test_anti_pattern_blacklist_lists_all_10() -> None:
-    """anti-pattern 文本必须含 AP-1 ~ AP-10 全部 10 个标题."""
-    for i in range(1, 11):
+def test_anti_pattern_blacklist_lists_prompt_7() -> None:
+    """提示词版黑名单必须含 AP-1~6 + AP-9 共 7 个标题（编号不重排）."""
+    for i in (1, 2, 3, 4, 5, 6, 9):
         assert f"AP-{i}:" in ANTI_PATTERN_BLACKLIST_TEXT, f"missing AP-{i}"
 
 
-def test_anti_pattern_blacklist_marks_programmatic_ones() -> None:
-    """AP-7 / AP-8 / AP-10 标【程序化检测】."""
-    assert "AP-7: 旁白抢 NPC 的台词【程序化检测】" in ANTI_PATTERN_BLACKLIST_TEXT
-    assert "AP-8: 选项第三人称化【程序化检测】" in ANTI_PATTERN_BLACKLIST_TEXT
-    assert "AP-10: 指代不清 / 用单字代称自己【程序化检测】" in ANTI_PATTERN_BLACKLIST_TEXT
+def test_anti_pattern_blacklist_excludes_programmatic_ones() -> None:
+    """AP-7 / AP-8 / AP-10 不进生成 prompt（validator 程序化检测兜底）."""
+    for i in (7, 8, 10):
+        assert f"### AP-{i}:" not in ANTI_PATTERN_BLACKLIST_TEXT, (
+            f"AP-{i} 应只存在于 validator/anti_pattern_detector.py，不应回到生成 prompt"
+        )
+    # 黑名单头部要向 prompt 读者交代这 3 条去哪了
+    assert "程序化检测" in ANTI_PATTERN_BLACKLIST_TEXT
 
 
 # ---------- system.NODE_SYSTEM_PROMPT ----------
@@ -69,8 +73,26 @@ def test_system_prompt_contains_4_sections() -> None:
     p = NODE_SYSTEM_PROMPT
     assert "节点级**对话生成器" in p  # CORE_INTRO
     assert "3 分类角色守则" in p       # ROLE_RULES_TEXT
-    assert "AP-1" in p and "AP-10" in p  # ANTI_PATTERN_BLACKLIST
+    assert "AP-1" in p and "AP-9" in p  # ANTI_PATTERN_BLACKLIST（提示词版 7 条）
     assert "输出字段语义" in p          # OUTPUT_FORMAT_SPEC
+
+
+def test_no_programmatic_ap_in_any_generation_prompt() -> None:
+    """回归锁：AP-7/8/10 的条文不出现在任何生成 prompt（瘦身正式落地）.
+
+    校验对象 = 单 pass NODE_SYSTEM_PROMPT + 多 pass 骨架/正文/分拍 system prompt。
+    """
+    from generator.prompts.node.multipass import PASS1_SKELETON_SYSTEM, PASS2_PROSE_SYSTEM
+    from generator.prompts.node.multipass.beat_pacing import BEAT_PACING_SYSTEM
+
+    for name, prompt in {
+        "NODE_SYSTEM_PROMPT": NODE_SYSTEM_PROMPT,
+        "PASS1_SKELETON_SYSTEM": PASS1_SKELETON_SYSTEM,
+        "PASS2_PROSE_SYSTEM": PASS2_PROSE_SYSTEM,
+        "BEAT_PACING_SYSTEM": BEAT_PACING_SYSTEM,
+    }.items():
+        for i in (7, 8, 10):
+            assert f"### AP-{i}:" not in prompt, f"AP-{i} 条文泄漏进 {name}"
 
 
 def test_system_prompt_is_deterministic_assembly() -> None:

@@ -1,13 +1,18 @@
-"""Anti-pattern blacklist（反模式黑名单）— A1 反馈 v0.1 §2 的 10 条 anti-pattern.
+"""Anti-pattern blacklist（反模式黑名单）— A1 反馈 v0.1 §2 的提示词版（7 条）.
 
-供节点级 system prompt 直接 inject。validator/anti_pattern_detector.py 程序化检测
-其中 AP-7 / AP-8 / AP-10；其余 7 条（AP-1 ~ AP-6 + AP-9）由 LLM-as-judge 后续承接。
+canonical 10 条见 /docs/reviews/master_plan/2026-05-14_A1_text_review_feedback_v0.1.md §2。
+其中 AP-7 / AP-8 / AP-10 已由 validator/anti_pattern_detector.py **程序化检测**
+（detect_ap7 / ap8 / ap10），按 Phase 1 结构层落地决策（FINDINGS §3 / ADR-038 follow-up）
+**不再进任何生成提示词**——留在 prompt 里纯属白占注意力，校验器兜底。
 
-来源：/docs/reviews/master_plan/2026-05-14_A1_text_review_feedback_v0.1.md §2
+因此本模块只导出**提示词版 7 条**（AP-1 ~ AP-6 + AP-9；编号保持原编号，不重排），
+供节点级 system prompt 与多 pass 正文/分拍 prompt 直接 inject。
+其余 7 条中无法纯程序化的部分仍由 LLM-as-judge 后续承接（原计划不变）。
 """
 from __future__ import annotations
 
-ANTI_PATTERN_BLACKLIST_TEXT = """## Anti-pattern 黑名单（A1 反馈 v0.1 §2；10 条；违反 = 不合规）
+ANTI_PATTERN_BLACKLIST_TEXT = """## Anti-pattern 黑名单（A1 反馈 v0.1 §2 提示词版 7 条；违反 = 不合规）
+（AP-7 / AP-8 / AP-10 已由校验器程序化检测，不在此列；编号保持原编号。）
 
 ### AP-1: AI 对仗式 / 重复对应感过强
 - 单段内避免成对对仗式结构；前半已暗示的，后半不要重复明示
@@ -37,25 +42,9 @@ ANTI_PATTERN_BLACKLIST_TEXT = """## Anti-pattern 黑名单（A1 反馈 v0.1 §2�
 - 反例：「她的金发颜色新得过分」（"金发的一般标准"读者不知道）
 - 改法：写具体细节（如"她的金发还有刚染过的化学气味"）
 
-### AP-7: 旁白抢 NPC 的台词【程序化检测】
-- 信息属于 NPC 的，必须用 NPC 直接说的话呈现；旁白只描写物理现象 + 客观环境 + 玩家可观察的细节
-- 反例：narration 含「她说莱特在人前是教授，人后是另一种人……」/「他带她去过大西洋城……」（这些信息本应让 NPC 自己说）
-- 程序化检测：narration 含「她说 / 他说 / 她告诉你 / 他告诉你 / 她解释 / 他解释」等转述模式 → flag
-
-### AP-8: 选项第三人称化【程序化检测】
-- option.text 必须是玩家本人的第一人称语言；`[skill_name]` 检定标记可保留在前
-- 反例：「先追问赌债和维克名片，把浅层线索坐实」（第三人称意图描述）
-- 反例：「追问那个大学生：给我名字或住址」（"追问那个大学生"是第三人称）
-- 程序化检测：option.text 是否以「追问 / 共情 / 警告 / 离开 / 先 / 把 / 与 / 向 / 对」等动词或动作概括开头（去掉 `[skill]` 前缀后判断）→ flag
-
 ### AP-9: 读不懂的省略
 - 留白前必须确保读者有线索能 fill in；如果线索还没出现，直接交代
 - 反例：「有些人欠钱会怕打手，莱特怕的不是打手」（莱特怕的是什么？读者不知道）
-
-### AP-10: 指代不清 / 用单字代称自己【程序化检测】
-- 第一人称对话避免用"女孩 / 男孩 / 小孩"等单字代称自己；写"我"或具体名字
-- 反例：「女孩也得活下去，你别摆那副法官脸」（露西用"女孩"指代自己）
-- 程序化检测：NPC 引号内文本含「女孩 / 男孩 / 小孩 / 老娘」等单字代称 → flag
 """
 
 __all__ = ["ANTI_PATTERN_BLACKLIST_TEXT"]

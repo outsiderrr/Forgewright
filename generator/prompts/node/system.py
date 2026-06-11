@@ -6,7 +6,8 @@
 合成顺序（system prompt = 以下段落拼接）：
   1. CORE_INTRO              核心介绍 + JSON-only 硬约束
   2. ROLE_RULES_TEXT         3 分类角色守则（来自 role_rules.py）
-  3. ANTI_PATTERN_BLACKLIST  10 条 anti-pattern（来自 anti_pattern_blacklist.py）
+  3. ANTI_PATTERN_BLACKLIST  提示词版 7 条 anti-pattern（来自 anti_pattern_blacklist.py；
+                             AP-7/8/10 由 validator 程序化检测，不进 prompt）
   4. OUTPUT_FORMAT_SPEC      输出 JSON schema 描述 + 字段语义
   5. (动态部分 fill.py 在用户消息层拼接)：
      - player_known_info（玩家已知信息）注入段
@@ -38,11 +39,11 @@ OUTPUT_FORMAT_SPEC = """## 输出字段语义（违反 = 不合规）
 ### narration（旁白）
 - 字数：**150 ~ 400 汉字**之间
 - 严格遵守"3 分类角色守则"中的旁白契约——只写物理环境 / NPC 物理动作 / 玩家可观察细节
-- **不要在 narration 中替 NPC 转述信息**（违反 AP-7）；NPC 要传达的内容必须放在 NPC 引号内对白里
+- **不要在 narration 中替 NPC 转述信息**；NPC 要传达的内容必须放在 NPC 引号内对白里
 
 ### options[].text（玩家选项文本）
 - 每条 ≤ **25 汉字**
-- 严格遵守"3 分类角色守则"中的玩家契约——**第一人称语言**，不是第三人称意图描述（违反 AP-8）
+- 严格遵守"3 分类角色守则"中的玩家契约——**第一人称语言**，不是第三人称意图描述
 - `[skill_name]` 检定前缀可保留；主体必须第一人称
 
 ### 必须承载 foreground_goal
