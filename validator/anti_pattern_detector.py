@@ -42,18 +42,29 @@ class AntiPatternFlag:
 # ---------- AP-7: 旁白抢 NPC 台词（narration 中含转述模式）----------
 
 # 简化启发式：narration 含「她说 / 他说 / 她告诉 / 他告诉 / 她解释 / 他解释」
-# 等转述模式，且不是紧接引号（"她说：「...」" 是正常用法，不 flag）
+# 等转述模式，且不是紧接引号（"她说：「...」" 是正常用法，不 flag）。
+# 2026-06-10 误报修复（作者授权；结构层复核实证的三种误报型，详
+# generator/experiments/multipass_structure/2026-06-10_review/REVIEW_REPORT.md §2.7）：
+#   a. 逗号引语归属——「…」她说，「…」（，/, 加入豁免集）；
+#   b. "说话/讲话"是言说动作的物理描写不是转述（话 加入豁免集）；
+#   c. 引号内对白是 NPC 自己的话，不属于旁白转述（detect 时跳过引号 span——
+#      结构层组装会把 NPC 对白以「」并入 node.narration）。
+# 三者都不在"旁白转述 NPC 信息"的定义内，排除不损召回。
 _AP7_TRANSCRIPTION_RE = re.compile(
-    r"(她|他)(说|告诉|解释|说道|交代|讲|表示|提到)(?![:：「\"“])"
+    r"(她|他)(说|告诉|解释|说道|交代|讲|表示|提到)(?![:：，,「\"“话])"
 )
 
 
 def detect_ap7_narration_steals_npc_speech(narration: str) -> list[AntiPatternFlag]:
-    """AP-7 程序化检测：narration 中含第三人称转述模式（非紧接引号）."""
+    """AP-7 程序化检测：narration 中含第三人称转述模式（非紧接引号、不在引号内）."""
     if not narration:
         return []
+    # 引号内 span（复用 AP-10 的引号正则）——只审旁白本身，不审 NPC 引号内对白
+    quoted_spans = [m.span() for m in _AP10_QUOTE_RE.finditer(narration)]
     flags: list[AntiPatternFlag] = []
     for match in _AP7_TRANSCRIPTION_RE.finditer(narration):
+        if any(s <= match.start() < e for s, e in quoted_spans):
+            continue
         start = max(match.start() - 10, 0)
         end = min(match.end() + 30, len(narration))
         excerpt = narration[start:end].strip()
