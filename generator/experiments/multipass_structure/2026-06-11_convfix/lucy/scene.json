@@ -1,0 +1,536 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "lucy_roadhouse_multipass",
+  "entry_node_id": "opening",
+  "scene_anchor": "scene_hibo_roadhouse",
+  "character_refs": [
+    "char_lucy"
+  ],
+  "nodes": {
+    "opening": {
+      "node_id": "opening",
+      "type": "dialogue",
+      "narration": "希博公路酒馆的前厅被煤油灯照得发黄，吧台上有没擦干的水痕，杯底碰木板的声音断断续续。通往地下酒吧的窄楼梯在吧台侧后方，下面传来低笑、鞋跟和门轴声，任何抬高的句子都会被那道楼梯接住。露西站在酒桶旁分拣杯子，袖口卷到手肘，指节沾着柠檬皮的湿亮。你靠近时，她没有立刻抬头，只把一只空杯推到你面前，杯口朝外，像是给谈话留了一个普通顾客的外壳。靠窗角落坐着一个陌生男人，桌上没有酒，只有摊开的报纸；纸页遮住他半张脸，露出的眼睛能越过报纸边缘看见吧台和露西。露西把杯布搭回肩上，视线在你的嘴唇和窗边之间短短移了一次。\n\n「声音放低。这里有人听闲话，也有人专听不该听的词。」\n\n「别在吧台上说小屋、钥匙、教授、铁盒。你要是来买酒，就像个买酒的人。」\n\n「靠窗那个没点酒，报纸翻了三次，一口水都没要。他看的不是你。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_opening_1",
+          "text": "我不说那些词，慢慢来。",
+          "target_node_id": "soft_private_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_2",
+          "text": "我付钱，拿话就走。",
+          "target_node_id": "money_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_3",
+          "text": "我先看窗边和楼梯。",
+          "target_node_id": "watch_corner",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_4",
+          "text": "莱特的事，不说会更麻烦。",
+          "target_node_id": "pressure_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b1": {
+      "node_id": "soft_private_line_b1",
+      "type": "dialogue",
+      "narration": "露西把杯子往自己这边收了半寸，杯底擦过木面，声音很轻。她没有看靠窗角落，只把手肘压在吧台边缘，挡住嘴角的动作。\n\n「好，慢慢来。你别把声音抬起来，我就说方位。」\n\n「莱特在希博公路北侧有一间旧测绘小屋，那个词别在这里重复。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b1_continue",
+          "text": "从哪边过去？",
+          "target_node_id": "soft_private_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b2": {
+      "node_id": "soft_private_line_b2",
+      "type": "dialogue",
+      "narration": "靠窗那张报纸翻了一页，纸声短促。露西停到声音落下，才用指尖在湿木面上划出一条弯线，又很快抹掉。\n\n「从哪边？别走主路。」\n\n「从酒馆后方那条土路绕，看到第七码碑，再找一根断了半截的电线杆。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b2_continue",
+          "text": "到了以后找什么？",
+          "target_node_id": "soft_private_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b3": {
+      "node_id": "soft_private_line_b3",
+      "type": "dialogue",
+      "narration": "露西把抹布搭回杯架，动作比刚才慢。她的视线掠过你肩侧，又落回杯沿，像是在确认每个字都只停在这片吧台里。\n\n「到了以后别乱翻显眼处。」\n\n「莱特把一只小铁盒留在那里。他只说会有人来拿，没说让我打开。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b3_continue",
+          "text": "我记下了。",
+          "target_node_id": "soft_private_line_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b4": {
+      "node_id": "soft_private_line_b4",
+      "type": "dialogue",
+      "narration": "露西把擦杯子的布摊平在吧台上，指尖压住布角。靠窗那边，报纸翻过一页，纸边挡住了男人的半张脸；你能看见他桌面仍是空的。\n\n「你记下就好，别在这儿翻出来念。」\n\n「那只小铁盒里是什么，我不知道，莱特也没让我碰。门要是锁着，先看雨桶底下；他以前爱把能开门的那枚塞在桶底边。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b4_continue",
+          "text": "他还留下别的吗？",
+          "target_node_id": "soft_private_line_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b5": {
+      "node_id": "soft_private_line_b5",
+      "type": "dialogue",
+      "narration": "露西没有立刻接话。她把一只空杯推到水渍外侧，杯底在木面上蹭出很轻的一声，随后才抬眼看你。\n\n「留下的没有，来过倒是真的。」\n\n「他死前那晚到过这里，手上沾着黑色粉末，指缝里也有，洗了两遍还没干净。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b5_continue",
+          "text": "他当时说了什么？",
+          "target_node_id": "soft_private_line_b6",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "soft_private_line_b6": {
+      "node_id": "soft_private_line_b6",
+      "type": "dialogue",
+      "narration": "靠窗的报纸停了一下，又慢慢落回原处。露西把声音压得更低，手指沿着杯口转了一圈，没有再碰那块湿布。\n\n「你问他说什么？他只说了一句怪话。」\n\n「‘屋子外面只有二十步宽，里面量出来却多了四步。’我只当他那晚脑子不清醒。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_soft_private_line_b6_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_soft_leave",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_soft_leave": {
+      "node_id": "end_soft_leave",
+      "type": "end",
+      "narration": "露西听见你那句“我知道了”，把杯沿在抹布上转了半圈，才松开手。角落男人的报纸仍停在同一页，纸边遮住半张脸。你把北侧旧测绘小屋、酒馆后方土路、第七码碑、断杆、小铁盒和雨桶底下的钥匙记在身上，推门离开时，楼下的低声谈笑被门板压回去。\n\n「知道了就别回头看。」露西说。\n\n「我今晚只是在擦杯子。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "money_line_b1": {
+      "node_id": "money_line_b1",
+      "type": "dialogue",
+      "narration": "露西没有立刻伸手，只把指尖压在桌沿，视线从钱上移到靠窗角落。那张报纸仍摊着，杯口的位置没有水痕。她把声音压低，嘴唇几乎不多动。\n\n「付钱可以，拿话就走也可以。希博公路北边，有间莱特用过的旧测绘屋，你只要记这个方位。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_money_line_b1_continue",
+          "text": "北边具体怎么走？",
+          "target_node_id": "money_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "money_line_b2": {
+      "node_id": "money_line_b2",
+      "type": "dialogue",
+      "narration": "露西用指甲轻轻敲了一下桌面，像是在截断更响的问法。她没有看窗边，只把钱往自己这边拢了半寸，又停住。\n\n「你问怎么走，就听短的：别沿主路直找。」\n\n「从酒馆后面那条土路绕过去，路能把你带到附近。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_money_line_b2_continue",
+          "text": "路上认什么标记？",
+          "target_node_id": "money_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "money_line_b3": {
+      "node_id": "money_line_b3",
+      "type": "dialogue",
+      "narration": "露西把钱收进掌心，手指合拢得很快。窗边的报纸翻过一角，又落回桌面；她等那点纸声过去，才继续说。\n\n「认第七码碑，还有一根断了半截的电线杆。两个都看见，就别再往亮处走。」\n\n「莱特留下过一只小铁盒，我只知道有这么个东西，别在这里问它在哪。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_money_line_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "money_line_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "money_line_b4": {
+      "node_id": "money_line_b4",
+      "type": "dialogue",
+      "narration": "靠窗那张报纸翻过一页，纸边遮住半张脸。露西没有往那边看，只把杯沿擦了两下，湿痕停在木纹里，离你的手很近。\n\n「知道了就别在这儿把话说圆。」露西压低声音。\n\n「那只小铁盒，我没打开过，也没看过里面是什么。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_money_line_b4_continue",
+          "text": "这话听着太干净了。",
+          "target_node_id": "money_line_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "money_line_b5": {
+      "node_id": "money_line_b5",
+      "type": "dialogue",
+      "narration": "露西把杯子转了半圈，杯底在吧台上磨出一声轻响。靠窗的报纸仍摊着，桌上没有酒杯；你能看见她的指节停在杯沿内侧。\n\n「干净也好，脏也好，我只说到这里。」露西的视线落在杯口上。\n\n「楼下有人问过莱特往哪儿去，我不给你姓名，也不给你时间。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_money_line_b5_continue",
+          "text": "我记下了。",
+          "target_node_id": "end_money_leave",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_money_leave": {
+      "node_id": "end_money_leave",
+      "type": "end",
+      "narration": "露西听见你说记下了，指尖在杯沿停一下，又把杯子推回潮湿的圆痕里。靠窗那张报纸翻过一页，纸边遮住半张脸，桌上仍没有酒。你没有再展开那张纸，只把北侧旧测绘小屋、后方土路、第七码碑和断杆这几处路标带出门。酒馆门合上时，楼下的低声笑骂还贴着地板往上震。\n\n「记下就好，别在这张桌子上再念一遍。」\n\n「现在走，走得像只是换个地方喝酒。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "watch_corner": {
+      "node_id": "watch_corner",
+      "type": "dialogue",
+      "narration": "露西顺着你的视线看向窗边，又把手里的湿布搭回杯口，没有接任何旧事的话头。楼梯口传来两个人错身的脚步声，木板响了几下，吧台前的酒客转头催酒，短短一瞬把窗边挡住。靠窗那人仍坐着，报纸压在桌沿，手指停在同一行字下；有人碰翻杯垫、有人笑骂，他都没有跟着抬眼。你从杯架的缝隙看过去，他的脸偏向吧台这一侧，视线落点总在露西停步的位置附近。露西移开半步，让自己的肩背贴近酒柜，拿起一只干净杯子擦了两遍，杯口在布里发出细小摩擦声。楼梯下方又有人上来，带起潮冷的酒气和一阵低声喧哗；那阵声音盖过吧台附近的半句话，也让窗边的视线被来人的外套挡了一下。\n\n「你看得对。窗边那位不是来等酒的，也不像等朋友。」\n\n「他那张报纸半天没翻页。你要跟我说话，就等楼梯响的时候，别把我钉在这儿。」\n\n「要是不说，也别站在我旁边太久。往楼下走，看起来更像你自己有事。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_watch_corner_1",
+          "text": "我等遮挡时靠近你。",
+          "target_node_id": "observed_soft_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_watch_corner_2",
+          "text": "我借下楼从你旁边过。",
+          "target_node_id": "observed_soft_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_watch_corner_3",
+          "text": "我先下楼看入口。",
+          "target_node_id": "basement_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_watch_corner_4",
+          "text": "我确认他看你就退开。",
+          "target_node_id": "basement_line_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "observed_soft_line_b1": {
+      "node_id": "observed_soft_line_b1",
+      "type": "dialogue",
+      "narration": "露西把杯沿转向自己这一侧，指尖挡住唇形。靠窗角落的报纸仍摊着，纸页边缘没有翻动；她只抬眼看了一下那边，又把声音压回吧台下方。\n\n「你这样过来，还算像个路过的人。」\n\n「别在这儿问名字。莱特在希博公路北侧有个旧测绘屋，北边，记这个就够了。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_observed_soft_line_b1_continue",
+          "text": "那里怎么过去？",
+          "target_node_id": "observed_soft_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "observed_soft_line_b2": {
+      "node_id": "observed_soft_line_b2",
+      "type": "dialogue",
+      "narration": "露西没有立刻回答。她拿起抹布擦过一小片已经干净的台面，动作慢得像是在等窗边那道视线移开；你的肩侧挡住了她半张脸。\n\n「别走主路旁边找，太显眼。」\n\n「从酒馆后方的土路绕过去，第七码碑之后，看一根断了半截的电线杆。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_observed_soft_line_b2_continue",
+          "text": "[记下路标]",
+          "target_node_id": "observed_soft_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "observed_soft_line_b3": {
+      "node_id": "observed_soft_line_b3",
+      "type": "dialogue",
+      "narration": "露西把抹布折成窄条，压在杯底下。靠窗那张报纸轻轻动了一下，又停住；她的下巴没有朝那边偏，只把最后几个字咬得更低。\n\n「记下就别在这儿念出来。」\n\n「屋里有莱特留下的一只小铁盒。我不知道里面是什么，也不知道它被他塞在哪儿。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_observed_soft_line_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "observed_soft_line_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "observed_soft_line_b4": {
+      "node_id": "observed_soft_line_b4",
+      "type": "dialogue",
+      "narration": "露西把空杯推到吧台内侧，杯底贴着木面滑出一小段声响。靠窗那张报纸仍摊着，纸页边缘没有翻动。她说话时没有看那边，只把声音压在杯沿以下。\n\n「知道了就好。别在这儿把那些词再搬出来。」\n\n「那只小盒里是什么，我不知道。你就当我没碰过，也没问过。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_observed_soft_line_b4_continue",
+          "text": "那还能怎么找？",
+          "target_node_id": "observed_soft_line_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "observed_soft_line_b5": {
+      "node_id": "observed_soft_line_b5",
+      "type": "dialogue",
+      "narration": "露西用指节轻轻敲了一下吧台，像是在给一句话找合适的停顿。她的视线从你的手边掠过，又落回空杯，嘴角没有动。\n\n「你问怎么找，我只能说到这儿。」\n\n「开门的东西也许还在雨桶底下；也许不在。别把这句话算到我头上。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_observed_soft_line_b5_continue",
+          "text": "我记下了。",
+          "target_node_id": "end_observed_leave",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_observed_leave": {
+      "node_id": "end_observed_leave",
+      "type": "end",
+      "narration": "露西听见“我记下了”，只点了一下头，把抹布搭回杯架，杯口朝内。你带着希博公路北侧旧测绘小屋的绕行路线、七码碑和断杆两个路标、雨桶底下可能有钥匙，以及小铁盒在屋内但内容不明的说法离开。靠窗角落的男人翻过一页报纸，杯垫仍是干的；你推门时，他的视线从露西肩侧移到门缝。\n\n「记下了就别在这里重复。」\n\n「那个人不喝酒。你再来找我，先看他在不在。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "basement_line_b1": {
+      "node_id": "basement_line_b1",
+      "type": "dialogue",
+      "narration": "露西没有立刻接话。她把指尖压在杯沿上，杯子只转了半圈就停住。靠窗角落那张报纸仍摊着，纸页没有翻动，窗外的光落在桌面边缘。\n\n「你要绕开我问路，也行。别在这儿说那些词。」\n\n「地下那扇后门，出去就是旧货运坡道。楼下也有人问过他往哪去，我只知道问过，不知道是谁。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_basement_line_b1_continue",
+          "text": "那条坡道还能走吗？",
+          "target_node_id": "basement_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "basement_line_b2": {
+      "node_id": "basement_line_b2",
+      "type": "dialogue",
+      "narration": "露西的视线从报纸边缘收回，手背轻轻擦过吧台上的水痕。她说话时压低了尾音，像是在把每个字都放短一点。\n\n「能走。只是别从正路出去。」\n\n「旧货运坡道能接到酒馆后方的土路，从后面绕，别让人看见你像是专门去找什么。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_basement_line_b2_continue",
+          "text": "路上有什么记号？",
+          "target_node_id": "basement_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "basement_line_b3": {
+      "node_id": "basement_line_b3",
+      "type": "dialogue",
+      "narration": "露西把杯子推到你手边，又用指节在木面上点了三下。角落里的男人仍低着头，报纸的上沿遮住半张脸，桌上没有酒杯。\n\n「你只记这几个：希博公路北侧，第七码碑，断了半截的电线杆。」\n\n「再多的我不在这里说，也别回头看我。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_basement_line_b3_continue",
+          "text": "我记下了。",
+          "target_node_id": "end_basement_leave",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_basement_leave": {
+      "node_id": "end_basement_leave",
+      "type": "end",
+      "narration": "露西把抹布搭回柜台边，杯底在木面上轻轻一碰。窗角那张报纸翻了一页，纸声盖过楼下短促的笑声。你把第七码碑、北侧、断杆这几个词压在舌后，没有再看她。后门外的冷风从门缝进来，带着潮土和煤烟味；酒馆的灯留在身后，街面只剩一线湿亮。\n\n「记住就好。别在这里再念一遍。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "pressure_line_b1": {
+      "node_id": "pressure_line_b1",
+      "type": "dialogue",
+      "narration": "露西的手停在杯沿上，杯底在木面上磨出一声轻响。靠窗角落的报纸没有翻页，纸边却压得很平，她的视线只扫过去半寸就收回。\n\n「更麻烦？你把这两个字说得太响了。」\n\n「要找他留下的东西，就记北侧、第七码碑、断杆。别在这儿问全名。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_pressure_line_b1_continue",
+          "text": "那东西是什么样？",
+          "target_node_id": "pressure_line_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "pressure_line_b2": {
+      "node_id": "pressure_line_b2",
+      "type": "dialogue",
+      "narration": "她把杯子往自己这边挪了一点，像是把桌面上能碰响的东西都收进掌心。靠窗那张桌子仍旧没有酒，只有报纸挡着半张脸。\n\n「不是人，也不是文件袋。再多我不会在这儿说。」\n\n「靠窗那位不是本地酒客，他盯的是我。你别把话引到我身上。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_pressure_line_b2_continue",
+          "text": "里面装了什么？",
+          "target_node_id": "pressure_line_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "pressure_line_b3": {
+      "node_id": "pressure_line_b3",
+      "type": "dialogue",
+      "narration": "露西把杯沿转回原位，指节从杯壁上松开。报纸轻轻抖了一下，又停住；她没有再看那边，只把声音压得更低。\n\n「里面装什么，我不知道。你信不信都一样。」\n\n「现在能给你的只有那三个记号；再问下去，我就什么都没说过。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_pressure_line_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_pressure_leave",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_pressure_leave": {
+      "node_id": "end_pressure_leave",
+      "type": "end",
+      "narration": "露西听见你说“我知道了”，把擦到一半的杯子放回架上，杯底碰出一声轻响。靠窗角落的报纸翻过一页，纸边挡住半张脸。露西没有再靠近吧台外侧，只把抹布按在水渍上来回擦。你带着第七码碑、北侧、断杆和那只铁盒的残缺线索离开，身后的酒馆门铃响了一下，又被门缝夹住。\n\n「知道就走，别在这儿把话说满。」\n\n「以后也别用这种问法找我。」",
+      "speaker_ref": "char_lucy",
+      "location_ref": "scene_hibo_roadhouse",
+      "on_enter_effects": [],
+      "options": []
+    }
+  }
+}
