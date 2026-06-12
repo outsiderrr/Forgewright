@@ -12,13 +12,18 @@ design-first 多 pass 改造的**第 2 遍**：把 Pass 1 设计好的**单个�
 历史压缩（按需注入 / ADR-018 narrative_weight 思想）：
   user message 只注入"本节点之前已揭露线索 + 已用选项角度"的几十字摘要，不传前文全文。
   目的：narration 聚焦本节点新信息（修 baseline narration 短 + N1↔N2 重复）。
+
+Phase 2 文风层（作者拍板 2026-06-12；DESIGN_2026-06-12_phase2_style_layer.md）：
+  - AP 黑名单分两层：普适结构条款（AP-2/3/4/6/9）固定注入；白描条款（AP-1/AP-5 +
+    文风段）改由 generator/prompts/style/ 预设装配（默认 baimiao，行为与拆分前一致）；
+  - user prompt 末注入作者批准锚点样例（开场/中段两套；FORGEWRIGHT_STYLE_ANCHORS=off 关）。
 """
 from __future__ import annotations
 
 from typing import Any
 
-from generator.prompts.node.anti_pattern_blacklist import ANTI_PATTERN_BLACKLIST_TEXT
 from generator.prompts.node.role_rules import ROLE_RULES_TEXT
+from generator.prompts.style import style_anchor_block, style_rules_block, universal_ap_block
 
 
 def _build_pass2_system() -> str:
@@ -34,10 +39,11 @@ intent 都已固定），你只写这个节点的：
 
 {ROLE_RULES_TEXT}
 
-{ANTI_PATTERN_BLACKLIST_TEXT}
+{universal_ap_block()}
+
+{style_rules_block()}
 
 ## Narration 规则
-- 白描为主：少抽象评价、少漂亮警句，不排比 / 不对仗 / 不堆成语 / 不押韵。
 - **长度 250-400 汉字**（把节点写厚；不要只写到 150 字下限草草收尾）。
 - 每一句至少承担一个功能：空间信息 / 视线与听觉风险 / NPC 物理状态 / 行动机会 /
   可回收线索 / 物理异常（少量，需有人注意或回避）。
@@ -50,6 +56,8 @@ intent 都已固定），你只写这个节点的：
 - 逐条对应骨架的 option：把它的 `intent` 转写成玩家**第一人称**可说出口的台词，或直接行动语言。
 - 每条 ≤ 25 汉字；可保留 `[skill_name]` 检定前缀，但主体必须第一人称。
 - 不要写成"追问 / 安慰 / 威胁 / 调查"这类第三人称意图标签。
+- 人称约定（作者拍板 2026-06-12 决策 D）：**选择节点的选项可用"我"开头**（拿主意的话，
+  如「我不是来审你」）；单选项节拍的接话则第一人称隐含、不硬塞"我"——两套约定并存，别混。
 
 ## 历史压缩（避免与前文重复）
 - user message 会给你"本节点之前已揭露的线索"和"已用过的选项角度"。
@@ -119,10 +127,12 @@ def build_pass2_user_prompt(
     )
     eb = entry_context_block(entry_context)
     entry_block = f"\n{eb}\n" if eb else ""
+    sb = style_anchor_block("pass2_mid" if mid_scene else "pass2_opening")
+    style_block = f"\n{sb}\n" if sb else ""
 
     return f"""## 场景契约（固定上下文）
 {sc}
-{anchor_block}{progress_block}{entry_block}
+{anchor_block}{progress_block}{entry_block}{style_block}
 ## 本节点骨架（结构已定，不要改）
 node_id = {node_skeleton.get('node_id')} ；function = {node_skeleton.get('function')}
 {sk}
@@ -150,7 +160,7 @@ def build_pass2_schema() -> dict[str, Any]:
         "properties": {
             "narration": {
                 "type": "string",
-                "description": "节点旁白；250-400 汉字；白描；每句承担功能",
+                "description": "节点旁白；250-400 汉字；每句承担功能；遵守文风预设",
             },
             "dialogue": {
                 "type": "array",
@@ -210,9 +220,11 @@ def build_end_prose_user_prompt(
     )
     eb = entry_context_block(entry_context)
     entry_block = f"\n{eb}\n" if eb else ""
+    sb = style_anchor_block("end")
+    style_block = f"\n{sb}\n" if sb else ""
     return f"""## 场景契约（固定上下文）
 {sc}
-{anchor_block}{entry_block}
+{anchor_block}{entry_block}{style_block}
 ## 你要写的：一个**终止节点（end）**的收束旁白
 - 本结局功能：{node_function}
 - 玩家到达路径：{path_summary}

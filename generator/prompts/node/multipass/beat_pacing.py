@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from generator.prompts.node.anti_pattern_blacklist import ANTI_PATTERN_BLACKLIST_TEXT
 from generator.prompts.node.role_rules import ROLE_RULES_TEXT
+from generator.prompts.style import style_anchor_block, style_rules_block, universal_ap_block
 
 
 def _build_system() -> str:
@@ -50,7 +50,9 @@ def _build_system() -> str:
 
 {ROLE_RULES_TEXT}
 
-{ANTI_PATTERN_BLACKLIST_TEXT}
+{universal_ap_block()}
+
+{style_rules_block()}
 
 ## 输出格式
 - valid JSON 单对象，第一个字符 `{{`，最后一个字符 `}}`，无 markdown 围栏。
@@ -88,9 +90,11 @@ def build_beat_pacing_user_prompt(
         if scene_anchor_facts
         else ""
     )
+    sb = style_anchor_block("beats")
+    style_block = f"\n{sb}\n" if sb else ""
     return f"""## 场景契约（固定上下文）
 {sc}
-{anchor_block}
+{anchor_block}{style_block}
 ## 要分拍的节点
 当前局面：{node_situation}
 
