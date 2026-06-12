@@ -1,0 +1,102 @@
+{
+  "total_calls": 20,
+  "total_cost_usd": 0.53208,
+  "topology_fallback": false,
+  "node_count": 29,
+  "narration_lengths": {
+    "opening": 350,
+    "soft_private_line_b1": 112,
+    "soft_private_line_b2": 95,
+    "soft_private_line_b3": 99,
+    "soft_private_line_b4": 134,
+    "soft_private_line_b5": 99,
+    "soft_private_line_b6": 108,
+    "end_soft_leave": 145,
+    "money_line_b1": 108,
+    "money_line_b2": 97,
+    "money_line_b3": 119,
+    "money_line_b4": 102,
+    "money_line_b5": 116,
+    "end_money_leave": 163,
+    "watch_corner": 366,
+    "observed_soft_line_b1": 119,
+    "observed_soft_line_b2": 107,
+    "observed_soft_line_b3": 111,
+    "observed_soft_line_b4": 120,
+    "observed_soft_line_b5": 104,
+    "end_observed_leave": 170,
+    "basement_line_b1": 130,
+    "basement_line_b2": 105,
+    "basement_line_b3": 106,
+    "end_basement_leave": 129,
+    "pressure_line_b1": 111,
+    "pressure_line_b2": 110,
+    "pressure_line_b3": 104,
+    "end_pressure_leave": 159
+  },
+  "narration_len_avg": 134.41379310344828,
+  "option_counts": {
+    "opening": 4,
+    "soft_private_line_b1": 1,
+    "soft_private_line_b2": 1,
+    "soft_private_line_b3": 1,
+    "soft_private_line_b4": 1,
+    "soft_private_line_b5": 1,
+    "soft_private_line_b6": 1,
+    "end_soft_leave": 0,
+    "money_line_b1": 1,
+    "money_line_b2": 1,
+    "money_line_b3": 1,
+    "money_line_b4": 1,
+    "money_line_b5": 1,
+    "end_money_leave": 0,
+    "watch_corner": 4,
+    "observed_soft_line_b1": 1,
+    "observed_soft_line_b2": 1,
+    "observed_soft_line_b3": 1,
+    "observed_soft_line_b4": 1,
+    "observed_soft_line_b5": 1,
+    "end_observed_leave": 0,
+    "basement_line_b1": 1,
+    "basement_line_b2": 1,
+    "basement_line_b3": 1,
+    "end_basement_leave": 0,
+    "pressure_line_b1": 1,
+    "pressure_line_b2": 1,
+    "pressure_line_b3": 1,
+    "end_pressure_leave": 0
+  },
+  "route_convergence": {
+    "opening": {
+      "soft_private_line": 1,
+      "money_line": 1,
+      "watch_corner": 1,
+      "pressure_line": 1
+    },
+    "watch_corner": {
+      "observed_soft_line": 2,
+      "basement_line": 2
+    }
+  },
+  "choice_intent_overlaps": {},
+  "hard_pass": true,
+  "ap_flag_count": 0,
+  "cross_branch_line_similarity": {
+    "max_ratio": 0.818,
+    "max_pair": "observed_soft_line↔soft_private_line",
+    "high_similarity_lines": [
+      {
+        "nodes": "observed_soft_line↔soft_private_line",
+        "ratio": 0.818,
+        "a": "「从酒馆后方的土路绕过去，第七码碑之后，看一根断了半截的电线杆。」",
+        "b": "「从酒馆后方那条土路绕，看到第七码碑，再找一根断了半截的电线杆。」"
+      },
+      {
+        "nodes": "observed_soft_line↔soft_private_line",
+        "ratio": 0.8,
+        "a": "「记下就别在这儿念出来。」",
+        "b": "「你记下就好，别在这儿翻出来念。」"
+      }
+    ]
+  }
+}

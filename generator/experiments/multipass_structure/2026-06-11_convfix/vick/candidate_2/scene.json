@@ -1,0 +1,421 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "vick_antique_shop_multipass",
+  "entry_node_id": "opening",
+  "scene_anchor": "scene_vick_antique_shop",
+  "character_refs": [
+    "char_vick"
+  ],
+  "nodes": {
+    "opening": {
+      "node_id": "opening",
+      "type": "dialogue",
+      "narration": "门铃在你身后轻响，声音被厚窗帘和成排木柜压低。店里只点着几盏罩灯，银器、瓷盘和旧画框各占一格，玻璃柜面擦得很亮，却没有别的影子靠近柜台。后屋传来一次木箱挪动的闷响，随后是纸张被翻开的细碎声，门帘垂着，没有人出来。维克从柜台后绕出，深色西装贴着肩线，手套扣在一只掌心里。他向你略一点头，步子不快，正好停在能看清你手里是否带包的位置。古龙水的气味先到，甜而重，盖过旧纸、蜡油和金属灰尘；你靠近柜台时，鼻腔里又掠过一丝很淡的酸味，像从瓶塞底下漏出来，转眼被香味压回去。维克把一只小铜铃往柜台内侧推了半寸，留出一块干净的台面，视线从你的帽檐落到袖口，再回到你的脸上。\n\n「欢迎。今日店里安静，您可以慢慢看。」\n\n「若有特别想找的东西，也可以直接告诉我；有些货不摆在前厅。」\n\n「请放心，我这里不急着催客人开口。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_opening_1",
+          "text": "我先随便看看这些柜子。",
+          "target_node_id": "browse_probe_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_2",
+          "text": "我替人问些可转手的货。",
+          "target_node_id": "business_offer_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_3",
+          "text": "我想问莱特教授的事。",
+          "target_node_id": "wright_name_test_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_4",
+          "text": "我听说近来有代理竞价。",
+          "target_node_id": "rival_bidders_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        },
+        {
+          "option_id": "opt_opening_5",
+          "text": "我受一位收藏家委托。",
+          "target_node_id": "business_offer_b1",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b1": {
+      "node_id": "browse_probe_b1",
+      "type": "dialogue",
+      "narration": "柜门的玻璃映着柜中皮脊书的暗色纹路。维克没有拦你，只把一只手搭在柜角，指节慢慢敲过黄铜包边；后屋又传来一声轻响，很快停住。\n\n「随意看，先生。莱特教授也常在这些柜子前停很久。」\n\n「我和他做过不止一回稀有书、手稿生意。说我是他的老客户，也说得过去；有时，我还替合适的人牵线。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b1_continue",
+          "text": "莱特最近也找过你？",
+          "target_node_id": "browse_probe_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b2": {
+      "node_id": "browse_probe_b2",
+      "type": "dialogue",
+      "narration": "维克把柜面上的一册目录转正，纸页边缘压着一张细窄书签。他没有立刻翻开，只用拇指按住书脊，像是在量你的问题有多重。\n\n「找过，也躲过。最近那批文书不只我一方在问价。」\n\n「价钱已经抬到数千美元，而且还在往上走。这样的东西，一旦露面，就不会只有一个买家伸手。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b2_continue",
+          "text": "买家都是谁？",
+          "target_node_id": "browse_probe_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b3": {
+      "node_id": "browse_probe_b3",
+      "type": "dialogue",
+      "narration": "维克抬眼看了你一瞬，又低头把目录合上。古龙水的气味在近处更厚，那丝酸味从底下浮了一下；他的手仍停在封面上，没有离开。\n\n「我只是代理人，先生。背后有几位口袋更深的客户，外国人居多，名字现在说出来没有益处。」\n\n「若原件还在外面，我仍愿意出数千美元买下它们。不问出处，只看东西是否是真的。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "browse_probe_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b4": {
+      "node_id": "browse_probe_b4",
+      "type": "dialogue",
+      "narration": "维克把指尖搭在柜台边缘，银戒在灯下闪了一下。后屋又响了一声，像木箱被轻轻挪开；他没有回头，只把视线停在你脸上。\n\n「你知道了，这很好。可知道一件买卖存在，和知道它为什么招来麻烦，是两回事。」\n\n「世间有危险力量，世外也有；有些东西，凡人本来无权知晓。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b4_continue",
+          "text": "这和文书有什么关系？",
+          "target_node_id": "browse_probe_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b5": {
+      "node_id": "browse_probe_b5",
+      "type": "dialogue",
+      "narration": "维克稍稍前倾，袖口擦过柜台上的账册。古龙水的甜味压近了些，底下那丝酸味也变得清楚，像从旧金属缝里透出来。\n\n「关系正在变得太密。」\n\n「那批文书周围，已经不只是钱在聚集了。钱会留下账，别的东西只留下失踪、疯话，和尸体。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b5_continue",
+          "text": "危险从哪里来的？",
+          "target_node_id": "browse_probe_b6",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "browse_probe_b6": {
+      "node_id": "browse_probe_b6",
+      "type": "dialogue",
+      "narration": "他把账册合上，动作很轻，像怕惊动纸页之间夹着的灰。柜台后的阴影没有变化，后屋的声响也停了片刻。\n\n「从老霍布豪斯开始，至少我是这样听说的。」\n\n「他当年从那场审判里带走了不该带走的东西；现在有人以为，莱特教授知道它留下的线索。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_browse_probe_b6_continue",
+          "text": "原来如此。",
+          "target_node_id": "end_browse",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b1": {
+      "node_id": "business_offer_b1",
+      "type": "dialogue",
+      "narration": "维克把桌上的账册合拢，指腹沿书脊压了一下，像是在给话题留出干净的位置。后屋传来一声轻响，很快又停住，店里只剩柜台后的钟声。\n\n「能谈转手的人，总比空口问案的人有趣。」维克说。\n\n「莱特教授不是偶然来客。稀有书籍、手稿，他经我手做过不止一次，是个稳定的生意对象。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b1_continue",
+          "text": "那批文书值多少？",
+          "target_node_id": "business_offer_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b2": {
+      "node_id": "business_offer_b2",
+      "type": "dialogue",
+      "narration": "维克没有立刻答话，只把袖口往上理了半寸，露出一截干净的表带。他看向你手边的位置，像在估算一件尚未上桌的货。\n\n「值多少，要看谁急着要。」维克接住你的问法。\n\n「我正代人参与那批文书的竞标，价码已经到数千美元，而且买方还愿意继续往上抬。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b2_continue",
+          "text": "买方是什么人？",
+          "target_node_id": "business_offer_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b3": {
+      "node_id": "business_offer_b3",
+      "type": "dialogue",
+      "narration": "维克的笑意停在嘴角，没有扩大。他从名片盒里抽出一张空白便笺，推到你面前，纸边贴着柜台木纹慢慢停下。\n\n「这个问题问得太直了。你只需要知道，我只是代理人，背后有几位口袋更深的外国客户。」\n\n「若原件还能到手，我仍愿付数千美元；至于它从哪里来，我不会追问。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b3_continue",
+          "text": "我记下了。",
+          "target_node_id": "business_offer_b4",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b4": {
+      "node_id": "business_offer_b4",
+      "type": "dialogue",
+      "narration": "维克把桌上的收据本合上，指腹沿着皮脊慢慢抹平。后屋又传来一声轻响，他没有回头，只把目光停在你脸上，像在等你把刚写下的东西再添一行。\n\n「记下当然好。」维克说，「不过莱特教授死后，留下的可不只是账目。」\n\n「你既然来问文书，想必也听过一点消息：他的遗体现在在哪儿？」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b4_continue",
+          "text": "你为什么问这个？",
+          "target_node_id": "business_offer_b5",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b5": {
+      "node_id": "business_offer_b5",
+      "type": "dialogue",
+      "narration": "维克没有立刻答话。他把一只银质镇纸挪到收据本边上，压住翘起的纸角，动作很轻，视线却仍然没有离开你。\n\n「因为遗体有时比账本诚实。」维克说，「我不问你替谁跑腿，只问你知不知道它被送去了哪里。」\n\n「若你能给我一个方向，我对那批原件的价码，还可以谈得更痛快。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b5_continue",
+          "text": "这和交易有关？",
+          "target_node_id": "business_offer_b6",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "business_offer_b6": {
+      "node_id": "business_offer_b6",
+      "type": "dialogue",
+      "narration": "柜台后的钟摆走过半圈，玻璃柜里几枚旧戒指反出细碎的光。维克微微一笑，像把刚才那句话收回到袖口里，只留下可供交换的价钱。\n\n「有关，也无关。」维克说，「你可以把它当作我的私人好奇。」\n\n「至于文书，数千美元、不问出处，这句话仍然算数；遗体的事，你若想起什么，最好也别拖太久。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_business_offer_b6_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_business",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "wright_name_test_b1": {
+      "node_id": "wright_name_test_b1",
+      "type": "dialogue",
+      "narration": "维克的手指在柜面上停了一下，又慢慢收回袖口。后屋传来一声轻响，很快归于安静；店里只剩柜台边的钟声和他身上未散的古龙水味。\n\n「莱特教授？你把这个名字说得太早了，先生。」\n\n「我认识他。我们有过几笔书籍和手稿往来。现在轮到我问一句：你是替警方问，还是替他自己的人问？」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_wright_name_test_b1_continue",
+          "text": "只是想确认一笔交易。",
+          "target_node_id": "wright_name_test_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "wright_name_test_b2": {
+      "node_id": "wright_name_test_b2",
+      "type": "dialogue",
+      "narration": "维克没有立刻接话。他低头抚平柜台上一张空白便笺的边角，像是在给这句回答称重。后屋又有细碎动静，但门仍关着。\n\n「确认交易，通常要先知道你听到了哪一半。」\n\n「若你说的是近期那批文书，确有竞价。价码已经到数千美元，这一点不算秘密。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_wright_name_test_b2_continue",
+          "text": "原件现在还有人买吗？",
+          "target_node_id": "wright_name_test_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "wright_name_test_b3": {
+      "node_id": "wright_name_test_b3",
+      "type": "dialogue",
+      "narration": "维克向前倾了少许，袖口擦过柜面。古龙水的甜味贴近了一瞬，底下那点酸味仍不易抓住；他的目光没有离开你的脸。\n\n「有人会买。数千美元，收原件；出处可以不急着问。」\n\n「不过我更好奇：莱特死前后见过谁，遗体现在在哪里——这些事，你知道多少？」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_wright_name_test_b3_continue",
+          "text": "我知道了。",
+          "target_node_id": "end_wright",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "rival_bidders_b1": {
+      "node_id": "rival_bidders_b1",
+      "type": "dialogue",
+      "narration": "维克的手指停在银质镇纸旁，指节轻轻敲了一下桌面。后屋又响了一声，像木箱被挪开，但门仍旧关着。\n\n「你听说得不算离谱。近来确有代理出面竞价，那批文书的价码已经抬到数千美元，而且还没停。」\n\n「至于每一方的钱从哪里来，我没有义务替你摊开账本。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_rival_bidders_b1_continue",
+          "text": "这价是谁抬起来的？",
+          "target_node_id": "rival_bidders_b2",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "rival_bidders_b2": {
+      "node_id": "rival_bidders_b2",
+      "type": "dialogue",
+      "narration": "他把镇纸转了半圈，让压在下面的纸角重新贴平。店里的钟声走得很细，古龙水的气味在近处更重。\n\n「你问谁在抬价，这个问题太贪心了。我只能说，我自己也只是替人看货、传话。」\n\n「有几位外来的、有钱的感兴趣者，不喜欢把名字放在柜台上。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_rival_bidders_b2_continue",
+          "text": "你只是替人出面？",
+          "target_node_id": "rival_bidders_b3",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "rival_bidders_b3": {
+      "node_id": "rival_bidders_b3",
+      "type": "dialogue",
+      "narration": "维克抬眼看了你一下，又把视线落回桌面。后屋的动静停住了，店里只剩纸张被他指腹压平的轻响。\n\n「只是替人出面，这话足够准确。莱特教授从前也算可靠来源之一，稀有书籍，手稿，他知道该把消息递给谁。」\n\n「如果原件现在出现，仍有人愿意付高价，数千美元不是问题；交易条件也可以谈得很宽。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": [
+        {
+          "option_id": "opt_rival_bidders_b3_continue",
+          "text": "我记下了。",
+          "target_node_id": "end_rivals",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end_browse": {
+      "node_id": "end_browse",
+      "type": "end",
+      "narration": "门铃在你身后轻响，店里仍没有顾客。后屋那点动静停了一下，又被抽屉滑轨声盖住。你带走的只是几条可查的线：莱特的旧交易、那批文书的高价竞标、几名外国买家的影子，以及维克仍愿用数千美元收原件。维克站在柜台后，把杯沿转回原来的方向，视线从你的手套移到门外街面。\n\n「原来如此，」维克说，「这是聪明人离开前最合适的一句话。」\n\n「若你又听见莱特的名字，先生，请记得这间店还开着。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "end_business": {
+      "node_id": "end_business",
+      "type": "end",
+      "narration": "维克把桌上的名片推到离你手边一寸的位置，又用镇纸压住账册翻开的页角。店里仍没有客人，后屋传来一声木箱挪动的闷响，很快停住。门铃的铜舌在玻璃门上轻轻晃着，街上的灰光照进来，把柜台后的书脊照出一层旧亮。你离开时，口袋里多了一张可用的联系名片，也多了一道会被回头查验的来路。\n\n「知道就好。」维克说，「有些事不必急着讲完，急着讲完的人，通常拿不住价。」\n\n「等你手里有能让我出价的东西，再来找我。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "end_wright": {
+      "node_id": "end_wright",
+      "type": "end",
+      "narration": "维克把柜台上的账册合上，锁扣发出很轻的一声。他没有再碰那只名片，只用两指把它推回你这一侧。店里仍没有顾客，后屋的木板响了一下，又停住。你带走的只剩几条硬线：莱特确曾替他经手书籍和手稿，近期那批文书有人把价抬到数千美元，原件仍有人收。门铃在你身后响起时，维克已经站到橱窗旁，隔着玻璃看街面。\n\n「知道就好。」维克说，「有些生意，记得太清楚反而不体面。」\n\n「下次若还来，先生，最好带一件真正能卖的东西。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": []
+    },
+    "end_rivals": {
+      "node_id": "end_rivals",
+      "type": "end",
+      "narration": "维克听完“我记下了”，把账册合上，指腹在封皮边缘停了一下。他没有再说客户姓名，只把柜台上的名片推回原位。后屋传来一声木箱拖动的响动，很快又静下去。你离开时，门铃在身后轻响，街上的冷光落到掌心那几行记录上：莱特、文书、数千美元、代理人。买家的名字仍被留在店里。\n\n「记下可以，先生。别把笔记当成契约。」\n\n「有些客户只买沉默，名字不在货单上。」",
+      "speaker_ref": "char_vick",
+      "location_ref": "scene_vick_antique_shop",
+      "on_enter_effects": [],
+      "options": []
+    }
+  }
+}

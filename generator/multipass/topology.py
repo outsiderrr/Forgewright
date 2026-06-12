@@ -125,6 +125,53 @@ def validate_topology(plan: dict[str, Any]) -> list[str]:
     if unreachable:
         errors.append(f"从入口不可达的节点：{unreachable}")
 
+    errors.extend(_parallel_duplicate_reveals(by_id))
+
+    return errors
+
+
+def _parallel_duplicate_reveals(by_id: dict[str, dict[str, Any]]) -> list[str]:
+    """同一线索原文分配给两个非祖先关系节点 = 硬错误（收敛路由复核根因⑥的拓扑层强制）。
+
+    保底线索可以多路径可得，但各分支必须在 reveals 文本里写明不同的完整度/残缺形态；
+    原文复制会导致下游各分支把同一句话近原文写一遍（vick/c2 被拒项之一）。
+    祖先链上的重复不在本检查范围（不构成平行分支）。
+    """
+    parent_of: dict[str, str] = {}
+    for n in by_id.values():
+        for t in _outgoing(n):
+            if t in by_id and t not in parent_of:
+                parent_of[t] = n["node_id"]
+
+    def _ancestors(nid: str) -> set[str]:
+        chain: set[str] = set()
+        cur = parent_of.get(nid)
+        while cur is not None and cur not in chain:  # visited 防环（树性破坏时仍安全）
+            chain.add(cur)
+            cur = parent_of.get(cur)
+        return chain
+
+    owners_by_clue: dict[str, list[str]] = {}
+    for nid, n in by_id.items():
+        for r in set(str(x).strip() for x in n.get("reveals") or []):
+            if r:
+                owners_by_clue.setdefault(r, []).append(nid)
+
+    errors: list[str] = []
+    for clue, owners in sorted(owners_by_clue.items()):
+        if len(owners) < 2:
+            continue
+        parallel = False
+        for i in range(len(owners)):
+            for j in range(i + 1, len(owners)):
+                a, b = owners[i], owners[j]
+                if a not in _ancestors(b) and b not in _ancestors(a):
+                    parallel = True
+        if parallel:
+            errors.append(
+                f"线索「{clue}」原文同时分配给平行节点 {sorted(owners)}——"
+                "保底线索可多路径可得，但必须为各分支写明不同的完整度/残缺形态，不得原文复制"
+            )
     return errors
 
 
@@ -132,11 +179,13 @@ def fallback_topology(scene_spec: dict[str, Any]) -> dict[str, Any]:
     """半固定脚手架（ADR-038 v1 形状）——拓扑规划失败时的确定性回退。
 
     线索分层的确定性近似：软分支 = required + optional 全量；
-    硬分支 = 仅 required（beat prompt 的 situation 再叠加"残缺化"指示，
-    不给钥匙/异常类可选线索）。
+    硬分支 = 仅 required 的**残缺记号版**（reveals 文本显式标注残缺形态——
+    与平行分支线索查重规则自洽：安全网自身必须永远过校验），
+    不给钥匙/异常类可选线索。
     """
     required = list(scene_spec.get("required_clues") or [])
     optional = list(scene_spec.get("optional_clues") or [])
+    required_degraded = [f"{c}（残缺记号版：只给能行动的碎片，不给完整形态）" for c in required]
     return {
         "entry_node_id": "opening",
         "nodes": [
@@ -171,7 +220,7 @@ def fallback_topology(scene_spec: dict[str, Any]) -> dict[str, Any]:
                     "高压分支：NPC 被逼到防御、只想切断关系——只给能行动的残缺碎片"
                     "（残缺化：不给钥匙/异常类可选线索，必要线索只给残缺记号）"
                 ),
-                "reveals": required,
+                "reveals": required_degraded,
                 "next": "end_hard",
             },
             {"node_id": "end_soft", "kind": "end", "function": "收束：带完整线索离开", "reveals": []},

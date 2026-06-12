@@ -1,0 +1,17 @@
+provider: http://api.key77qiqi.com/v1 gpt-5.5 json_mode=prompt_only
+============================================================
+candidate 1: success
+节点 24 个 · 调用 18 次 · $0.4824 · 501.1s · 硬校验 ✅ · AP flag 0 · 拓扑 动态
+  ⚠️ 拓扑规划第 1 次未过确定性校验：['节点总数 14 超界（要求 3-12）']
+  scene: generator/experiments/multipass_structure/2026-06-11_convfix/vick/candidate_1/scene.md
+============================================================
+candidate 2: success
+节点 23 个 · 调用 15 次 · $0.3856 · 400.1s · 硬校验 ✅ · AP flag 0 · 拓扑 动态
+  ⚠️ 拓扑规划第 1 次未过确定性校验：['节点总数 13 超界（要求 3-12）']
+  scene: generator/experiments/multipass_structure/2026-06-11_convfix/vick/candidate_2/scene.md
+provider: http://api.key77qiqi.com/v1 gpt-5.5 json_mode=prompt_only
+============================================================
+candidate 1: success
+节点 29 个 · 调用 20 次 · $0.5321 · 596.4s · 硬校验 ✅ · AP flag 0 · 拓扑 动态
+  ⚠️ 拓扑规划第 1 次未过确定性校验：["线索「莱特在希博公路北侧有一间旧测绘小屋。」原文同时分配给平行节点 ['money_line', 'soft_private_line']——保底线索可多路径可得，但必须为各分支写明不同的完整度/残缺形态，不得原文复制", "线索「莱特把一只小铁盒留在小屋里。」原文同时分配给平行节点 ['money_line', 'soft_private_line']——保底线索可多路径可得，但必须为各分支写明不同的完整度/残缺形态，不得原文复制"]
+  scene: generator/experiments/multipass_structure/2026-06-11_convfix/lucy/scene.md

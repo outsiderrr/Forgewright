@@ -1,0 +1,79 @@
+{
+  "total_calls": 18,
+  "total_cost_usd": 0.482402,
+  "topology_fallback": false,
+  "node_count": 24,
+  "narration_lengths": {
+    "opening": 406,
+    "soft_customer_line_b1": 118,
+    "soft_customer_line_b2": 114,
+    "soft_customer_line_b3": 110,
+    "soft_followup_choice": 455,
+    "confidence_exchange_line_b1": 145,
+    "confidence_exchange_line_b2": 120,
+    "confidence_exchange_line_b3": 132,
+    "confidence_exchange_line_b4": 122,
+    "confidence_exchange_line_b5": 122,
+    "soft_preserve_cover_end": 178,
+    "confidence_exchange_end": 162,
+    "business_offer_line_b1": 99,
+    "business_offer_line_b2": 121,
+    "business_offer_line_b3": 129,
+    "business_offer_end": 158,
+    "wright_name_line_b1": 111,
+    "wright_name_line_b2": 115,
+    "wright_name_line_b3": 122,
+    "wright_name_end": 199,
+    "rival_bidders_line_b1": 113,
+    "rival_bidders_line_b2": 110,
+    "rival_bidders_line_b3": 106,
+    "rival_bidders_end": 193
+  },
+  "narration_len_avg": 156.66666666666666,
+  "option_counts": {
+    "opening": 4,
+    "soft_customer_line_b1": 1,
+    "soft_customer_line_b2": 1,
+    "soft_customer_line_b3": 1,
+    "soft_followup_choice": 3,
+    "confidence_exchange_line_b1": 1,
+    "confidence_exchange_line_b2": 1,
+    "confidence_exchange_line_b3": 1,
+    "confidence_exchange_line_b4": 1,
+    "confidence_exchange_line_b5": 1,
+    "soft_preserve_cover_end": 0,
+    "confidence_exchange_end": 0,
+    "business_offer_line_b1": 1,
+    "business_offer_line_b2": 1,
+    "business_offer_line_b3": 1,
+    "business_offer_end": 0,
+    "wright_name_line_b1": 1,
+    "wright_name_line_b2": 1,
+    "wright_name_line_b3": 1,
+    "wright_name_end": 0,
+    "rival_bidders_line_b1": 1,
+    "rival_bidders_line_b2": 1,
+    "rival_bidders_line_b3": 1,
+    "rival_bidders_end": 0
+  },
+  "route_convergence": {
+    "opening": {
+      "soft_customer_line": 1,
+      "business_offer_line": 1,
+      "wright_name_line": 1,
+      "rival_bidders_line": 1
+    },
+    "soft_followup_choice": {
+      "soft_preserve_cover_end": 1,
+      "confidence_exchange_line": 2
+    }
+  },
+  "choice_intent_overlaps": {},
+  "hard_pass": true,
+  "ap_flag_count": 0,
+  "cross_branch_line_similarity": {
+    "max_ratio": 0.515,
+    "max_pair": "business_offer_line↔wright_name_line",
+    "high_similarity_lines": []
+  }
+}

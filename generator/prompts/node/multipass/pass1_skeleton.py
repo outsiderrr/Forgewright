@@ -324,6 +324,13 @@ PASS1_SKELETON_SYSTEM_DYNAMIC = """你是 Forgewright 的 design-first CRPG **�
 - `relationship_delta`：对 trust / fear / cooperability / affinity（信任/恐惧/合作度/好感）的影响 + 理由
 - `route_to`：本选项把玩家送往哪条出边（**必须**从任务给定的出边目标里选；每条出边至少被一个选项使用）
 
+### 2.5 选项数量（1-5 之间灵活，由真实玩家反应数决定；作者修订 2026-06-11）
+- 唯一硬下限：**每条出边至少 1 个选项**把玩家送过去；选项数**不必等于出边数**。
+- 是真选择就给足姿态变体制造选择压力；只是推进则少给。
+- **不要为凑数发明选项**：每个额外选项必须是其所路由出边姿态的真变体
+  （多个选项共享一条出边时，它们的共同语义必须与该出边 stance 一致），
+  语义对不上任何出边的选项宁可不写。
+
 ### 3. 线索分层
 - 每个节点写明 `reveals`（本节点揭露哪些线索）和 `hides`（刻意不给哪些）。
 - 遵守任务给定的本节点线索分配；不要把别的分支的线索提前抖出来。
@@ -349,6 +356,7 @@ def build_dynamic_node_user_prompt(
     planned_reveals: list[str],
     routes: list[dict[str, str]],
     prior_nodes: list[dict[str, Any]],
+    entry_context: dict[str, Any] | None = None,
 ) -> str:
     """动态拓扑版：设计单个 choice 节点骨架的 user prompt.
 
@@ -360,8 +368,12 @@ def build_dynamic_node_user_prompt(
         planned_reveals: 拓扑规划分配给本节点的线索。
         routes: 本节点出边（[{"to": ..., "stance": ...}]，来自 TopologyPlan）。
         prior_nodes: 已设计的前序节点摘要（node_id / function / reveals / options[].intent）。
+        entry_context: 玩家进入本节点的入口上下文（单入口=玩家原句 / 收敛多入口=语句清单；
+            参与 situation / choice_pressure 设计——junction 承接从骨架层就开始）。
     """
     import json
+
+    from generator.prompts.node.multipass.entry_context import entry_context_block
 
     sc = json.dumps(scene_contract, ensure_ascii=False, indent=2)
     route_lines = "\n".join(
@@ -383,13 +395,16 @@ def build_dynamic_node_user_prompt(
     else:
         prior_block = "（这是第一个节点，前面还没有已设计的节点）"
 
+    min_opts = max(1, len(routes))
+    entry_block = entry_context_block(entry_context)
+    entry_section = f"\n{entry_block}\n" if entry_block else ""
     return f"""请只设计**一个** choice 节点的 Interaction Skeleton（互动骨架），**不要写正文**。
 
 {_scene_spec_block(scene_spec)}
 
 ## 场景契约（已定，固定上下文）
 {sc}
-
+{entry_section}
 ## 你现在要设计的节点
 node_id = **{node_id}**
 固定功能（必须严格扣住）：{function}
@@ -405,7 +420,8 @@ node_id = **{node_id}**
 
 要求：
 - 写 function（一句话，呼应固定功能）/ situation（当前局面）/ choice_pressure（选择压力来源）/
-  3-5 个 option（每个含 intent / payoff / cost / relationship_delta / route_to）/ reveals / hides。
+  {min_opts}-5 个 option（数量灵活，由真实玩家反应数决定；每条出边至少 1 个选项；
+  不为凑数发明选项；每个含 intent / payoff / cost / relationship_delta / route_to）/ reveals / hides。
 - 不要重复前序节点的局面或选项角度；不要把别的分支线索提前抖出来。
 
 按下面的输出 JSON schema 返回**单个节点对象**。
@@ -413,7 +429,11 @@ node_id = **{node_id}**
 
 
 def build_dynamic_node_schema(allowed_route_targets: list[str]) -> dict[str, Any]:
-    """动态拓扑版单节点骨架输出契约：option 多一个 route_to（enum = 本节点出边目标）。"""
+    """动态拓扑版单节点骨架输出契约：option 多一个 route_to（enum = 本节点出边目标）。
+
+    选项数 1-5 灵活（作者修订 2026-06-11）：minItems = 出边数（每条出边至少 1 个选项的
+    schema 层下限；出边覆盖本身由引擎 _route_violations 校验），不与出边数上绑定。
+    """
     option_skeleton = {
         "type": "object",
         "required": ["intent", "payoff", "cost", "relationship_delta", "route_to"],
@@ -451,7 +471,7 @@ def build_dynamic_node_schema(allowed_route_targets: list[str]) -> dict[str, Any
             "hides": {"type": "array", "items": {"type": "string"}},
             "options": {
                 "type": "array",
-                "minItems": 3,
+                "minItems": max(1, len(allowed_route_targets)),
                 "maxItems": 5,
                 "items": option_skeleton,
             },

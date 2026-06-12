@@ -20,6 +20,7 @@ generator/experiments/multipass_structure/DESIGN_2026-06-10_formal_landing.md）
 """
 from __future__ import annotations
 
+from generator.prompts.node.multipass.entry_context import entry_context_block
 from generator.prompts.node.multipass.pass1_skeleton import (
     NODE_FUNCTIONS,
     PASS1_SKELETON_SYSTEM,
@@ -47,6 +48,7 @@ from generator.prompts.node.multipass.topology import (
 )
 
 __all__ = [
+    "entry_context_block",
     "NODE_FUNCTIONS",
     "PASS1_SKELETON_SYSTEM",
     "PASS1_SKELETON_SYSTEM_DYNAMIC",
