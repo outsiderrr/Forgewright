@@ -202,6 +202,14 @@ Schema 定稿后可并行三路：
 
 追溯：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §5 + §6.1；ADR-029（技能体系作为项目配置层；2026-05-11 已 push）；T-3X L2 校准 2026-05-12 联动修订（[/docs/reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md](reviews/master_plan/2026-05-09_T-3X_aesthetic_pre_fixation_prompts.md) v0.2.2）
 
+### 2026-06-21 ADR-039 转向重定义（写作提示词包）
+
+阶段 3"完整内容生产流水线"的含义按 ADR-039 重定义：
+- **退役**：Phase 2 文风/质感层作为 in-house 正文**生成路径**（Pass 2 正文引擎退役；文风资产重打包为编剧提示词包内容 + 可选 judge QA）。
+- **新主线（首版收窄）**：P-A 场景级写作提示词渲染器 + P-B 回流合并与验收落地（最小闭环）。连续性便宜版。P-C 幕级打包/手动 loop、P-D 费工连续性、P-E 资产重打包推后。
+- **完成标志（口径更新）**：原"作者每天稳定产出几千字质量达标内容"改为"**结构→提示词包→（编剧任意来源回流）→验收落地播放**的核心闭环跑通，且对一份回流场景能给出正确通过/失败判定"。正文质量不再是本仓库验收对象；原审美层 [A]ccept rate 门槛对象从"in-house 生成"改为"编剧回流文本"，judge 降为可选 QA。
+- **保留**：审阅工具、批量调度（repurpose 为"批量提示词包生成 + 回流验收看板"）、一致性维护、版本控制集成。
+
 ### 目标
 
 作者能每天稳定产出几千字质量达标的剧情内容。
@@ -299,6 +307,7 @@ Schema 定稿后可并行三路：
 - **2026-05-12**：阶段 3 §scope 声明段新增（不做战斗 / 思维内阁 / 内心独白；主做对话 + 调查 + 物品 + NPC + 技能体系（项目配置层定义）+ 检定；CoC 主导）+ 审美层 review 激活前置子段新增（保留 [A] ≥ 60% pilot + Wilson CI；新增 T-3X-0/1 作 T-3.10 前置）+ 阶段概览表阶段 3 时长加 1-3 周（5-9 周；含 T-3X-0 作者锚点工程）。来源：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.1。联动 PR-A（ADR-030 + ADR-020 v0.2；PR #51 merged 2026-05-12）+ PR-C（STAGE_3_TASKS v1.0.1 + T-3.10.md；PR #52 merged 2026-05-12）。L1 fixation 执行会话产出（本 PR）。
 - **2026-05-13**：ADR-031 GM 抉择空间结构化方案 立项 + T-3X-1 拆分为 T-3X-1a + T-3X-1b 校准联动。阶段概览表阶段 3 时长再次校准（5-9 周 → 6-11 周；含 T-3X-1b NPC 状态机 +1-2 周）。来源：[/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1（L2 综合规划师产出）+ 作者 2026-05-13 拍板 5 项推荐（§5.5）。联动 L1 fixation：DECISIONS ADR-031 + DEBATE_NOTES §10 核心赌注段 + STAGE_3_TASKS v1.0.2（T-3X-1 拆分）。
 - **2026-05-25**：ADR-036 立项（Forgewright 采用分模块 license：runtime Apache 2.0 / 开发期工具 AGPL v3 / 文档 CC-BY 4.0 / content CC-BY-NC 4.0 / game Proprietary）。设计原理 = CLAUDE.md「运行时 vs 生产期分离」（ADR-002 + ADR-004）。PR #71 merged 2026-05-25（merge commit `9190fff` / 业务 commit `b14ad15`）实际落地 9 模块 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 11 题 + README 开发者承诺段。外部依赖：dialogue-flow-skill 仓库（private；[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill)）Phase 3 Dual Licensing 通过 `/generator` AGPL v3 集成。落地走 L1 直签 main fixation 模式（参 `aeea12e` 升格 governance 先例），破例跳过标准 ABC 闭环；不归 STAGE_3_TASKS §1.5.4 跳 BC 5 类。阶段 4 §完成标志「开源框架仓库独立 + LICENSE（推荐 MIT）」占位被本 ADR 取代。本 L1 fixation 会话产出。
+- **2026-06-21**：ADR-039 写作提示词包转向立项（不自建正文生成 / 编剧 BYOM / 我们守结构与回流验收；首版收窄 P-A+P-B 核心闭环 + 连续性便宜版）。阶段 3"内容生产"含义重定义（见阶段 3 段内子段）；Phase 2 文风层作为 in-house 生成路径退役、资产重打包。来源：[/docs/reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md](reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md) + 作者 2026-06-21 本会话拍板。L1 直签 main fixation。
 
 ## 版本
 
