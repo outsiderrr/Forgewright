@@ -1,0 +1,170 @@
+{
+  "version": "v1",
+  "approved": "2026-06-12 作者拍板（决策 C：A1-A18 全批）",
+  "design": "generator/experiments/aesthetic_layer/DESIGN_2026-06-12_phase2_style_layer.md",
+  "license_note": "全部摘自项目自产已接受文本（版权红线：外部版权文本不得入库）",
+  "anchors": [
+    {
+      "id": "A1",
+      "role": "narration",
+      "kind": "opening",
+      "text": "办公室贴着冷藏库的外墙，墙面刷白，靠近门缝的地方有一圈潮气。桌上摊着几份空白病历纸，墨水瓶旁压着一串钥匙，金属牌上刻着冷藏库编号。走廊里的脚步声经过门外时会被瓷砖放大，又很快远去。惠特克罗夫特站在桌后，没有坐下，袖口卷到小臂，指节按在椅背上。他把死亡证明的副本翻到正面，又推回桌角，像是不愿让它离手太远。隔壁传来冷机低沉的震动，门框随之轻轻发颤；每一次震动停顿，他都会把视线转向那扇内门。你闻到消毒水、旧纸和低温金属混在一起的气味。窗帘半拉着，下午的光被切成窄条，落在他的领口和下颌上。他清了两次嗓子，目光从你的证件、手套、衣袖依次扫过，最后停在你是否带了记录本的位置。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#opening",
+      "dimensions": ["S1", "S3", "S6"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A2",
+      "role": "narration",
+      "kind": "opening",
+      "text": "希博公路酒馆的公共厅被煤油灯照得发黄，柜台前的地板沾着雨水和泥。通往地下酒吧的窄门半掩着，门缝里传出低声笑骂和杯子碰撞声；每次有人下楼，木阶都会响两下。露西站在柜台后擦杯子，袖口卷到手肘，指节上有洗不掉的酒渍。你靠近时，她先看你的手，再看柜台两侧的酒客。靠窗角落有个男人坐在报纸后面，桌上只有一只空碟和折好的烟盒，没有酒杯；报纸翻页的间隔很久，他的鞋尖一直朝着柜台。露西把杯子放回架上，金属杯沿轻碰木板。你若在这里提高声音，柜台、楼梯口和窗边都能听见。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#opening",
+      "dimensions": ["S1", "S3"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A3",
+      "role": "narration",
+      "kind": "beat",
+      "text": "杯沿在木桌上留下一圈湿痕。露西把杯子推到两人中间，指尖没有离开杯底，声音压得只够桌边听见。窗角那张报纸翻了一页。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#soft_confide_b1",
+      "dimensions": ["S1", "S6"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A4",
+      "role": "narration",
+      "kind": "beat",
+      "text": "惠特克罗夫特把死亡证明的副本翻到签名页，拇指压在墨迹旁边。隔壁冷藏库的低鸣隔着墙传来，他的视线在门缝处停了一下，又落回纸面。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#conscience_line_b1",
+      "dimensions": ["S1", "S4"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A5",
+      "role": "narration",
+      "kind": "end",
+      "text": "你把第七码碑、断了半截的电线杆、雨桶和小铁盒几个词按顺序记在票根背面。露西把湿抹布搭回吧台，杯沿碰出一声轻响。角落里的男人仍坐在原位，烟灰落在桌面上，没有碰酒。后门缝里吹进潮冷的风，楼下的低笑声被门板压住。你离开吧台时，露西没有再看你。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#end_soft_depart",
+      "dimensions": ["S7", "S6"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A6",
+      "role": "narration",
+      "kind": "end",
+      "text": "惠特克罗夫特把尸检记录重新塞回牛皮纸袋，封口没有粘死，只用两枚回形针压住。他送你到门边，白瓷砖上的灯光被冷藏库门缝切成窄窄一段。走廊里消毒水味更重，你带走了死亡证明背后的名字、完整尸检要点，以及一条仍能回头敲响的门。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#end_professional_cooperation",
+      "dimensions": ["S7"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A7",
+      "role": "npc_dialogue",
+      "kind": "subtext",
+      "text": "「因为它在那儿。」\n「我做过助理验尸官，见过够多死人。可莱特不一样。只要他还在这栋楼里，我就没法假装那张证明解决了问题。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#conscience_line_b5",
+      "dimensions": ["S9"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A8",
+      "role": "npc_dialogue",
+      "kind": "info_density",
+      "text": "「莱特的心梗几乎是瞬间致命，同时有剧烈肌肉痉挛。视网膜组织遭高温损伤，像有什么把玻璃体液煮沸了。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#professional_line_b3",
+      "dimensions": ["S2", "S8"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A9",
+      "role": "npc_dialogue",
+      "kind": "observation",
+      "text": "「窗边那个，从进门到现在没点过一杯酒。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#opening",
+      "dimensions": ["S1", "S8"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A10",
+      "role": "npc_dialogue",
+      "kind": "anomaly",
+      "text": "「他只说过一句怪话：屋子外面量只有二十步宽，进屋量却多出四步。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#soft_confide_b6",
+      "dimensions": ["S5"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A11",
+      "role": "npc_dialogue",
+      "kind": "threat",
+      "text": "「你现在走，还只是问路；你再逼一句，就会变成我给你带路。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#hard_pressure_b5",
+      "dimensions": ["S9", "S10"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A12",
+      "role": "npc_dialogue",
+      "kind": "closing",
+      "text": "「别在走廊里提我的名字。」\n「但如果你真要继续查，先来找我，别让他们先找到你。」",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#end_professional_cooperation",
+      "dimensions": ["S7", "S8"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A13",
+      "role": "player_option",
+      "kind": "followup",
+      "text": "你为什么这么着急？",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#conscience_line_b4",
+      "dimensions": ["S11"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A14",
+      "role": "player_option",
+      "kind": "acknowledge",
+      "text": "我知道了。／原来如此。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#certificate_pressure_b5",
+      "dimensions": ["S12"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A15",
+      "role": "player_option",
+      "kind": "action",
+      "text": "记下路标。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#soft_confide_b3",
+      "dimensions": ["S12"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A16",
+      "role": "player_option",
+      "kind": "stance_soft",
+      "text": "我不是来审你，先说你能说的。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_whitcroft_v2/scene.md#opening",
+      "dimensions": ["S11", "S14"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A17",
+      "role": "player_option",
+      "kind": "stance_pressure",
+      "text": "莱特死了，你也会被拖进来。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#opening",
+      "dimensions": ["S11", "S14"],
+      "license_origin": "project_generated"
+    },
+    {
+      "id": "A18",
+      "role": "player_option",
+      "kind": "stance_action",
+      "text": "我借人影挡住他。",
+      "source": "generator/experiments/multipass_structure/2026-06-10_lucy_roadhouse_multipass/scene.md#corner_assess",
+      "dimensions": ["S11", "S14"],
+      "license_origin": "project_generated"
+    }
+  ]
+}

@@ -1361,6 +1361,57 @@ Phase 1 design-first 多 pass 结构层原型落地后（多 pass 较单一大 p
 
 ---
 
+## ADR-039：写作提示词包转向（不自建正文生成 / 编剧 BYOM 写正文 / 我们守结构与验收）
+
+**状态**：已接受（2026-06-21）
+
+**背景**：
+
+结构层（Phase 1 多 pass + 动态拓扑）2026-06 已"有条件生产就绪"，但**正文质感/文风（Phase 2）反复卡壳**——多轮 prompt 重写、锚点库、14 维 taxonomy、judge、A/B 评估都做了，仍未稳定达到"作者少改即可用"。作者 2026-06-21 三点判断触发转向：① 国内模型中文长文创作能力已够用，不必自建生成管线追模型质量；② 真实生产里制作人会雇编剧，而编剧已有成熟 AI 写作工作流；③ **作者本人不具备"用 AI 创作"的能力**，无法基于该能力开发创作提示词——自建正文生成对作者是能力错配。
+
+**决策**：
+
+一、**项目产出重定义**：本仓库不再用 LLM 生成对白正文。产出 = **每场景一份写作提示词包**（结构锁定 + 格式契约 + 文风指南 + 跨场景连续性摘要）+ **回流验收**。正文由编剧用自己选的模型（BYOM, bring your own model）写、人工润色后回流。文字质量由编剧负责；我们负责"可玩结构 + 格式契约 + 回流校验 + 本体一致性守门"。
+
+二、**路线 A（我们锁结构、编剧只填正文）**：结构字段（node_id / target_node_id / routes / reveals / hides / condition / effects / 检定）全部由我们锁定；正文字段（narration / dialogue / option.text）全部由编剧填。**填空单位 = 整个场景**（一次给编剧整场节点树，承接靠编剧/其模型看到整树自洽）。回流按 **node_id + 显式选项序号**对齐、**确定性合并**、**硬报错**（key 对不上/节点缺失/选项数不符即退回编剧）。
+
+三、**beats 节点拆拍提升为确定性结构**：现状"一段对话拆几拍/每拍揭哪条线索"是被退役的 Pass 2 LLM 涌现产物，路线 A 下无逐拍槽位可填。改由 Pass 1 确定性拆拍器产出锁定 micro-node（每拍带 reveal 子集 + continue 占位），编剧在整场内逐拍填。
+
+四、**首版范围收窄（作者 2026-06-21 拍板）**：只做 **P-A（提示词渲染器）+ P-B（回流合并 + 验收落地）最小闭环**；跨场景连续性先用现成 `prior_scene_summaries` + 一行 NPC 状态摘要的**便宜版**。**P-C（幕级打包 / 手动 loop）/ P-D（费工连续性：NPC 跨场景状态增量持久化 + 台词级 callback）/ P-E（文风资产重打包）推到核心闭环跑通验证、或有真实编剧反馈之后**。理由：① 可行性——路线 A 下编剧只填正文，NPC 跨场景状态数值无产出口（relationship_delta 是 LLM 设计标签、组装时即丢弃），费工版在数值来源定下前不成立，便宜版不需数值即可绕开；② 北极星——ROADMAP 阶段 4 明文警示"别滑回做工具"，先验证核心、不在无真实用户时为假想编剧预建全套。
+
+五、**Pass 2 正文引擎退役为生成路径**；文风资产（role_rules 三契约 / AP 规则 / 14 维 taxonomy / 锚点库 A1–A18）**重打包**为编剧提示词包内容（格式契约 + 文风指南 + few-shot 锚点），judge 降为可选 QA（对回流文本自查，非生成控制旋钮）。**不删除**。
+
+六、**诚实边界（不夸大）**：LLM **未**移出系统——生产期仍保留 ① Pass 1 结构引擎、② 跨场景摘要 `scene_summary_writer`、③ 可选 judge 三处 LLM 调用，仍受中转站超时 / 模型质量约束。转向只是把 LLM 从"写正文"挪到"写结构 + 摘要"。真赌注分界线：**结构（可玩分支设计）值得我们自建——它是工具的工程杠杆、且可被确定性校验；正文质感不值得自建——它是手艺 + 主观 + 受模型换代折腾 + 作者本人做不了**。
+
+**与既有 ADR 的关系**：
+
+- **ADR-001 / 002 / 004 / 006 / 008**：不变 / 被强化（LLM 更彻底地不碰结构与状态，只产正文文本填进锁定槽）。
+- **ADR-038（分拍节点图）**：保留；本 ADR 把 beats 拆拍从"LLM 涌现"改为"确定性结构产物"，是其落地形态细化。
+- **ADR-030（AestheticPreference schema）**：**amend，不 supersede**——仅退役其 `generator/scene_strategies.py` prompt-hook 的"in-house 生成控制"用途；审美偏好档作为编剧提示词指南内容来源 survives，schema 容器留作未来预留位。（ADR-030 为"已接受"，本 ADR 不改其正文，仅声明关系 + 变更历史注明。）
+- **ADR-031（GM 抉择空间 + NPC 状态机）**：跨场景连续性（推到 P-D）**借鉴**其 trust/fear/affinity 状态语义命名作提示词注入内容，但**不复用其运行时 `npc_state_machine.schema.json` / `/engine` 执行器**（后者尚未落地、且 ADR-031 自定义为"场景内"）。跨场景连续性真实承载 = 已存在的 `character.relations`（本体）+ `relationship.*` state path 值（/state）。
+
+**schema 影响判定**：默认**不动 `/schema`**。NPC 状态/连续性数字只进提示词、不持久化进 dialogue_graph 运行时（红线分两级：动 `dialogue_graph`/`node` 运行时 schema = 最高红线破 0.1.1 兼容；新增 generator-side sidecar schema 文件 = 仍走 schema-only ABC 但风险较低）。**场景编号若需持久化到本体的新字段/结构（撞 `chapter.schema.json` additionalProperties:false）= 硬地基**——停下、单独 schema-only ABC、作者批准后再做（ADR-037 §二 + 安全阀）。本转向首版（P-A+P-B + 便宜版连续性）不触及 schema。
+
+**替代方案及否决理由**：
+
+- **路线 B（编剧写自由文本 + 我们解析回 JSON）**：否决——需鲁棒的自然文本→JSON 解析器（现仓库无、天生脆弱）；编剧改动分支即破图。路线 A 锁结构从根上回避。
+- **继续自建正文生成（维持 Pass 2）**：否决——卡点几个月未解，且对作者是能力错配（背景③）。
+- **现在就上费工版连续性**：否决（首版）——NPC 数值无产出口 + 北极星滑动风险；收窄到便宜版先验证。
+
+**后果**：
+
+- 复用大量现成结构资产（Pass 1 引擎 / assemble 机械装配半 / 三层校验器 + `generation_source="human"` 豁免 / role_rules / schema / 锚点库 / render）。
+- 新工作（首版）：P-A 提示词渲染器（结构骨架→整场写作提示词，含确定性拆拍器）；P-B 回流合并器（**新模块**，非"改 assemble.py"：解析 + node_id/序号对齐 + 硬报错）+ 验收（复用校验器，source=human）。
+- 放弃"一键生成整局游戏"演示叙事——换人在环创作步骤（作者本就要雇编剧，对真实用例非损失）。
+- BYOM 形态对开源 framework（阶段 4）更强：不绑定特定中转站 / 不受模型换代折腾。
+- 风险（如实）：依赖编剧遵守格式（由路线 A 锁结构 + 验收闸 + 硬报错缓解）；"滑回做工具"风险（由首版收窄 + 先验证核心缓解）。
+
+**编号说明**：ADR-038 后顺延为 ADR-039（ADR-032 / 033 编号仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）。注：本转向"不自建正文生成"与预留的 ADR-032"节点级文本生成抽象"主题相悖，故顺延 039、032/033 继续预留。
+
+**追溯**：设计提案 [/docs/reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md](reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md)（含四视角对抗评审修正 §13）+ 作者 2026-06-21 本会话发起 + 五点拍板 + 两叉口裁决（核心闭环收窄 / beats 确定性拆拍）。
+
+---
+
 ## 变更历史
 
 - 2026-04-25：作者明确授权新增 ADR-011 / ADR-012 / ADR-013（阶段 1 三条架构决策），属 CLAUDE.md 规则 10 的明示例外。
@@ -1378,6 +1429,7 @@ Phase 1 design-first 多 pass 结构层原型落地后（多 pass 较单一大 p
 - 2026-05-25：作者明确授权新增 ADR-036（Forgewright 采用分模块 license：runtime Apache 2.0 / 开发期工具 AGPL v3 / 文档 CC-BY 4.0 / content CC-BY-NC 4.0 / game Proprietary），属 CLAUDE.md 规则 10 的明示例外。设计原理 = ADR-002 + ADR-004 运行时 vs 生产期分离的 license 层具体化。落地走 **L1 直签 main fixation 模式**（参 `aeea12e docs(L1): 升格 governance` 先例），破例跳过标准 ABC 闭环；不归 STAGE_3_TASKS.md §1.5.4 跳 BC 破例 5 类。PR #71 merged 2026-05-25（merge commit `9190fff` / 业务 commit `b14ad15`）实际落地 9 模块 LICENSE 文件 + 根 `/LICENSE` 总览 + `/docs/FAQ-LICENSE.md` 11 题 + README 开发者承诺段。外部依赖：dialogue-flow-skill 仓库（private；[outsiderrr/dialogue-flow-skill](https://github.com/outsiderrr/dialogue-flow-skill)）Phase 3 Dual Licensing 通过 `/generator` AGPL v3 集成。本 fixation 会话仅做 governance record keeping（DECISIONS / ROADMAP / CLAUDE.md），不改业务代码。
 - 2026-06-08：作者明确授权新增 ADR-037（ABC 阶段层级化 + 设计先于施工（含软地基）），属 CLAUDE.md 规则 10 的明示例外。整合自 vault 提案《ABC 阶段层级化 + 设计先于施工》（2026-06-08）+ 本 L1 治理会话 cross-LLM critique（GPT-5.5/Codex 8 finding）消化。同期 governance v0.4.2 → v0.5（§1/§2/§3 + 新增 §10.6/§10.7 + §11 兼容注）+ 三处既有文档债修复（STAGE_3_TASKS §1.5.4 加"攒批≠跳BC"注 + §1.5.1 C 阶段措辞 / prompts README C 阶段措辞 / REVIEW_PROMPT_CODE_GPT.md "不要 commit/push" vs "报告 push 到 main"自相矛盾理顺）。落地走 L1 直签 main fixation 模式（作者明示授权 + 本 PR merge）。
 - 2026-06-08：作者明确授权新增 ADR-038（结构层采纳"分拍节点图"生成：choice 节点 + 单选项 beat 链；node = 对话节拍、分叉是属性非定义；路径涌现；schema 不变），属 CLAUDE.md 规则 10 的明示例外。来自 Phase 1 多 pass 结构层原型执行会话（claude/amazing-nobel-93f98b）2026-06-08 作者审阅 N3 分拍样例 + 露西全场分拍后拍板"采纳为默认"。同期 `/generator/experiments/multipass_structure/DECISION_paced_nodes.md` 同步 note 双写。v1 实现（`multipass_paced_lucy.py`）拓扑半固定；完全动态拓扑 + 选项"我"统一（Phase 2）+ beat-pacing 固化进正式管线 + 多场景复核列为 follow-up。
+- 2026-06-21：作者明确授权新增 ADR-039（写作提示词包转向：不自建正文生成 / 编剧 BYOM 写正文 / 我们守结构与回流验收；路线 A 锁结构、编剧只填正文；首版收窄 P-A+P-B 最小闭环 + 连续性便宜版，P-C/D/E 推后；Pass 2 正文引擎退役为生成路径、文风资产重打包），属 CLAUDE.md 规则 10 的明示例外。落地模式 = L1 直签 main fixation（mode = L1-fixation；参 ADR-036 先例）。整合自 [/docs/reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md](reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md)（四视角对抗评审消化见其 §13）+ 作者 2026-06-21 本会话发起转向、五点拍板、两叉口裁决。关系：amend ADR-030（退 prompt-hook 生成控制角色）；ADR-031 借状态语义不碰运行时 schema/engine；ADR-038 保留。同期一并把作者 2026-06-08 未提交的 CLAUDE.md v0.2 北极星段补落（折进 v0.3）。本转向执行会话（worktree claude/agitated-bhabha-3adde6）产出落地包 + 直接落 DECISIONS/CLAUDE/ROADMAP，作者审 PR 合并。
 
 ## 版本
 
