@@ -1,6 +1,7 @@
 """第三层：一致性校验。
 
-跨对象一致性检查：节点内 option_id 唯一性、图内 speaker_ref 必须在 character_refs 中，
+跨对象一致性检查：节点内 option_id 唯一性、图内 speaker_ref 必须在 character_refs 中
+（含 ADR-040 结构化对白 dialogue[].speaker_ref——每句对白的说话人同样要在花名册里声明），
 以及本体引用闭合性（character_refs、scene_anchor、location_ref、StateEffect.ontology_ref、
 StateCondition.ontology_ref）。本体查询走 state.ontology.get_entity（ADR-006 单一事实源）。
 """
@@ -116,6 +117,26 @@ def check(graph: dict) -> list[Issue]:
                     ),
                 )
             )
+
+        # ADR-040：结构化对白行 dialogue[].speaker_ref 同样必须 ∈ character_refs
+        # （与 node.speaker_ref 同闭合逻辑——对白每句的说话人都要在花名册里声明）。
+        dialogue = node.get("dialogue")
+        if isinstance(dialogue, list):
+            for d_idx, entry in enumerate(dialogue):
+                if not _is_mapping(entry):
+                    continue
+                d_speaker = entry.get("speaker_ref")
+                if isinstance(d_speaker, str) and d_speaker not in char_ref_set:
+                    issues.append(
+                        Issue(
+                            level="cons",
+                            location=f"{node_id}/dialogue[{d_idx}]",
+                            message=(
+                                f"dialogue[{d_idx}].speaker_ref {d_speaker!r} is "
+                                f"not declared in character_refs"
+                            ),
+                        )
+                    )
 
         location_ref = node.get("location_ref")
         if isinstance(location_ref, str) and ontology.get_entity(location_ref) is None:

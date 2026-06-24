@@ -100,6 +100,26 @@ def test_speaker_ref_outside_character_refs_fails_at_cons():
     )
 
 
+def test_dialogue_speaker_ref_outside_character_refs_fails_at_cons():
+    """ADR-040：dialogue[].speaker_ref 也走 ⊆ character_refs 闭合（同 node.speaker_ref）。"""
+    report = validate(
+        _load(FIXTURES_DIR / "dialogue_speaker_ref_outside_character_refs.json")
+    )
+    assert not report.passed
+    assert report.issues_by_level["schema"] == []
+    assert report.issues_by_level["graph"] == []
+    cons = report.issues_by_level["cons"]
+    # 坏的那条（char_corvan ∉ character_refs）触发，location 指到 dialogue
+    assert any(
+        "speaker_ref" in issue.message
+        and "char_corvan" in issue.message
+        and "dialogue" in issue.location
+        for issue in cons
+    )
+    # 合法的 char_vellin 不应触发任何 cons 问题
+    assert not any("char_vellin" in issue.message for issue in cons)
+
+
 def test_duplicate_option_id_fails_at_cons():
     report = validate(_load(FIXTURES_DIR / "duplicate_option_id.json"))
     assert not report.passed

@@ -169,6 +169,69 @@ def test_node_negative_missing_narration():
     assert not v.is_valid(node)
 
 
+# ---------------------------------------------------------------------------
+# ADR-040：结构化对白字段 node.dialogue = [{speaker_ref, line}]（optional）
+# ---------------------------------------------------------------------------
+
+def make_valid_dialogue_entry(
+    *, speaker_ref: str = "char_a", line: str = "一句对白。"
+) -> dict:
+    return {"speaker_ref": speaker_ref, "line": line}
+
+
+def test_node_positive_with_structured_dialogue():
+    """ADR-040：node 携带 optional dialogue=[{speaker_ref, line}] 合法。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node(speaker=None)
+    node["dialogue"] = [
+        make_valid_dialogue_entry(line="第一句。"),
+        make_valid_dialogue_entry(line="第二句。"),
+    ]
+    assert v.is_valid(node)
+
+
+def test_node_positive_dialogue_absent_still_valid():
+    """ADR-040：dialogue 是 optional——不带该字段的老节点仍合法（向后兼容）。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node()
+    assert "dialogue" not in node
+    assert v.is_valid(node)
+
+
+def test_node_negative_dialogue_item_missing_line():
+    """ADR-040：dialogue 条目缺 line 拒收。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node(speaker=None)
+    node["dialogue"] = [{"speaker_ref": "char_a"}]
+    assert not v.is_valid(node)
+
+
+def test_node_negative_dialogue_item_missing_speaker_ref():
+    """ADR-040：dialogue 条目缺 speaker_ref 拒收。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node(speaker=None)
+    node["dialogue"] = [{"line": "无主对白。"}]
+    assert not v.is_valid(node)
+
+
+def test_node_negative_dialogue_item_null_speaker_ref():
+    """ADR-040：dialogue 条目 speaker_ref 必须是非空字符串，null 拒收（旁白进 narration）。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node(speaker=None)
+    node["dialogue"] = [{"speaker_ref": None, "line": "应是具名说话人。"}]
+    assert not v.is_valid(node)
+
+
+def test_node_negative_dialogue_item_extra_property():
+    """ADR-040：dialogue 条目 additionalProperties:false——多余字段拒收。"""
+    v = _validator("node.schema.json")
+    node = make_valid_dialogue_node(speaker=None)
+    node["dialogue"] = [
+        {"speaker_ref": "char_a", "line": "对白。", "emotion": "angry"}
+    ]
+    assert not v.is_valid(node)
+
+
 def test_dialogue_graph_positive_minimal():
     v = _validator("dialogue_graph.schema.json")
     assert v.is_valid(make_valid_graph())

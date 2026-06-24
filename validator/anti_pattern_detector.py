@@ -3,7 +3,8 @@
 落地 A1 反馈 v0.1 §2 的 10 条 anti-pattern；其中 AP-7 / AP-8 / AP-10 程序化检测，
 其他 7 条（AP-1 ~ AP-6 + AP-9）标 LLM-as-judge 待办.
 
-检测对象：完成后的 node dict（含 narration + options[].text + speaker_ref）.
+检测对象：完成后的 node dict（含 narration + options[].text + speaker_ref +
+ADR-040 结构化 dialogue[].line）.
 
 输出形态：list[AntiPatternFlag] —— 每条 flag 含 ap_id / location / excerpt / reason.
 
@@ -144,12 +145,19 @@ _AP10_SELF_NICKNAMES = ("女孩", "男孩", "小孩", "老娘", "老子", "本�
 
 
 def detect_ap10_npc_self_nickname_in_quote(
-    narration: str, options: list[dict[str, Any]] | None = None
+    narration: str,
+    options: list[dict[str, Any]] | None = None,
+    dialogue: list[dict[str, Any]] | None = None,
 ) -> list[AntiPatternFlag]:
-    """AP-10 程序化检测：引号内文本含单字代称自己模式."""
+    """AP-10 程序化检测：引号内文本含单字代称自己模式.
+
+    ADR-040：NPC 对白拆进结构化 `dialogue[].line` 后，line 是**整句裸正文**（无「」包裹），
+    故对 dialogue[].line **直接整行扫**自称词（line 本身即 NPC 的话）；narration / options
+    内的引号内文本仍按引号 span 扫（旁白/选项里可能内嵌引用）。
+    """
     flags: list[AntiPatternFlag] = []
 
-    def _scan(text: str, where: str) -> None:
+    def _scan_quoted(text: str, where: str) -> None:
         for q_match in _AP10_QUOTE_RE.finditer(text or ""):
             quoted = q_match.group(1)
             for nick in _AP10_SELF_NICKNAMES:
@@ -167,9 +175,29 @@ def detect_ap10_npc_self_nickname_in_quote(
                     )
                     break
 
-    _scan(narration, "quote_in_narration")
+    def _scan_bare(text: str, where: str) -> None:
+        """整行裸文本（dialogue[].line）直接扫自称词——整行即 NPC 的话."""
+        for nick in _AP10_SELF_NICKNAMES:
+            if nick in (text or ""):
+                flags.append(
+                    AntiPatternFlag(
+                        ap_id="AP-10",
+                        location=where,
+                        excerpt=(text or "")[:80],
+                        reason=(
+                            f"NPC 对白行含单字代称 '{nick}'——"
+                            f"违反 A1 反馈 v0.1 §2 AP-10（用'我'或具体名字）"
+                        ),
+                    )
+                )
+                break
+
+    _scan_quoted(narration, "quote_in_narration")
     for i, opt in enumerate(options or []):
-        _scan(opt.get("text", ""), f"quote_in_options[{i}].text")
+        _scan_quoted(opt.get("text", ""), f"quote_in_options[{i}].text")
+    for i, entry in enumerate(dialogue or []):
+        if isinstance(entry, dict):
+            _scan_bare(entry.get("line", ""), f"dialogue[{i}].line")
     return flags
 
 
@@ -200,11 +228,12 @@ def detect_anti_patterns(node: dict[str, Any]) -> list[AntiPatternFlag]:
     """
     narration = node.get("narration", "") or ""
     options = node.get("options", []) or []
+    dialogue = node.get("dialogue", []) or []  # ADR-040 结构化对白行
 
     flags: list[AntiPatternFlag] = []
     flags.extend(detect_ap7_narration_steals_npc_speech(narration))
     flags.extend(detect_ap8_option_third_person(options))
-    flags.extend(detect_ap10_npc_self_nickname_in_quote(narration, options))
+    flags.extend(detect_ap10_npc_self_nickname_in_quote(narration, options, dialogue))
     return flags
 
 

@@ -21,6 +21,20 @@ class Type(Enum):
     end = "end"
 
 
+class DialogueItem(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    speaker_ref: constr(min_length=1) = Field(
+        ...,
+        description="本对白行说话人的本体角色引用；非 null。闭合性（∈ character_refs）留给 /validator。",
+    )
+    line: constr(min_length=1) = Field(
+        ...,
+        description="该说话人的一句对白裸正文；不含「」包裹体例（呈现由宿主/渲染层施加）。",
+    )
+
+
 class Source(Enum):
     human = "human"
     llm = "llm"
@@ -90,6 +104,10 @@ class Node(BaseModel):
     options: list[option.Option] = Field(
         ...,
         description="D1：dialogue 节点非空、end 节点为空数组（由本文件下方 allOf+if/then 强制）。",
+    )
+    dialogue: list[DialogueItem] | None = Field(
+        None,
+        description="⭐ ADR-040（B1 结构化对白）：narration 之外的结构化对白行；可选数组，可省。每项 {speaker_ref, line}：speaker_ref = 本对白行说话人的本体角色引用（非 null），line = 该说话人的一句对白裸正文（不含「」包裹体例，由宿主/渲染层施加）。narration 现语义 = 旁白（场景/动作白描，无说话人）；带说话人的台词进本数组。__本字段 optional + additionalProperties:false 兼容路径，不 bump schema_version__（沿用 generation_trace.slot_assignments / scene_metaparams 先例；不破 gold scene 与 const 守卫测试）。__留给 /validator__：(1) 每条 dialogue[].speaker_ref 必须 ∈ 父图 character_refs（闭合性，同 node.speaker_ref，由 consistency_check 校验）；(2) dialogue[].line 文本走反模式预检（anti_pattern_detector）。__语义不变量（ADR-040 决策三）__：节点携带非空 dialogue[] ⇒ narration 为纯旁白 ⇒ node.speaker_ref 应为 null；非空 node.speaker_ref 仅 legacy（pre-040）narration-only 节点保留。",
     )
     reachability_condition: state_condition.StateCondition | None = Field(
         None, description="🟡 节点可达性前置条件；阶段 0 手写场景可 null。"
