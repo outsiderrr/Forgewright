@@ -7,7 +7,7 @@
 > - 新建 schema 文件首版 const `"0.3.0"`：`/schema/character.schema.json` + `location.schema.json` + `clock.schema.json` + `chapter.schema.json`。
 > - 既有 schema 文件 const **保持 `"0.1.1"` 不动**（沿用 SCHEMA_v0.2 commit `c47c9cf` "非结构性变更不联动 schema_version" 先例）：`dialogue_graph.schema.json` + `node.schema.json` + `option.schema.json` + `state_effect.schema.json` + `state_condition.schema.json`。
 > - `image_asset.schema.json` 的 const 保持 `"0.2.0"` 不动。
-> - 新增字段（如 `node.generation_trace.slot_assignments`，详 §6）走 **optional + `additionalProperties: false`** 兼容路径，不破 gold scene `/content/test_scene_v0/scene.json`（其 `schema_version` 仍为 `0.1.1`）。
+> - 新增字段（如 `node.generation_trace.slot_assignments`，详 §6；以及 ADR-040 的 `node.dialogue`，详 §10）走 **optional + `additionalProperties: false`** 兼容路径，不破 gold scene `/content/test_scene_v0/scene.json`（其 `schema_version` 仍为 `0.1.1`）。
 >
 > 复合版本号的唯一动机：避免 stage-2 字段扩张破 stage-0/1 验收的 gold standard。详 STAGE_2_TASKS §2.4 / Q2 + ADR-016 schema 版本号策略。
 
@@ -410,7 +410,38 @@ v0.1 草稿到 v1.0 的关键收紧（含 PR #40 B 阶段反馈整合）：
 - **ADR-016**：五命名空间表（state_paths_read / state_paths_written items pattern 同源）+ schema 版本号策略（首版 0.3.0）。
 - **ADR-026**：批量调度器写入顺序（write scene → assign chapter → write deps → record version）。
 
+## 10. node.dialogue 结构化对白字段增量（ADR-040 / 2026-06-23）
+
+> 本节为后续增量（2026-06-23，晚于 v0.3.0 本体增量），记录在此以保持「当前 schema 设计基线」单一可查。
+
+**动机**：`node.narration` 历史把旁白（场景/动作白描）与 NPC 对白揉成一个字符串，L3 宿主（Godot，ADR-035）无法把「这句谁说的」结构化挂到说话人名字/头像位。ADR-040 把对白拆出为结构化字段。
+
+**变更**：`/schema/node.schema.json` 新增 optional 字段 `dialogue`：
+
+```jsonc
+"dialogue": {                       // optional；可省
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["speaker_ref", "line"],
+    "additionalProperties": false,
+    "properties": {
+      "speaker_ref": { "type": "string", "minLength": 1 },  // 非 null；∈ character_refs（留 /validator）
+      "line":        { "type": "string", "minLength": 1 }   // 裸正文，不含「」包裹体例
+    }
+  }
+}
+```
+
+**语义重定义**：`narration` 现 = **旁白**（无说话人）；带说话人的台词进 `dialogue[]`。
+
+**不变量（ADR-040 决策三）**：节点携带非空 `dialogue[]` ⇒ `narration` 为纯旁白 ⇒ `node.speaker_ref` 必为 `null`；非空 `node.speaker_ref` 仅 legacy（pre-040）narration-only 节点保留。
+
+**版本号**：**不 bump**。`dialogue_graph` / `node` 的 `schema_version` const 仍 `"0.1.1"`，走 optional + `additionalProperties: false` 兼容路径（同 §6 slot_assignments）。两条守卫测试（`test_gold_scene_still_passes_dialogue_graph_v0_1_1` + `test_dialogue_graph_schema_version_const_unchanged`）保持绿；老 narration-only 场景（gold scene）不带 `dialogue` 字段仍合法。
+
+**留给 /validator**（不在 schema 层表达）：(1) `dialogue[].speaker_ref ⊆ character_refs` 闭合性 → `consistency_check`（与 `node.speaker_ref` 同址同逻辑）；(2) `dialogue[].line` 文本反模式预检 → `anti_pattern_detector`（AP-10 自称等）。
+
 ## 版本
 
-本文件版本：v0.3.0
-最后更新：2026-05-08（T-3.2 §9 ContentDependencyIndex sidecar 增量；含 PR #40 GPT-5.5 review C 阶段修订 — state path 拒裸 namespace + scene_id 与 graph_id 严格同源 + act_id 与 chapter.schema.json 严格同源 + $schema/$id 与既有 schema 同源）
+本文件版本：v0.3.0（+ 2026-06-23 §10 ADR-040 node.dialogue 增量）
+最后更新：2026-06-23（§10 ADR-040 结构化对白字段增量；走兼容路径不 bump const）。此前：2026-05-08（T-3.2 §9 ContentDependencyIndex sidecar 增量；含 PR #40 GPT-5.5 review C 阶段修订 — state path 拒裸 namespace + scene_id 与 graph_id 严格同源 + act_id 与 chapter.schema.json 严格同源 + $schema/$id 与既有 schema 同源）

@@ -1410,6 +1410,54 @@ Phase 1 design-first 多 pass 结构层原型落地后（多 pass 较单一大 p
 
 **追溯**：设计提案 [/docs/reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md](reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md)（含四视角对抗评审修正 §13）+ 作者 2026-06-21 本会话发起 + 五点拍板 + 两叉口裁决（核心闭环收窄 / beats 确定性拆拍）。
 
+## ADR-040：结构化对白字段（narration=旁白 + 可选 dialogue[]；B1 方案；不 bump schema_version）
+
+**状态**：已接受（2026-06-23）
+
+**背景**：
+
+`node.narration` 历史语义是「玩家看到的场景/对白文本」——旁白（场景/动作白描）与 NPC 对白被**揉成一个字符串**（结构层装配器 `generator/multipass/assemble.py:_merge_narration` 把每条对白行以「」并入 narration，见 `2026-06-11_convfix/lucy/scene.json` 的 `opening` 节点）。这对 L3 宿主（ADR-035 Godot 4.6）是硬伤：宿主无法把「这句是谁说的」结构化地挂到说话人名字 / 头像位上——它只拿到一坨混合文本。露西实测的中间产物 `design.json` 其实**已经把 narration 与 dialogue[] 分开存**（`proses` / `beats` / `ends` 各有独立 `narration` 旁白 + `dialogue` 对白行数组），是装配器在最后一步把它们揉回了一起。作者 2026-06-23 拍板采纳**选项 B（结构化对白字段）**，并明示授权本任务动 schema（覆盖 ADR-039「默认不动 schema」+ DECISIONS.md「动 node 运行时 schema = 最高红线」的默认；本任务作为 schema 串行卡口 [B-author-gate] 独占执行）。
+
+**决策**：
+
+一、**node 增 optional `dialogue` 字段**，形如 `[{speaker_ref, line}]`（可选数组，可省）。`narration` **语义重定义为「旁白」**——场景 / 动作白描，无说话人归属；带说话人的台词改进 `dialogue[]`。`narration` 仍必填、仍是字符串。
+
+二、**不 bump `schema_version`（作者 2026-06-23 拍板）**：`dialogue_graph` / `node` 的 const 保持 `"0.1.1"`；`dialogue` 走 **optional + `additionalProperties: false` 兼容路径**（沿用 `generation_trace.slot_assignments`（ADR-019）/ `scene_metaparams` 等 §2.4 先例）。新契约的机器可检测信号 = 节点是否携带 `dialogue[]` 字段 + 本 ADR 文档化语义，**不靠版本号**。理由：① 与显式治理守卫测试 `schema/tests/test_stage2_ontology_schema.py::test_dialogue_graph_schema_version_const_unchanged`（断言 const 严格 `"0.1.1"`、注释「不允许 bump」）一致，无需主动改写守卫；② 兼容路径已同时达成「老场景仍合法」+「新契约可检测」，bump 不带来额外收益却破 gold scene 兼容承诺。
+
+三、**节点级 `speaker_ref` 处理**：保持必填（`string | null`）以向后兼容。语义澄清——它是 `narration` 的 **legacy 单说话人归属**。引入 B1 后 `narration` = 旁白（无归属），故**不变量**：节点携带非空 `dialogue[]` ⇒ `narration` 为纯旁白 ⇒ `node.speaker_ref` 必为 `null`。非空 `speaker_ref` 仅对 **legacy（pre-040）narration-only 节点**保留（其 narration 可含某说话人内容，如 gold scene `arrival_waystation`）。装配器对**新内容一律 emit `speaker_ref=null` + `dialogue[]`**。
+
+四、**`dialogue[].line` 体例 = 裸正文**：去掉整句包裹引号（「」/ 半角 "" / 全角 ""——沿用装配器既有 `_quote` 的「整句换「」」归一逻辑，但只去包裹、不再回包）。引号 / 气泡等呈现体例由宿主 / 渲染层施加。`dialogue[].speaker_ref` 非 null、必填。
+
+五、**只做 B1**（`narration` 旁白 + `dialogue[]` 两字段平行）；**不做 B2**（`content[]` 有序交错块——旁白/对白按出现顺序交错）。B1 已足以让宿主挂说话人名 / 头像；交错块留待真实需求再议。
+
+六、**校验**：`dialogue[].speaker_ref ⊆ character_refs` 闭合性进**一致性层** `consistency_check`（与既有 `node.speaker_ref` 闭合检查同址同逻辑）；`dialogue[].line` 文本接入**反模式预检** `anti_pattern_detector`（AP-10 引号内自称等），补上「对白移出 narration 后产生的检测盲区」（AP-7 旁白抢台词则因 narration 变纯旁白而自然继续生效）。
+
+**与既有 ADR 的关系**：
+
+- **ADR-002 / ADR-004（运行时无 LLM / 极薄）**：不变。`engine/player.py` 仍只读 `narration` + `speaker_ref` 渲染；新增 optional `dialogue` 被运行时忽略（`additionalProperties` 由 schema 控制，engine 用 dict 读取，不读 `dialogue` 即静默忽略），不引入任何运行时 LLM。
+- **ADR-039（写作提示词包转向；默认不动 schema）**：其「默认不动 `/schema`」被作者就本任务**显式覆盖**（schema 串行卡口）。本 ADR 不改 ADR-039 的产出方向（正文仍 BYOM）；只是把「正文字段」里的 `dialogue` 从「揉进 narration 的字符串」升级为「结构化数组」，让编剧回流 + 宿主渲染都能按说话人对齐。
+- **ADR-035（Godot L3 宿主）**：宿主消费 `dialogue[]` 渲染带说话人（narration 旁白无名 + 每句 `speaker_ref → display_name`）= 本 schema 变更的下游目标。**Goal 3（host `scene_router.gd` / `dialogue_control.gd` 渲染 + host schema 拷贝同步）推后**到 host 分支（`codex/godot-first-game-host`，当前未合并、落后 main 36 提交、自带旧 schema 拷贝）落 main 后另起会话做；F5 截图验收由作者跑（本机未装 Godot）。
+- **ADR-019（slot_assignments）/ SCHEMA_v0.3 §2.4 兼容路径先例**：沿用——optional 新字段不 bump const。
+
+**schema 影响判定**：动 `node` 运行时 schema（加 optional `dialogue` 字段）属作者就本任务**显式授权**（覆盖 ADR-039 默认 + 「最高红线」默认；CLAUDE.md 规则 10 明示例外）。**不 bump const `0.1.1`**，走兼容路径，不破 gold scene `/content/test_scene_v0/scene.json` + 两条守卫测试（`test_gold_scene_still_passes_dialogue_graph_v0_1_1` + `test_dialogue_graph_schema_version_const_unchanged`）。`dialogue_graph.schema.json` 仅描述层补「`speaker_ref ⊆ character_refs` 含 node.dialogue[]」（不动 const、不增字段）。
+
+**替代方案及否决理由**：
+
+- **bump `schema_version` 0.1.1 → 0.2.0（enum ['0.1.1','0.2.0']）**：否决（作者 2026-06-23 拍板）——与显式守卫测试 `test_dialogue_graph_schema_version_const_unchanged`（「不允许 bump」）冲突，需主动改写一条治理守卫；兼容路径已达「老场景仍合法 + 新契约可检测」目标，bump 无额外收益。
+- **B2（`content[]` 有序交错块）**：否决（首版）——复杂度高；本任务只需旁白 / 对白分离即可让宿主挂说话人。
+- **把对白留在 narration 内加内联说话人标签（inline marker）**：否决——仍是「揉」，宿主要解析自由文本、脆弱（同 ADR-039 路线 B 否决理由）。
+
+**后果**：
+
+- Godot 宿主可挂说话人名 / 头像（narration 旁白无名 + `dialogue[]` 每句带说话人）——本变更的直接目标（Goal 3 推后实现）。
+- 向后兼容：老 narration-only 场景（`test_scene_v0`）不带 `dialogue` 字段仍合法、engine 仍能播；新场景带 `dialogue[]` 也合法；两条守卫测试 + 全仓 1332 测试基线 **0 regression**。
+- `engine/player.py`（终端 reference player）暂不渲染 `dialogue[]`（optional 字段被忽略，仍按 narration + speaker_ref 渲染）；终端 player 渲染 `dialogue[]` 列为 **follow-up**（非本任务，不破向后兼容）。
+- 装配器对新内容一律 emit `speaker_ref=null`——若未来需「narration 由具名角色 framing」（B2 类场景）需另设计。
+
+**编号说明**：ADR-039 后顺延为 ADR-040（ADR-032 / 033 编号仍预留给平行任务：节点级文本生成抽象 / 技能体系最小可启动定义）。
+
+**追溯**：schema 串行卡口施工会话（worktree `gallant-dijkstra-b05ead`）+ 作者 2026-06-23 拍板（选项 B / 版本号不 bump 走兼容路径 / Goal 3 拆出推后 / 节点级 speaker_ref 处理交施工会话定并写进本 ADR）。
+
 ---
 
 ## 变更历史
@@ -1430,6 +1478,7 @@ Phase 1 design-first 多 pass 结构层原型落地后（多 pass 较单一大 p
 - 2026-06-08：作者明确授权新增 ADR-037（ABC 阶段层级化 + 设计先于施工（含软地基）），属 CLAUDE.md 规则 10 的明示例外。整合自 vault 提案《ABC 阶段层级化 + 设计先于施工》（2026-06-08）+ 本 L1 治理会话 cross-LLM critique（GPT-5.5/Codex 8 finding）消化。同期 governance v0.4.2 → v0.5（§1/§2/§3 + 新增 §10.6/§10.7 + §11 兼容注）+ 三处既有文档债修复（STAGE_3_TASKS §1.5.4 加"攒批≠跳BC"注 + §1.5.1 C 阶段措辞 / prompts README C 阶段措辞 / REVIEW_PROMPT_CODE_GPT.md "不要 commit/push" vs "报告 push 到 main"自相矛盾理顺）。落地走 L1 直签 main fixation 模式（作者明示授权 + 本 PR merge）。
 - 2026-06-08：作者明确授权新增 ADR-038（结构层采纳"分拍节点图"生成：choice 节点 + 单选项 beat 链；node = 对话节拍、分叉是属性非定义；路径涌现；schema 不变），属 CLAUDE.md 规则 10 的明示例外。来自 Phase 1 多 pass 结构层原型执行会话（claude/amazing-nobel-93f98b）2026-06-08 作者审阅 N3 分拍样例 + 露西全场分拍后拍板"采纳为默认"。同期 `/generator/experiments/multipass_structure/DECISION_paced_nodes.md` 同步 note 双写。v1 实现（`multipass_paced_lucy.py`）拓扑半固定；完全动态拓扑 + 选项"我"统一（Phase 2）+ beat-pacing 固化进正式管线 + 多场景复核列为 follow-up。
 - 2026-06-21：作者明确授权新增 ADR-039（写作提示词包转向：不自建正文生成 / 编剧 BYOM 写正文 / 我们守结构与回流验收；路线 A 锁结构、编剧只填正文；首版收窄 P-A+P-B 最小闭环 + 连续性便宜版，P-C/D/E 推后；Pass 2 正文引擎退役为生成路径、文风资产重打包），属 CLAUDE.md 规则 10 的明示例外。落地模式 = L1 直签 main fixation（mode = L1-fixation；参 ADR-036 先例）。整合自 [/docs/reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md](reviews/master_plan/2026-06-21_pivot_to_writer_prompt_pack.md)（四视角对抗评审消化见其 §13）+ 作者 2026-06-21 本会话发起转向、五点拍板、两叉口裁决。关系：amend ADR-030（退 prompt-hook 生成控制角色）；ADR-031 借状态语义不碰运行时 schema/engine；ADR-038 保留。同期一并把作者 2026-06-08 未提交的 CLAUDE.md v0.2 北极星段补落（折进 v0.3）。本转向执行会话（worktree claude/agitated-bhabha-3adde6）产出落地包 + 直接落 DECISIONS/CLAUDE/ROADMAP，作者审 PR 合并。
+- 2026-06-23：作者明确授权新增 ADR-040（结构化对白字段：node 加 optional `dialogue=[{speaker_ref, line}]`；`narration` 语义重定义为旁白；**不 bump `schema_version`、走 optional + additionalProperties 兼容路径**；节点带非空 dialogue[] ⇒ speaker_ref=null 不变量；只做 B1 不做 B2；`dialogue[].speaker_ref ⊆ character_refs` 闭合 + `dialogue[].line` 反模式预检），属 CLAUDE.md 规则 10 的明示例外 + schema 串行卡口 [B-author-gate]（作者 2026-06-23 显式授权动 node 运行时 schema，覆盖 ADR-039 默认不动 schema）。作者本会话拍板四点：选项 B（结构化对白）/ 版本号不 bump 走兼容路径（与守卫测试 test_dialogue_graph_schema_version_const_unchanged 冲突，故不 bump）/ Goal 3（Godot 渲染）拆出推后到 host 分支落 main 后另起会话 / 节点级 speaker_ref 处理交施工会话定。schema 串行卡口施工会话（worktree gallant-dijkstra-b05ead）产出 + 走 ABC 闭环（作者另起 Codex 反向 review）。
 
 ## 版本
 

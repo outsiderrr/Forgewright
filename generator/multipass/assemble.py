@@ -4,36 +4,50 @@
 node_id / option_id / target_node_id 接线与机械字段（condition=null / effects=[] /
 unavailable_behavior="hide" / on_enter_effects=[]）**全部由本模块确定性填写**。
 
-schema 不改（ADR-038）：单选项 beat 节点天然合法（type=dialogue ⇒ options minItems:1）。
-组装产物交给 validator（schema + mechanical + AP 检测），engine 层调用。
+schema：单选项 beat 节点天然合法（ADR-038；type=dialogue ⇒ options minItems:1）。
+ADR-040（B1 结构化对白）：narration = 旁白（场景/动作白描，无说话人）；NPC 对白拆进
+结构化 `dialogue=[{speaker_ref, line}]`（**不再揉进 narration**）；带非空 dialogue[] 的
+节点 `speaker_ref=null`（旁白无归属，对白说话人在 dialogue[] 内）。schema_version 不 bump
+（dialogue 走 optional + additionalProperties 兼容路径）。组装产物交给 validator
+（schema + mechanical + AP 检测），engine 层调用。
 """
 from __future__ import annotations
 
 from typing import Any
 
-def _quote(line: str) -> str:
-    """NPC 对白行归一化为「」引号（裸句包裹；弯/直引号整句换成「」——复核发现 3/6 候选体例混用）。"""
+def _normalize_line(line: str) -> str:
+    """对白行体例归一为**裸正文**：去掉整句包裹引号（「」/半角 ""/全角 ""）。
+
+    ADR-040：对白进结构化 dialogue[].line，line 存裸正文（不含包裹引号体例），
+    引号 / 气泡等呈现由宿主 / 渲染层施加。复核发现 3/6 候选体例混用（裸句 / 「」 /
+    弯引号），统一去包裹得干净内容；只去**整句包裹**，句内引用（如露西转述莱特的话）不动。
+    """
     line = line.strip()
     if not line:
         return line
-    # 整句被弯引号 / 直引号包裹 → 换成「」（确定性体例归一，不改内容）
-    for opener, closer in (("“", "”"), ('"', '"')):
-        if line.startswith(opener) and line.endswith(closer) and len(line) >= 2:
-            line = line[len(opener) : -len(closer)].strip()
-            break
-    if line.startswith("「"):
-        return line
-    return f"「{line}」"
+    for opener, closer in (("「", "」"), ("“", "”"), ('"', '"')):
+        if (
+            line.startswith(opener)
+            and line.endswith(closer)
+            and len(line) >= len(opener) + len(closer)
+        ):
+            return line[len(opener) : -len(closer)].strip()
+    return line
 
 
-def _merge_narration(narration: str, dialogue: list[str] | None) -> str:
-    """narration + NPC 对白合成 node.narration（schema 单字段；对白带引号成段）。"""
-    parts = [narration.strip()] if narration and narration.strip() else []
-    for line in dialogue or []:
-        q = _quote(line)
-        if q:
-            parts.append(q)
-    return "\n\n".join(parts)
+def _dialogue_entries(
+    speaker_ref: str, lines: list[str] | None
+) -> list[dict[str, Any]]:
+    """对白行数组 → 结构化 [{speaker_ref, line}]（ADR-040）。
+
+    line 体例归一为裸正文；空行丢弃。speaker_ref 为图级单说话人（场景内对白同一 NPC）。
+    """
+    entries: list[dict[str, Any]] = []
+    for raw in lines or []:
+        line = _normalize_line(raw)
+        if line:
+            entries.append({"speaker_ref": speaker_ref, "line": line})
+    return entries
 
 
 def entry_graph_node_id(plan_node: dict[str, Any]) -> str:
@@ -116,8 +130,9 @@ def assemble_graph(
             nodes[pid] = {
                 "node_id": pid,
                 "type": "dialogue",
-                "narration": _merge_narration(prose.get("narration", ""), prose.get("dialogue")),
-                "speaker_ref": speaker_ref,
+                "narration": (prose.get("narration", "") or "").strip(),
+                "dialogue": _dialogue_entries(speaker_ref, prose.get("dialogue")),
+                "speaker_ref": None,
                 "location_ref": scene_anchor,
                 "on_enter_effects": [],
                 "options": options,
@@ -131,8 +146,9 @@ def assemble_graph(
                 nodes[bid] = {
                     "node_id": bid,
                     "type": "dialogue",
-                    "narration": _merge_narration(beat.get("narration", ""), beat.get("dialogue")),
-                    "speaker_ref": speaker_ref,
+                    "narration": (beat.get("narration", "") or "").strip(),
+                    "dialogue": _dialogue_entries(speaker_ref, beat.get("dialogue")),
+                    "speaker_ref": None,
                     "location_ref": scene_anchor,
                     "on_enter_effects": [],
                     "options": [
@@ -147,12 +163,12 @@ def assemble_graph(
                 warnings.append(f"beats {pid}: 没有任何节拍产出——链塌缩为空，跳过")
         elif kind == "end":
             data = end_data.get(pid) or {}
-            dialogue = data.get("dialogue") or []
             nodes[pid] = {
                 "node_id": pid,
                 "type": "end",
-                "narration": _merge_narration(data.get("narration", ""), dialogue),
-                "speaker_ref": speaker_ref if dialogue else None,
+                "narration": (data.get("narration", "") or "").strip(),
+                "dialogue": _dialogue_entries(speaker_ref, data.get("dialogue")),
+                "speaker_ref": None,
                 "location_ref": scene_anchor,
                 "on_enter_effects": [],
                 "options": [],

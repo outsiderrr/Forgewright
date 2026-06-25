@@ -208,7 +208,45 @@ def test_ap10_flags_in_options_quoted_text() -> None:
     assert "options[0]" in flags[0].location
 
 
+def test_ap10_flags_self_nickname_in_dialogue_line() -> None:
+    """ADR-040：对白移进 dialogue[].line（裸正文，无「」）后，AP-10 须直接扫整行."""
+    dialogue = [
+        {"speaker_ref": "char_lucy", "line": "你听着。"},
+        {"speaker_ref": "char_lucy", "line": "老娘可没那个胆子。"},
+    ]
+    flags = detect_ap10_npc_self_nickname_in_quote("", None, dialogue)
+    assert len(flags) == 1
+    assert flags[0].ap_id == "AP-10"
+    assert "老娘" in flags[0].reason
+    assert "dialogue[1].line" in flags[0].location
+
+
+def test_ap10_no_flag_clean_dialogue_line() -> None:
+    """dialogue[].line 用「我」自称 → 不 flag."""
+    dialogue = [{"speaker_ref": "char_lucy", "line": "我可没那个胆子。"}]
+    flags = detect_ap10_npc_self_nickname_in_quote("", None, dialogue)
+    assert flags == []
+
+
 # ---------- detect_anti_patterns 集成 ----------
+
+
+def test_detect_all_scans_dialogue_line_for_ap10() -> None:
+    """ADR-040 集成：detect_anti_patterns 对结构化 dialogue[].line 也跑 AP-10."""
+    node = {
+        "node_id": "node_split",
+        "narration": "她把杯子推过来。",
+        "speaker_ref": None,
+        "dialogue": [{"speaker_ref": "char_lucy", "line": "女孩也得活下去。"}],
+        "options": [{"option_id": "opt", "text": "我点头。"}],
+    }
+    flags = detect_anti_patterns(node)
+    ap10 = [f for f in flags if f.ap_id == "AP-10"]
+    assert len(ap10) == 1
+    assert "dialogue[0].line" in ap10[0].location
+
+
+# ---------- detect_anti_patterns 集成（原有） ----------
 
 
 def test_detect_all_returns_flags_for_3_violation_node() -> None:

@@ -210,17 +210,42 @@ def test_end_to_end_dynamic_topology(isolated_budget, tmp_path) -> None:
     targets = {o["target_node_id"] for o in nodes["opening"]["options"]}
     assert targets == {"soft_line_b1", "press_line_b1"}
 
-    # NPC 对白归一化进 narration（裸句加「」；已带「」不重复包；弯引号整句换「」）
-    assert "「要喝什么就坐吧，外头冷。」" in nodes["opening"]["narration"]
-    assert "「「" not in nodes["opening"]["narration"]
-    assert "「弯引号句要被归一。」" in nodes["opening"]["narration"]
-    assert "“" not in nodes["opening"]["narration"]
+    # ADR-040：NPC 对白进结构化 dialogue[]（不再揉进 narration）。
+    opening = nodes["opening"]
+    # narration = 纯旁白（prose.narration 原样），对白不混入
+    assert opening["narration"] == _NARRATION_260
+    assert "「" not in opening["narration"]
+    assert "“" not in opening["narration"]
+    # 带 dialogue[] 的节点 speaker_ref=null（ADR-040 决策三不变量）
+    assert opening["speaker_ref"] is None
+    # dialogue[] 每项 {speaker_ref, line}；line = 去整句包裹引号的裸正文（体例归一）
+    assert [d["line"] for d in opening["dialogue"]] == [
+        "要喝什么就坐吧，外头冷。",
+        "教授的朋友可真多。",
+        "弯引号句要被归一。",
+    ]
+    assert all(d["speaker_ref"] == "char_lucy" for d in opening["dialogue"])
+
+    # beats 节点同样拆分：narration 旁白 + dialogue[] 带说话人
+    b1 = nodes["soft_line_b1"]
+    assert b1["narration"] == "她压低声音，手指在台面上点了两下。"
+    assert b1["speaker_ref"] is None
+    assert [d["line"] for d in b1["dialogue"]] == ["先听着，别记在纸上。"]
+    assert all(d["speaker_ref"] == "char_lucy" for d in b1["dialogue"])
+
+    # end 节点：旁白离场、无对白 → dialogue 空数组、speaker_ref=null
+    eg = nodes["end_good"]
+    assert eg["narration"] == "你把杯子推回去，起身离开。门外的风比来时硬。"
+    assert eg["speaker_ref"] is None
+    assert eg["dialogue"] == []
 
     # 落盘四件产物
     paths = write_artifacts(result, tmp_path / "out")
     assert paths["scene"].exists() and paths["scene_md"].exists()
     md = paths["scene_md"].read_text(encoding="utf-8")
     assert "选择节点" in md and "单选项节拍" in md and "✅ 通过" in md
+    # ADR-040：剧本式 .md 也展示结构化对白（不只旁白），作者审阅可见 split
+    assert "要喝什么就坐吧，外头冷。" in md
 
 
 def test_topology_invalid_falls_back(isolated_budget) -> None:

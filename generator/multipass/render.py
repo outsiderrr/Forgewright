@@ -8,6 +8,19 @@ from __future__ import annotations
 from typing import Any
 
 
+def _dialogue_block(node: dict[str, Any]) -> str:
+    """ADR-040：结构化对白行 → 剧本式行（narration 旁白之后、带说话人）。无对白返回空串。"""
+    dialogue = node.get("dialogue") or []
+    if not dialogue:
+        return ""
+    lines = [
+        f"　{d.get('speaker_ref', '?')}：「{d.get('line', '')}」"
+        for d in dialogue
+        if isinstance(d, dict)
+    ]
+    return "\n" + "\n".join(lines) if lines else ""
+
+
 def _opts_block(options: list[dict[str, Any]], skeleton_opts: list[dict[str, Any]]) -> str:
     lines = []
     for i, o in enumerate(options):
@@ -42,7 +55,7 @@ def render_scene_md(result: Any) -> str:
                 f"""## ◆ {pid}（选择节点 · {len(opts)} 选项）
 > 功能：{pnode.get('function', '')}
 
-{gnode.get('narration', '')}
+{gnode.get('narration', '')}{_dialogue_block(gnode)}
 
 **玩家可选：**
 {_opts_block(opts, sk.get('options') or [])}
@@ -61,7 +74,7 @@ def render_scene_md(result: Any) -> str:
                 opt = (g.get("options") or [{}])[0]
                 parts.append(
                     f"""**〔{bid}〕**
-{g.get('narration', '')}
+{g.get('narration', '')}{_dialogue_block(g)}
 　→ `[ {opt.get('text', '')} ]` → `{opt.get('target_node_id', '')}`"""
                 )
             blocks.append("\n\n".join(parts))
@@ -72,7 +85,7 @@ def render_scene_md(result: Any) -> str:
                 f"""## ◆ {pid}（终止节点）
 > 功能：{pnode.get('function', '')}
 
-{g.get('narration', '')}
+{g.get('narration', '')}{_dialogue_block(g)}
 """
             )
 

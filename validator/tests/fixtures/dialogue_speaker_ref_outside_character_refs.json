@@ -1,0 +1,39 @@
+{
+  "schema_version": "0.1.1",
+  "graph_id": "fixture_dialogue_speaker_outside_char_refs",
+  "entry_node_id": "start",
+  "scene_anchor": "scene_waystation_of_iron_oath",
+  "character_refs": ["char_vellin"],
+  "nodes": {
+    "start": {
+      "node_id": "start",
+      "type": "dialogue",
+      "narration": "门开了，灯火摇了一下。",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "on_enter_effects": [],
+      "dialogue": [
+        {"speaker_ref": "char_vellin", "line": "你来了。"},
+        {"speaker_ref": "char_corvan", "line": "我也在——但我不在 character_refs 里。"}
+      ],
+      "options": [
+        {
+          "option_id": "opt_go",
+          "text": "我先走。",
+          "target_node_id": "end",
+          "condition": null,
+          "effects": [],
+          "unavailable_behavior": "hide"
+        }
+      ]
+    },
+    "end": {
+      "node_id": "end",
+      "type": "end",
+      "narration": "灯灭了。",
+      "speaker_ref": null,
+      "location_ref": "scene_waystation_of_iron_oath",
+      "options": []
+    }
+  }
+}

@@ -38,6 +38,56 @@ def test_dialogue_graph_roundtrip_preserves_scene() -> None:
     assert roundtripped == original
 
 
+def test_dialogue_graph_roundtrip_with_structured_dialogue() -> None:
+    """ADR-040：携带 node.dialogue=[{speaker_ref, line}] 的图 survive validate→dump→reload.
+
+    锁住 codegen 对新 optional `dialogue` 字段的捕获——若 regenerate_models.sh
+    没把字段带进生成模型（extra='forbid' 会拒收），model_validate 即抛错。
+    """
+    original = {
+        "schema_version": "0.1.1",
+        "graph_id": "adr040_roundtrip",
+        "entry_node_id": "opening",
+        "scene_anchor": "scene_x",
+        "character_refs": ["char_a"],
+        "nodes": {
+            "opening": {
+                "node_id": "opening",
+                "type": "dialogue",
+                "narration": "门吱呀一声开了，灯芯抖了一下。",
+                "speaker_ref": None,
+                "location_ref": "scene_x",
+                "dialogue": [
+                    {"speaker_ref": "char_a", "line": "你来得正好。"},
+                    {"speaker_ref": "char_a", "line": "坐，别站着。"},
+                ],
+                "options": [
+                    {
+                        "option_id": "opt_sit",
+                        "text": "我坐下。",
+                        "target_node_id": "the_end",
+                        "condition": None,
+                        "effects": [],
+                        "unavailable_behavior": "hide",
+                    }
+                ],
+            },
+            "the_end": {
+                "node_id": "the_end",
+                "type": "end",
+                "narration": "灯灭了。",
+                "speaker_ref": None,
+                "location_ref": "scene_x",
+                "options": [],
+            },
+        },
+    }
+
+    graph = DialogueGraph.model_validate(original)
+    roundtripped = json.loads(graph.model_dump_json(by_alias=True, exclude_unset=True))
+    assert roundtripped == original
+
+
 def test_image_asset_roundtrip_minimal_valid_object() -> None:
     """Minimum-required-fields ImageAsset survives validate -> dump -> reload.
 
