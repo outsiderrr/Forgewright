@@ -1,7 +1,7 @@
 # ADR-039 首版核心闭环（P-A + P-B）L2 任务拆解 v0.1
 
 > **性质**：L2 整合规划师产物（ADR-039 写作提示词包转向 · 首版收窄范围的施工拆解）。
-> **状态**：草稿——待作者按 governance §5 起 cross-LLM critique（可复用 [/docs/REVIEW_PROMPT_L2_STAGE_TASKS.md](../../REVIEW_PROMPT_L2_STAGE_TASKS.md)）→ 消化 → 作者明示授权后，T-3P 系列进 L3 执行 + STAGE_3_TASKS.md 增补修订。
+> **状态**：✅ **已授权定稿（2026-07-02）**——cross-LLM critique 已跑（[2026-07-02 报告](2026-07-02_pa_pb_breakdown_gpt_critique.md)）+ 消化（v0.3）+ 作者明示授权。T-3P 系列可进 L3 执行；STAGE_3_TASKS.md v1.0.3 增补同步落地。
 > **日期**：2026-06-29 · **产出方**：L2 整合规划师会话（worktree claude/pa-pb-l2-plan）
 > **规划基线**：main `ec834cc`（ADR-039 + ADR-040 已落地；`generator/multipass/` 结构层完整）。
 > **上游拍板**：ADR-039 五点拍板 + 两叉口裁决（2026-06-21）；ADR-040（2026-06-23）；本拆解两岔口作者拍板（2026-06-29）：回流格式 = **轻量标签 markdown**（单一格式单一解析器）；回流交付 = **存成文件 + CLI 摄入**。
@@ -251,7 +251,7 @@ Wave P2（实测）:
 ## 9. 下一步（governance §5 L2 流程）
 
 1. ~~作者对本拆解跑 cross-LLM critique~~ ✅ **已完成（2026-07-02）**：报告 [2026-07-02_pa_pb_breakdown_gpt_critique.md](2026-07-02_pa_pb_breakdown_gpt_critique.md)（main `52ae755`）——F-1 🔴 播放命令空跑 / F-2 🟡 structure-only 缺 CLI 暴露 / F-3 🟡 IO envelope 未冻结 / F-4 🟢 mode 标签术语；§10.6 五问 = 1/2 过、3/4 有条件过、5 不过；事实抽查无造假；决策忠实度无推翻已定案。
-2. ~~L2 消化 critique~~ ✅ **已完成（2026-07-02，v0.3）**：F-1~F-4 全部采纳并核实修入（播放命令改 `python -m engine` / T-3P-0 增 `--structure-only` CLI + io.py 两 loader / mode 标签改治理枚举写法）。→ **下一步 = 作者明示授权**（授权后：删 4 份 prompt 元数据表的"待作者授权"行 + 回填授权来源）。
+2. ~~L2 消化 critique~~ ✅ **已完成（2026-07-02，v0.3）**：F-1~F-4 全部采纳并核实修入。~~作者明示授权~~ ✅ **已授权（2026-07-02）**——4 份 prompt 已删"待授权"行、授权来源已回填。
 3. 授权后随 PR 落 STAGE_3_TASKS.md 增补（§6 wave 图加 P0-P2 段 + §7 任务表加 T-3P 四行 + §8 prompt 索引四行 + 系列命名规则注；v1.0.3 修订记录）——**L2 文档修订**，经 critique + 作者授权后落（STAGE_X_TASKS 是 L2 产物，不是 L1 fixation 对象）。
 4. L3 开工顺序：T-3P-0 →（T-3P-1 ∥ T-3P-2）→ T-3P-3；每任务起手 `执行 T-3P-X` 或"请按 /docs/prompts/stage_3/T-3P-X.md 的指示执行任务。"
 
