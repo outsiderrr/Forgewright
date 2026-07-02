@@ -398,6 +398,22 @@ Wave 7（实测期；A 阶段实测；变体 ABC）:
 
 Wave 8（验收）:
    T-3.12   [B]   阶段 3 验收报告（[B-author-gate]；跳 BC 破例第 5 类）
+
+── ADR-039 转向核心闭环（T-3P 系列；v1.0.3 新增，与 T-3 主线编号并列）──
+
+Wave P0（软地基，先行串行落定；ADR-037 §10.7）:
+   T-3P-0   [A]   确定性拆拍器 + structure-only 模式 + 全部共享契约
+                  （回流格式 spec / IO envelope 双 loader / CLI・退出码约定 /
+                   assemble 公开别名 / writer_ingest 枚举 / 共用 lucy fixture）
+   ↓ PR merge 后 Wave P1 才能启动
+
+Wave P1（并行；零文件交叉，可独立 revert）:
+   T-3P-1   [A]   P-A 写作提示词包渲染器（0 LLM）
+   T-3P-2   [A]   P-B 回流解析 + 确定性合并 + 硬报错（新模块）
+   ↓ 两者 PR merge 后 Wave P2 才能启动
+
+Wave P2（实测；变体 ABC 同 T-3.10 先例）:
+   T-3P-3   [A]   回流验收管线接线 + E2E 闭环实测（lucy 正反两例）
 ```
 
 **v1.0 修订要点**：
@@ -418,6 +434,12 @@ Wave 8（验收）:
 - **T-3X-1 拆为 T-3X-1a + T-3X-1b**：a = ADR-030 字段集（轻量）；b = ADR-031 NPC 状态机机制（含 schema + engine + generator + validator）
 - **Wave 6.5 拆为 6.5a + 6.5b**：可并行（软依赖，b 可借鉴 a 的字段命名）；同步条件 = 两者都 merge → Wave 7
 - **Wave 7 T-3.10 依赖追加**：T-3X-1b PR merge（NPC 状态机机制是审美层 [A] gate 真作 gate 的前提）
+
+**v1.0.3 修订要点（2026-07-02 ADR-039 转向核心闭环 T-3P 系列落地）**：
+
+- **新增 Wave P0-P2 段 + T-3P-0~3 四任务**（与 T-3 主线并列的系列命名；P0 软地基先行 → P1 渲染/回流并行 → P2 E2E 实测）
+- **全部不触 `/schema`**（ADR-039 红线；`generation_trace.source` enum 已含 "human"）
+- 规格 source-of-truth = pa_pb_task_breakdown v0.3（内部三路对抗性预审 + 正式 cross-LLM critique 4 findings 消化 + 作者两岔口/三确认项/最终授权均 2026-06-29~07-02 拍板）
 
 ---
 
@@ -443,13 +465,20 @@ Wave 8（验收）:
 | **T-3X-1a** | [B-author-gate] | AestheticPreference schema 字段集实证归纳 + schema 落地 + prompt hook（基于 T-3X-0 产出 AESTHETIC_PREFERENCES.md v0.1；ADR-030 字段集落地）| `/schema/aesthetic_preference.schema.json`（新建首版 0.4.0）+ `/generator/scene_strategies.py`（aesthetic_preference_context 注入段）+ `/generator/prompts/scene/`（注入段）+ `/generator/tests/` + `/docs/AESTHETIC_PREFERENCES.md`（追加 §10 v0.2 字段集归纳段；不重写 v0.1） | T-3X-0 完成（AESTHETIC_PREFERENCES.md v0.1 已 commit）| ❌ 默认 ABC |
 | **T-3X-1b** | [B-author-gate] | NPC 状态机 schema + engine 查表执行器 + generator 增强 + validator 扩展（ADR-031 GM 抉择空间结构化 落地）| `/schema/npc_state_machine.schema.json`（新建首版 0.4.0）+ `/engine/npc_state_machine.py`（新建；≤ 80 行；严守 DEBATE §5 极简）+ `/generator/scene_strategies.py`（NPC 状态机生成段；与 T-3X-1a 注入段共存）+ `/generator/prompts/scene/`（NPC 状态机 prompt 模板）+ `/validator/npc_state_machine_validator.py`（新建；闭合性 + 不可达 + 死锁 + 一致性）+ `/generator/tests/` + `/engine/tests/` + `/validator/tests/` + `/schema/tests/` | T-3X-0 完成 + 与 T-3X-1a 软依赖（可并行；b 借鉴 a 字段命名）| ❌ 默认 ABC |
 
-**任务总数**：**14 条编号槽位** = 11 个 paste-ready prompt（T-3.0/3.3/3.4/3.5/3.6a/3.6b/3.7/3.8a/3.9/3.10/3.11）+ T-3.1 ADR 立项 + T-3.2 schema + T-3.12 验收报告。
+| **T-3P-0** | [A-execute]（软地基 foundation） | 确定性拆拍器 + structure-only 模式 + 回流格式契约/IO envelope/CLI 约定/公开别名/writer_ingest 枚举/共用 fixture（ADR-039 决策三 + T-3P 系列共享地基） | `/generator/multipass/`（beat_split.py 新建 + engine.py 模式 + assemble.py 仅公开别名）、`/generator/scripts/run_multipass_scene.py`（仅 `--structure-only` flag）、`/generator/promptpack/`（新建包）、`/generator/version_recorder.py`（仅枚举扩值）、tests | 无（Wave P0） | ❌ 完整 ABC（软地基单审） |
+| **T-3P-1** | [A-execute] | P-A 场景级写作提示词包渲染器（0 LLM；结构骨架→整场编剧填空单，含格式契约段/文风最小重述/便宜版连续性） | `/generator/promptpack/render_pack.py`（新建）、`/generator/promptpack/tests/` | T-3P-0 | ❌ 完整 ABC |
+| **T-3P-2** | [A-execute] | P-B 回流解析 + node_id/序号对齐 + 确定性合并 + 硬报错退回单（新模块，非改 assemble.py） | `/generator/promptpack/ingest.py`（新建）、`/generator/promptpack/tests/` | T-3P-0（与 T-3P-1 并行） | ❌ 完整 ABC |
+| **T-3P-3** | [A-execute]（实测变体） | 回流验收管线接线（三层+机械 source=human+AP 记录）+ 落地 + E2E 闭环实测（lucy 正反两例；ADR-039 阶段 3 新完成口径实证） | `/generator/promptpack/`（acceptance.py + 接线 + tests）、`content/_e2e_writer_loop/`、`/docs/reviews/master_plan/`（仅 E2E 报告） | T-3P-1 + T-3P-2 | ❌ 完整 ABC |
+
+**任务总数**：**14 条编号槽位** = 11 个 paste-ready prompt（T-3.0/3.3/3.4/3.5/3.6a/3.6b/3.7/3.8a/3.9/3.10/3.11）+ T-3.1 ADR 立项 + T-3.2 schema + T-3.12 验收报告；**v1.0.3 起另有 T-3P 系列 4 槽位**（ADR-039 转向核心闭环，与主线并列）。
 
 > **注**：T-3.8b 不单独编号——其范围（batch_scheduler hook 写入 version sidecar）合并入 T-3.5（详 §6 wave 4 + §8 T-3.5 prompt）。
 
 > **T-3X / T-3X 系列（2026-05-09 审美层决策 v0.2 §6.2 新增）**：T-3X-0（非工程；作者本人审美锚点工程）+ T-3X-1（工程；ADR-030 + schema + prompt hook 基于 T-3X-0 实证归纳）共同作为 T-3.10 前置任务。命名 "T-3X" 是 L2 校准会话标签（T-3X L2 校准产出），**并列于 T-3 主线工程任务**（不是 T-3 主线子集；与 T-3.6a / T-3.6b 拆任务的子级语义不同）。详 [/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §5 关键决策点 8 + §6.2。
 
 > **T-3X-1 拆分（2026-05-13 ADR-031 联动）**：T-3X-1 原计划单任务（ADR-030 字段集 + prompt hook）现拆为 **T-3X-1a**（ADR-030 字段集；轻量）+ **T-3X-1b**（ADR-031 NPC 状态机；含 schema + engine + generator + validator）。理由：a / b 性质完全不同（前者数据字典；后者执行抽象）；可并行（软依赖）；风险解耦；与现有 PR-A/B/C/D 拆 ABC 流程同款体例。详 [/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1 §2 T-3X-1 拆分判断。
+
+> **T-3P 系列（2026-07-02 ADR-039 转向核心闭环；v1.0.3 新增）**：**系列命名规则**沿 T-3X 先例——`T-3<字母>-<序号>` 为与 T-3 主线编号并列的系列标签（非 T-3.6a 式子任务拆分）；P = 写作提示词包（Prompt-pack）转向。四任务规格 source-of-truth = [/docs/reviews/master_plan/2026-06-29_pa_pb_task_breakdown.md](reviews/master_plan/2026-06-29_pa_pb_task_breakdown.md) v0.3（含 cross-LLM critique 消化 + 作者 2026-07-02 明示授权，PR #80）。T-3P 是首个按 governance §11 落 prompt 文件的系列命名任务组。与 ADR-039 的关系：阶段 3 完成标志口径已由 ROADMAP"2026-06-21 ADR-039 转向重定义"段更新——**T-3P-3 的 E2E 即该新口径的实证载体**；原 T-3.10 实测口径中"审美层 [A]ccept rate"对象改为编剧回流文本、judge 降为可选 QA（详 ROADMAP 该段）。
 
 ---
 
@@ -479,6 +508,10 @@ Wave 8（验收）:
 | T-3.10 完成标志实测（实测期 ≈ 1 周） | [T-3.10.md](prompts/stage_3/T-3.10.md) | 7 | [A-execute] |
 | T-3.11 开源剥离边界 v0.2 增量 | [T-3.11.md](prompts/stage_3/T-3.11.md) | 0 | [A-execute] |
 | T-3.12 阶段 3 验收报告 | [T-3.12.md](prompts/stage_3/T-3.12.md) | 8 | [B-author-gate] |
+| T-3P-0 确定性拆拍器 + structure-only + 共享契约（软地基） | [T-3P-0.md](prompts/stage_3/T-3P-0.md) | P0 | [A-execute] |
+| T-3P-1 P-A 写作提示词包渲染器 | [T-3P-1.md](prompts/stage_3/T-3P-1.md) | P1 | [A-execute] |
+| T-3P-2 P-B 回流解析 + 确定性合并 + 硬报错 | [T-3P-2.md](prompts/stage_3/T-3P-2.md) | P1 | [A-execute] |
+| T-3P-3 回流验收管线 + E2E 闭环实测 | [T-3P-3.md](prompts/stage_3/T-3P-3.md) | P2 | [A-execute] |
 
 完整任务清单 / wave 依赖图 / 模块边界详情见 §6 Wave 图 + §7 任务总表。
 
@@ -512,15 +545,17 @@ Wave 8（验收）:
   - wave 图修订见 §6
   - paste-ready prompts §8 待逐个 Edit 追加（v1.0 分段落盘策略，与 v0.1 草稿同款；规避 ECONNRESET 风险）
 - **2026-05-12 v1.0.1**：审美层决策 v0.2 §6.2 吸收。修订点：§1 完成标志表新增 T-3X-0/1 前置条件行（保留 [A] ≥ 60% pilot + Wilson CI 原阈值）+ §3.1 ADR-022 决策核心追加 2026-05-09 联动修订段（不动 ADR-022 决策核心）+ §6 wave 图新增 Wave 6.5（T-3X-1）+ T-3X-0 进 Wave 0 + §7 任务清单新增 T-3X-0（非工程；不走 ABC）+ T-3X-1（[B-author-gate]；走 ABC）+ T-3.10 paste-ready prompt 修订为基于 AESTHETIC_PREFERENCES.md + ADR-030 跑。来源：[/docs/reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md](reviews/master_plan/2026-05-09_aesthetic_layer_decision_v0.1.md) v0.2 §6.2。联动 PR-A（已 merge；PR #51 dd82131）+ PR-B（ROADMAP + HANDOFF；后续启动）。L1 fixation 执行会话产出（本 PR）。
+- **2026-07-02 v1.0.3**：ADR-039 转向核心闭环 T-3P 系列落地（作者 2026-07-02 明示授权；PR #80 拆解 v0.3 + 4 份 prompt 文件已 merge）。修订点：§6 wave 图新增 Wave P0-P2 段 + §7 任务表新增 T-3P-0~3 四行 + T-3P 系列命名规则注脚 + §8 prompt 索引新增四行 + 本条修订记录。规格 source-of-truth = [/docs/reviews/master_plan/2026-06-29_pa_pb_task_breakdown.md](reviews/master_plan/2026-06-29_pa_pb_task_breakdown.md) v0.3（cross-LLM critique [2026-07-02 报告](reviews/master_plan/2026-07-02_pa_pb_breakdown_gpt_critique.md) 4 findings 全消化）。L2 整合规划师会话产出。
 - **2026-05-13 v1.0.2**：ADR-031 GM 抉择空间结构化方案 立项 + T-3X-1 拆分校准。修订点：§1 完成标志表"审美层 review 激活前置"行更新为 T-3X-1a + T-3X-1b 依赖 + §3.1 ADR-022 决策核心追加 2026-05-13 联动修订段（ADR-022 仍不动）+ §6 wave 图 Wave 6.5 拆为 6.5a + 6.5b + Wave 7 T-3.10 依赖追加 T-3X-1b + §6 末新增 v1.0.2 修订要点子段 + §7 任务清单 T-3X-1 拆为 T-3X-1a + T-3X-1b 两行 + §7 末追加 T-3X-1 拆分注脚。来源：[/docs/reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md](reviews/master_plan/2026-05-13_gm_decision_space_ADR_draft.md) v0.1 + 作者 2026-05-13 拍板。联动 L1 fixation：DECISIONS ADR-031 + DEBATE_NOTES §10 + ROADMAP §阶段 3 时长（5-9 → 6-11 周）。L1 fixation 执行会话产出（本 PR）。
 
 ---
 
 ## 11. 版本
 
-本文件版本：v1.0.2
-最后更新：2026-05-13
+本文件版本：v1.0.3
+最后更新：2026-07-02
 产出方：阶段 3 L2 整合规划师会话（claude/sweet-bardeen-863720 worktree）
+v1.0.3 修订产出方：ADR-039 P-A/P-B L2 整合规划师会话（claude/pa-pb-l2-plan；PR #80 授权后落地）
 v1.0.1 修订产出方：L1 fixation 执行会话（本 PR；T-3X L2 校准产出 paste-ready prompt 落地）
 v1.0.2 修订产出方：L1 fixation 执行会话（本 PR；ADR-031 + T-3X-1 拆分校准）
 基于：v0.1 草稿 + GPT-5.5 cross-LLM critique + Claude round 2 response + 作者 2026-05-08 三议题拍板
