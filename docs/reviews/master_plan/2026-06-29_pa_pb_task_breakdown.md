@@ -233,23 +233,23 @@ Wave P2（实测）:
 
 ---
 
-## 8. 开放项与作者确认项（如实；critique + 作者过目时逐条表态）
+## 8. 开放项与作者确认项（如实；三项确认项作者已于 2026-06-29 逐条拍板 ✅）
 
 1. **version_recorder 枚举扩值**（已挪入 T-3P-0 地基，评审修正）：`generation_method` Literal 加 `"writer_ingest"`——改共享模块契约，按 governance §2 carve-out 校准条款（被后续所有回流落地依赖）归地基任务单审浇好；不复用 `"manual_edit"` 是为了审计诚实。
-2. **【确认项】deps sidecar 对 human 回流不写**（首版）：`content_dependency_index` 语义是"LLM context assembly trace"（ADR-023），human 回流没有对应生成上下文；后果 = 一致性维护（T-3.7 propagate）对回流场景**不覆盖**，本体变更时回流场景不会被标记重审——这是主动留的盲区，留待有真实编剧反馈后定（可能属 P-D 邻域）。**请作者确认接受此盲区**。
+2. **【已拍板 ✅ 2026-06-29】deps sidecar 对 human 回流不写**（首版）：`content_dependency_index` 语义是"LLM context assembly trace"（ADR-023），human 回流没有对应生成上下文；后果 = 一致性维护（T-3.7 propagate）对回流场景**不覆盖**，本体变更时回流场景不会被标记重审——这是主动留的盲区，留待有真实编剧反馈后定（可能属 P-D 邻域）。**作者确认接受此盲区**。
 3. **dialogue 说话人归属 v1 = 图级单说话人**：与 assemble 现状一致（assemble.py:43 注释）；多 NPC 同场对白的归属标记（如 `- lucy: <line>` 前缀）是格式契约 v2 内容，v1 不做——当前实测场景均为单 NPC。
 4. **`scene_spec["character_state"]` 是手写自由文本**：便宜版连续性直接透传；机器派生 NPC 状态数值 = P-D，本拆解不碰（ADR-039 决策四理由①）。
 5. **structure-only 模式的 prompt 残留**：骨架 prompt 中若有引用后续正文 pass 的措辞，T-3P-0 施工时顺手核查（只改措辞不改契约；超出即停）。
 6. **好回流 fixture 的来源**：lucy 旧正文是按 LLM 6 拍写的，新确定性拆拍拍数不同——T-3P-3 的"完美编剧"fixture 由施工会话手工改写匹配新 beats_plan（这本身就是编剧角色的最小模拟，成本可控）；T-3P-2 的 golden 测试则允许占位文本（只验机械正确性）。
-7. **【确认项】E2E 场景落隔离目录、不入正式内容库**：E2E 的"编剧正文"实为 LLM 旧正文的人工改写，挂 `source="human"` 只是管线角色标记——为审计诚实，落 `content/_e2e_writer_loop/` 隔离目录并在报告写明来源；首个真正入正式库的回流场景等真实编剧/作者手笔。**请作者确认此处理**（或裁定其它去处）。
-8. **【确认项】量化文风契约收进 P-A pack 是对 P-E 边界的重解释**：pivot §13.1 把 pass2_prose/beat_pacing 的文本契约（字数/人称约定 D/承接规则）列为 P-E 收编对象；本拆解判定 pack 缺了这些编剧无法开写（附录 A 作者已批样例本就含字数/禁则/锚点），故 P-A 做**最小重述**收录、P-E 完整重打包仍推后。**请作者确认此划界**（若裁定收窄，pack 文风段只留锚点 few-shot + 禁则）。
+7. **【已拍板 ✅ 2026-06-29】E2E 场景落隔离目录、不入正式内容库**：E2E 的"编剧正文"实为 LLM 旧正文的人工改写，挂 `source="human"` 只是管线角色标记——为审计诚实，落 `content/_e2e_writer_loop/` 隔离目录并在报告写明来源；首个真正入正式库的回流场景等真实编剧/作者手笔。**作者确认此处理**。
+8. **【已拍板 ✅ 2026-06-29】量化文风契约收进 P-A pack 做最小重述**：pivot §13.1 把 pass2_prose/beat_pacing 的文本契约（字数/人称约定 D/承接规则）列为 P-E 收编对象；本拆解判定 pack 缺了这些编剧无法开写（附录 A 作者已批样例本就含字数/禁则/锚点），故 P-A 做**最小重述**收录、14 维 taxonomy/judge/完整资产重打包仍归 P-E 推后。**作者确认此划界**。
 9. **【如实局限】语义层验收闸对编剧手笔基本恒 pass**：路线 A 下编剧触不到结构字段（speaker_ref 锁定 / condition・effects 代码填 / monotonic 对 human 豁免），三层 + 机械预检守的是结构完整性与本体一致性（防管线 bug / 防绕过 P-B 手改 / 防配置错误）；对编剧错误的真实拦截面 = 格式层 E1-E8 + AP 记录。这是锁结构的设计后果而非缺陷，但 E2E 报告与对外表述不得夸大验收闸的把关能力（已写进 T-3P-3 任务规格）。
 
 ---
 
 ## 9. 下一步（governance §5 L2 流程）
 
-1. 作者对本拆解跑 cross-LLM critique（Codex；可套 [/docs/REVIEW_PROMPT_L2_STAGE_TASKS.md](../../REVIEW_PROMPT_L2_STAGE_TASKS.md)——**注意该模板早于 ADR-037，critique prompt 必须附 governance §10.6 粒度检查五问**：切得对吗 / ≤8 吗 / 软地基拉出去了吗 / 集成评审安排了吗 / 模式标签对吗；critique 落 `/docs/reviews/master_plan/2026-XX-XX_pa_pb_breakdown_gpt_critique.md`）。
+1. 作者对本拆解跑 cross-LLM critique——**paste-ready prompt 已备好**：[/docs/reviews/_prompts/2026-06-29_pa_pb_breakdown_critique.md](../_prompts/2026-06-29_pa_pb_breakdown_critique.md)（已内置 governance §10.6 粒度检查五问 + 已定案边界清单；旧模板 REVIEW_PROMPT_L2_STAGE_TASKS 早于 ADR-037 缺五问）；critique 落 `/docs/reviews/master_plan/2026-XX-XX_pa_pb_breakdown_gpt_critique.md` push main。
 2. L2 会话消化 critique → 本文档修订 → 作者明示授权（授权后：删 4 份 prompt 元数据表的"待作者授权"行 + 回填授权来源）。
 3. 授权后随 PR 落 STAGE_3_TASKS.md 增补（§6 wave 图加 P0-P2 段 + §7 任务表加 T-3P 四行 + §8 prompt 索引四行 + 系列命名规则注；v1.0.3 修订记录）——**L2 文档修订**，经 critique + 作者授权后落（STAGE_X_TASKS 是 L2 产物，不是 L1 fixation 对象）。
 4. L3 开工顺序：T-3P-0 →（T-3P-1 ∥ T-3P-2）→ T-3P-3；每任务起手 `执行 T-3P-X` 或"请按 /docs/prompts/stage_3/T-3P-X.md 的指示执行任务。"
@@ -258,5 +258,6 @@ Wave P2（实测）:
 
 ## 版本
 
+- v0.2.1（2026-06-29）：作者拍板 §8 三个确认项（deps sidecar 首版不写 / E2E 隔离目录 / 量化契约最小重述进 P-A）✅；critique paste-ready prompt 落 `_prompts/2026-06-29_pa_pb_breakdown_critique.md`（内置 §10.6 五问）。
 - v0.2（2026-06-29）：吸收 L2 会话内部三路对抗性预审（决策忠实度 / 治理合规 / 五文件互洽；每路均实地核对 文件:行号）。主要修正：`run_config` 随 design 落盘（P-B 图级字段来源缺口）、CLI 独立模块入口（P1 并行冲突）、augmented lucy fixture 归 T-3P-0 交付（三下游共用）、beats_plan 载体锁死为 dict、version_recorder 枚举扩值挪入 T-3P-0、assemble 复用符号公共化、格式契约样张进 P0 验收物、退出码三态与 E4/E5/E6 边界定死、T-3P-3 反例口径两层拆分 + 如实边界说明、E2E 落隔离目录、§8 增作者确认项（2/7/8）与如实局限（9）、§9 critique 附 §10.6 五问 + 修正 fixation 措辞、4 份 prompt 加"待授权"标记。**注**：本预审是 L2 自查，不替代 governance §5 的正式 cross-LLM critique。
 - v0.1（2026-06-29）：初版。L2 整合规划师会话产出；含作者两岔口拍板（轻量标签格式 / 文件+CLI 摄入）。待 cross-LLM critique。
