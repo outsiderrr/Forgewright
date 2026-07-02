@@ -185,4 +185,16 @@ def assemble_graph(
     return graph, warnings
 
 
-__all__ = ["assemble_graph", "entry_graph_node_id"]
+# T-3P-0：复用符号公共化（供 T-3P-2 回流合并跨包引用，不引私有符号）。
+# 仅追加别名，不改任何现有函数行为。
+normalize_line = _normalize_line
+dialogue_entries = _dialogue_entries
+mk_option = _mk_option
+
+__all__ = [
+    "assemble_graph",
+    "entry_graph_node_id",
+    "normalize_line",
+    "dialogue_entries",
+    "mk_option",
+]

@@ -16,13 +16,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from generator.budget import BudgetExceeded
 from generator.llm_provider import ProviderError
 from generator.multipass.assemble import assemble_graph
+from generator.multipass.beat_split import build_beats_plan, chunk_reveals
 from generator.multipass.calls import structured_call
 from generator.multipass.topology import fallback_topology, validate_topology
 from generator.prompts.node.multipass import (
@@ -56,6 +57,10 @@ from generator.prompts.node.multipass.topology import (
 MAX_REVEALS_PER_BEAT_CALL = 4
 TOPOLOGY_RETRIES = 2
 
+# structure-only 模式允许的调用类型（ADR-039：只锁结构，0 正文调用）——
+# _call 卡点断言用；新增调用类型忘了跳过时在此炸出来，而不是静默烧正文预算
+_STRUCTURE_ONLY_KINDS = frozenset({"contract", "topology", "skeleton"})
+
 # est_output_tokens（全部 ≤ calls.MAX_EST_OUTPUT_TOKENS 护栏）
 _EST = {
     "contract": 600,
@@ -84,17 +89,19 @@ class MultipassSceneResult:
 
     status: str  # "success" | "budget_exceeded" | "provider_error"
     graph: dict[str, Any] | None
-    design: dict[str, Any]  # contract / topology / skeletons / beats / ends（sidecar）
+    # design sidecar：contract / topology / skeletons / proses / beats / ends；
+    # structure-only 运行另带 beats_plan + run_config 两 key（T-3P-0 锁死的
+    # P-A/P-B 共同输入，io.REQUIRED_DESIGN_KEYS 强制）
+    design: dict[str, Any]
     call_metas: list[dict[str, Any]]
     validation: dict[str, Any]
     metrics: dict[str, Any]
     warnings: list[str] = field(default_factory=list)
     topology_fallback: bool = False
     failure_reason: str | None = None
-
-
-def _chunk(items: list[str], size: int) -> list[list[str]]:
-    return [items[i : i + size] for i in range(0, len(items), size)] or [[]]
+    # structure-only 运行（T-3P-0；ADR-039）：graph=None 是预期而非失败，
+    # write_artifacts 据此只落 design.json + metrics.json
+    structure_only: bool = False
 
 
 def _serialize_issues(issues: list[Any]) -> list[dict[str, Any]]:
@@ -154,14 +161,30 @@ def run_multipass_scene(
     provider: Any,
     scene_spec: dict[str, Any],
     config: SceneRunConfig,
+    *,
+    structure_only: bool = False,
 ) -> MultipassSceneResult:
-    """跑一次完整多 pass + 分拍场景生成；返回结果（不上抛 provider/budget 失败）。"""
+    """跑一次完整多 pass + 分拍场景生成；返回结果（不上抛 provider/budget 失败）。
+
+    structure_only（T-3P-0；ADR-039 决策五：Pass 2 退役为生成路径、代码不删）：
+    只跑 contract + topology + skeleton 三类 LLM 调用，跳过 prose/beats/end 正文调用；
+    design 增 `beats_plan`（确定性拆拍计划，dict 按链分组）+ `run_config`（图级配置
+    落盘——此前只在内存 SceneRunConfig，P-B 产 scene.json 的图级字段全靠它）两 key；
+    不装配 graph（无正文可装配）。默认 False = 全量生成，行为不变。
+    """
     metas: list[dict[str, Any]] = []
     design: dict[str, Any] = {}
     warnings: list[str] = []
     fallback_used = False
 
     def _call(label_kind: str, label: str, system: str, user: str, schema: dict) -> dict:
+        if structure_only and label_kind not in _STRUCTURE_ONLY_KINDS:
+            # raise 而非 assert：python -O 会剥掉 assert，这条卡点必须无条件生效
+            raise RuntimeError(
+                f"structure-only 模式禁止 {label_kind!r} 调用"
+                f"（只允许 {sorted(_STRUCTURE_ONLY_KINDS)}）"
+                "——新增调用类型时必须在 BFS 循环里补 structure_only 跳过"
+            )
         content, m = structured_call(
             provider,
             system_prompt=system,
@@ -174,16 +197,20 @@ def run_multipass_scene(
         return content
 
     def _fail(status: str, reason: str) -> MultipassSceneResult:
+        metrics = _metrics(metas, None, {}, fallback_used)
+        if structure_only:
+            metrics["structure_only"] = True  # 失败产物也自述模式（与成功路径对称）
         return MultipassSceneResult(
             status=status,
             graph=None,
             design=design,
             call_metas=metas,
             validation={},
-            metrics=_metrics(metas, None, {}, fallback_used),
+            metrics=metrics,
             warnings=warnings,
             topology_fallback=fallback_used,
             failure_reason=reason,
+            structure_only=structure_only,
         )
 
     try:
@@ -231,6 +258,10 @@ def run_multipass_scene(
         proses: dict[str, dict[str, Any]] = {}
         beats_by_id: dict[str, list[dict[str, Any]]] = {}
         ends: dict[str, dict[str, Any]] = {}
+        # structure-only：锁定后仍残留的路由缺口（如出边未被覆盖）——全量模式有
+        # validator 兜底（不可达节点 → hard_pass=false），structure-only 跳过校验，
+        # 该信号必须在锁定期落进 metrics，否则编剧会为不可达链白写正文
+        locked_route_violations: dict[str, list[str]] = {}
 
         def _entry_context(pid: str) -> dict[str, Any] | None:
             """玩家是怎么走进节点 pid 的（收敛路由根因①⑥ + junction 承接的数据源）。
@@ -305,6 +336,16 @@ def run_multipass_scene(
             kind = pnode.get("kind")
             prior, revealed, used_intents = _history(pid)
             entry_ctx = _entry_context(pid)
+            if structure_only and kind == "choice" and entry_ctx is None:
+                par = parents.get(pid)
+                if par and by_id[par].get("kind") == "beats":
+                    # 全量模式下 beats→choice junction 的骨架会注入链尾承接（PR #76）；
+                    # structure-only 无正文可承接——如实记录分歧，正文层承接由编剧
+                    # 整场自洽（ADR-039 决策二）
+                    warnings.append(
+                        f"structure-only：choice {pid} 的父节点是 beats 链，无正文可承接"
+                        "——骨架生成未注入入口上下文"
+                    )
 
             if kind == "choice":
                 allowed = [r.get("to") for r in pnode.get("routes") or []]
@@ -341,6 +382,20 @@ def run_multipass_scene(
                     warnings.append(f"choice {pid} 骨架路由违规：{skel_errors}")
                 assert skeleton is not None
                 skeletons[pid] = skeleton
+                if structure_only:  # 结构锁定即止；正文槽位由编剧回流填（ADR-039）
+                    if skel_errors:
+                        # 全量模式下残留路由违规由 assemble 装配时兜底修复；structure-only
+                        # 不装配——若不在锁定时修复，违规骨架会成为权威锁定物，T-3P-2
+                        # 装配时的静默回退将与编剧按锁定结构写的正文错位
+                        _repair_locked_routes(skeleton, allowed, pid, warnings)
+                    residual = _route_violations(skeleton, allowed)
+                    if residual:  # 修复只兜非法 route_to；出边未覆盖等缺口如实上报
+                        locked_route_violations[pid] = residual
+                        warnings.append(
+                            f"structure-only：choice {pid} 锁定后仍有路由缺口 {residual}"
+                            "——受影响分支不可达，T-3P-1 渲染前须人工处理"
+                        )
+                    continue
                 proses[pid] = _call(
                     "prose",
                     f"prose_{pid}",
@@ -357,8 +412,10 @@ def run_multipass_scene(
                     build_pass2_schema(),
                 )
             elif kind == "beats":
+                if structure_only:  # 拆拍改走确定性拆拍器（beats_plan），不再跑 LLM 分拍
+                    continue
                 reveals = pnode.get("reveals") or []
-                chunks = _chunk(reveals, MAX_REVEALS_PER_BEAT_CALL)
+                chunks = chunk_reveals(reveals, MAX_REVEALS_PER_BEAT_CALL)
                 collected: list[dict[str, Any]] = []
                 for ci, chunk in enumerate(chunks):
                     situation = pnode.get("function", "")
@@ -396,6 +453,8 @@ def run_multipass_scene(
                     collected.extend(out.get("beats") or [])
                 beats_by_id[pid] = collected
             elif kind == "end":
+                if structure_only:
+                    continue
                 path_bits = [by_id[a].get("function", "") for a in _ancestor_chain(pid, parents)]
                 ends[pid] = _call(
                     "end",
@@ -416,31 +475,46 @@ def run_multipass_scene(
         design["beats"] = beats_by_id
         design["ends"] = ends
 
+        if structure_only:
+            # 两个 key 的载体形态在 T-3P-0 锁死（T-3P-1/2 共同消费）：
+            # beats_plan = 确定性拆拍计划（dict 按链分组）；run_config = 图级配置落盘
+            # （asdict 深拷贝且随 dataclass 字段自动同步——字段增删时钉死测试会响）
+            design["beats_plan"] = build_beats_plan(plan)
+            design["run_config"] = asdict(config)
+
     except BudgetExceeded as e:
         return _fail("budget_exceeded", str(e))
     except ProviderError as e:
         return _fail("provider_error", f"{type(e).__name__}: {e}")
 
-    # ⑦ 确定性组装
-    graph, asm_warnings = assemble_graph(
-        graph_id=config.graph_id,
-        scene_anchor=config.scene_anchor,
-        speaker_ref=config.speaker_ref,
-        character_refs=config.character_refs,
-        plan=plan,
-        choice_data={pid: {"skeleton": skeletons[pid], "prose": proses.get(pid, {})} for pid in skeletons},
-        beats_data=beats_by_id,
-        end_data=ends,
-    )
-    warnings.extend(asm_warnings)
+    graph: dict[str, Any] | None = None
+    validation: dict[str, Any] = {}
+    if structure_only:
+        # 无正文可装配：跳过组装与 validator，graph=None 是预期产物形态
+        metrics = _metrics(metas, None, skeletons, fallback_used)
+        metrics["structure_only"] = True
+        metrics["locked_route_violations"] = locked_route_violations
+    else:
+        # ⑦ 确定性组装
+        graph, asm_warnings = assemble_graph(
+            graph_id=config.graph_id,
+            scene_anchor=config.scene_anchor,
+            speaker_ref=config.speaker_ref,
+            character_refs=config.character_refs,
+            plan=plan,
+            choice_data={pid: {"skeleton": skeletons[pid], "prose": proses.get(pid, {})} for pid in skeletons},
+            beats_data=beats_by_id,
+            end_data=ends,
+        )
+        warnings.extend(asm_warnings)
 
-    # ⑧ validator（只读调用；AP flag 记录不拦截——复核期信号）
-    validation = _validate(graph)
+        # ⑧ validator（只读调用；AP flag 记录不拦截——复核期信号）
+        validation = _validate(graph)
 
-    metrics = _metrics(metas, graph, skeletons, fallback_used, validation)
-    metrics["cross_branch_line_similarity"] = _cross_branch_line_similarity(
-        parents, proses, beats_by_id, ends
-    )
+        metrics = _metrics(metas, graph, skeletons, fallback_used, validation)
+        metrics["cross_branch_line_similarity"] = _cross_branch_line_similarity(
+            parents, proses, beats_by_id, ends
+        )
 
     return MultipassSceneResult(
         status="success",
@@ -451,7 +525,27 @@ def run_multipass_scene(
         metrics=metrics,
         warnings=warnings,
         topology_fallback=fallback_used,
+        structure_only=structure_only,
     )
+
+
+def _repair_locked_routes(
+    skeleton: dict[str, Any], allowed: list[str], pid: str, warnings: list[str]
+) -> None:
+    """structure-only 锁定前的路由兜底修复——与 assemble 装配时的回退策略同径。
+
+    非法 route_to 回退到本节点第一条出边（assemble.py 同一策略）。全量模式不走
+    这里（assemble 在装配时修复）；structure-only 若不在锁定时修复，违规骨架会
+    原样成为 design.json 里的权威锁定物。
+    """
+    for i, o in enumerate(skeleton.get("options") or []):
+        rt = o.get("route_to")
+        if rt not in allowed and allowed:
+            warnings.append(
+                f"structure-only：choice {pid} 选项 {i} 的 route_to {rt!r} 不在出边 "
+                f"{allowed}——锁定前回退到第一条出边（与 assemble 兜底同径）"
+            )
+            o["route_to"] = allowed[0]
 
 
 def _route_violations(skeleton: dict[str, Any], allowed: list[str]) -> list[str]:
@@ -512,6 +606,9 @@ def _metrics(
         m["narration_lengths"] = narr_lens
         m["narration_len_avg"] = (sum(narr_lens.values()) / len(narr_lens)) if narr_lens else 0
         m["option_counts"] = {nid: len(n.get("options") or []) for nid, n in nodes.items()}
+    if skeletons:
+        # 骨架级结构观测项只依赖 skeletons（structure-only 成功运行也要记录——
+        # 该模式的全部产出就是这层结构）
         # 出边收敛度：choice 节点"出边 → 路由到它的选项数"（≥2 = 有意收敛；
         # 收敛稀释从此可量化跨 run 追踪——复核根因①观测项）
         convergence: dict[str, dict[str, int]] = {}
@@ -597,7 +694,12 @@ def _cross_branch_line_similarity(
 
 
 def write_artifacts(result: MultipassSceneResult, out_dir: Path) -> dict[str, Path]:
-    """落盘四件产物：scene.json / design.json / metrics.json / scene.md。"""
+    """落盘四件产物：scene.json / design.json / metrics.json / scene.md。
+
+    structure-only 运行只落 design.json + metrics.json（无正文 → 无 scene.json 可装配、
+    无 scene.md 可渲染）；design.json 沿现有 wrapper 形态（顶层 {design, call_metas, ...}），
+    消费侧经 generator.promptpack.io.load_design_artifact 读取。
+    """
     from generator.multipass.render import render_scene_md
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -627,8 +729,9 @@ def write_artifacts(result: MultipassSceneResult, out_dir: Path) -> dict[str, Pa
     paths["metrics"].write_text(
         json.dumps(result.metrics, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    paths["scene_md"] = out_dir / "scene.md"
-    paths["scene_md"].write_text(render_scene_md(result), encoding="utf-8")
+    if not result.structure_only:
+        paths["scene_md"] = out_dir / "scene.md"
+        paths["scene_md"].write_text(render_scene_md(result), encoding="utf-8")
     return paths
 
 

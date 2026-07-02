@@ -61,6 +61,9 @@ GenerationMethod = Literal[
     "manual_edit",
     "regenerate",
     "playtest_fix",
+    # T-3P-0（ADR-039 写作提示词包转向）：编剧 BYOM 正文回流经 P-B 合并落地时用；
+    # 该值被后续所有回流落地依赖（T-3P-3 只消费不再改）
+    "writer_ingest",
 ]
 
 # Snapshot of `Literal` members for argparse choices + runtime validation.

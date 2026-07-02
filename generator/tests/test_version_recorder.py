@@ -471,3 +471,32 @@ def test_cli_empty_changed_fields_yields_empty_archive(
         sidecar_path_for(scene_file).read_text(encoding="utf-8")
     )
     assert raw["previous_versions"][0]["changed_fields"] == []
+
+
+# ---------------------------------------------------------------------------
+# T-3P-0（ADR-039）: generation_method 枚举扩值 writer_ingest —— 既有值回归 + 新值可用
+# ---------------------------------------------------------------------------
+
+
+def test_generation_method_existing_values_preserved_and_writer_ingest_added() -> None:
+    """既有四值一个不动（回归）+ 新增 writer_ingest（回流落地统一用值，T-3P-3 只消费）。"""
+    from typing import get_args
+
+    from generator.version_recorder import GenerationMethod
+
+    values = get_args(GenerationMethod)
+    assert values[:4] == ("batch_scheduler", "manual_edit", "regenerate", "playtest_fix")
+    assert set(values) == {
+        "batch_scheduler",
+        "manual_edit",
+        "regenerate",
+        "playtest_fix",
+        "writer_ingest",
+    }
+
+
+def test_record_version_accepts_writer_ingest(
+    scene_file: Path, stub_git: dict[str, str | None]
+) -> None:
+    meta = record_version(scene_file, "writer_ingest")
+    assert meta.generation_method == "writer_ingest"
