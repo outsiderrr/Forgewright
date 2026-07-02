@@ -117,7 +117,8 @@ continue: <接话>            ← 仅 beats 拍（单选项）；end 节点无 o
 - dialogue 行说话人归属：**v1 = 图级单说话人**（锁定配置 `speaker_ref`，与 assemble.py `_dialogue_entries` 现状一致）；编剧不写说话人名。多 NPC 场景归属见 §8 开放项 3。
 - 编剧不得增删节点、不得改 node_id、不得增删选项序号——提示词包"输出格式"段原样声明。
 - **图级运行配置随 design 落盘**（评审修正）：graph_id / scene_anchor / speaker_ref / character_refs 现状只在内存 `SceneRunConfig`（engine.py:74-77）从不落盘，而 P-B 产 scene.json 的图级字段全靠它——T-3P-0 的 structure-only 模式把 `design["run_config"]` 一并写进 design.json，P-A/P-B 从同一文件读，不各收配置参数。
-- **CLI 约定**：v1 各工具用独立模块入口（`python -m generator.promptpack.render_pack` / `…promptpack.ingest`），不建共享 `__main__.py`（P1 两任务并行不碰同一文件、可独立 revert）；退出码三态 = 0 成功 / 1 回流拒收（格式 E 类或验收 fail）/ 2 用法・输入错误。
+- **IO envelope 冻结 + 共享 loader**（critique F-3）：design.json 沿现有 wrapper（顶层 `{design, call_metas, …}`，消费者读 `payload["design"]`）；spec 文件沿现有 `{config, spec}` wrapper（读 `payload["spec"]`，config 段与 design.run_config 同源同形、loader cross-check 一致性）。T-3P-0 落 `promptpack/io.py` 两个 loader（`load_design_artifact` / `load_scene_spec`），P1 两任务只准经 loader 读输入。
+- **CLI 约定**：v1 各工具用独立模块入口（`python -m generator.promptpack.render_pack` / `…promptpack.ingest`），不建共享 `__main__.py`（P1 两任务并行不碰同一文件、可独立 revert）；退出码三态 = 0 成功 / 1 回流拒收（格式 E 类或验收 fail）/ 2 用法・输入错误。structure-only 的作者可用入口 = `run_multipass_scene.py --structure-only`（critique F-2）。**终端播放入口 = `python -m engine <scene.json>`**（`engine/__main__.py`；`python -m engine.player` 会静默空跑——critique F-1）。
 
 ### 4.2 硬报错分类（收集全清单后一次退回，不 fail-fast）
 
@@ -147,10 +148,10 @@ continue: <接话>            ← 仅 beats 拍（单选项）；end 节点无 o
 | 项 | 内容 |
 |---|---|
 | 性质 | **软地基（改生成器输出契约），先行独立 ABC**（governance §10.7；完整 ABC——默认模式，非 §10.6 三特殊模式） |
-| 模块边界 | 允许：`/generator/multipass/`（新建 beat_split.py + engine.py 加 structure-only 模式 + **assemble.py 仅限新增公开别名不改行为**）、`/generator/promptpack/`（新建包：format_spec.py + `__init__.py`）、`/generator/version_recorder.py`（**仅限** generation_method 新增 `"writer_ingest"` 值）、两处 tests、fixture/样例目录。严禁：`/schema` `/validator` `/engine` `/state` `/tools`；**不改 render.py** |
+| 模块边界 | 允许：`/generator/multipass/`（新建 beat_split.py + engine.py 加 structure-only 模式 + **assemble.py 仅限新增公开别名不改行为**）、`/generator/scripts/run_multipass_scene.py`（**仅限**新增 `--structure-only` flag，critique F-2）、`/generator/promptpack/`（新建包：format_spec.py + io.py + `__init__.py`）、`/generator/version_recorder.py`（**仅限** generation_method 新增 `"writer_ingest"` 值）、两处 tests、fixture/样例目录。严禁：`/schema` `/validator` `/engine` `/state` `/tools`；**不改 render.py** |
 | 内容 A | **确定性拆拍器**：输入 topology beats 节点（node_id / reveals[] / next）→ 输出锁定拆拍计划 `beats_plan`：`[{beat_id: "{pid}_b{i}", reveals: […], is_last}]`。不变量：确定性（同输入同输出）、每条 reveal 恰好落一拍、保序、id 与 assemble `entry_graph_node_id` 约定一致。拆拍数值规则（默认每拍 ≤2 条、拍数下限）由施工会话定 + 作者按样例验收 |
 | 内容 B | **structure-only 运行模式**：`run_multipass_scene` 增开关——只跑 contract + topology + skeleton 三类 LLM 调用 + 确定性拆拍，**跳过 prose/beats/end 正文调用**（ADR-039 决策五：Pass 2 退役为生成路径，代码不删）；design 增**两个 key**：`beats_plan = {pid: [BeatSlot]}`（dict 按链分组——lucy 有 5 条链，载体形态在此锁死）+ `run_config = {graph_id, scene_anchor, speaker_ref, character_refs, npc_name}`（评审修正：这些字段现状只在内存 `SceneRunConfig` 从不落盘，P-B 产 scene.json 图级字段全靠它）；此模式不产 scene.json（无正文可装配） |
-| 内容 C | **回流格式契约 v1 + CLI/退出码约定落成代码**：`format_spec.py` = 标签语法常量 + 节点类别必交 key 表 + E1-E8 逐 case 定死（§4 为草案，代码为准，格式变化需回样张同步）+ 独立模块入口约定（不建共享 `__main__.py`）+ 退出码三态 |
+| 内容 C | **回流格式契约 v1 + IO envelope/CLI/退出码约定落成代码**：`format_spec.py` = 标签语法常量 + 节点类别必交 key 表 + E1-E8 逐 case 定死（§4 为草案，代码为准，格式变化需回样张同步）；`io.py` = `load_design_artifact` / `load_scene_spec` 两 loader（wrapper 读取 + legacy 报错 + config↔run_config cross-check，critique F-3）；独立模块入口约定（不建共享 `__main__.py`）+ 退出码三态 + `--structure-only` CLI 暴露（critique F-2） |
 | 内容 D | **version_recorder 枚举扩值**（`"writer_ingest"`——"给别人定规矩"归地基一次浇好，T-3P-3 只消费；governance §2 carve-out 校准条款论证：该值被后续所有回流落地依赖）+ **assemble 复用符号公共化**（normalize_line / dialogue_entries / mk_option 加公开别名，T-3P-2 不引跨包私有符号） |
 | 内容 E | **共用 fixture**：合成 augmented lucy design.json（legacy design + beats_plan + run_config）落固定路径——T-3P-1/2/3 golden 全部引用这一份（评审修正：否则 P1 两会话各自现场合成、字节级不一致） |
 | 完成标准 | 拆拍器单测（确定性 / 覆盖 / 保序 / id）全过；structure-only 模式 smoke（0 正文调用、design 含两 key）；version_recorder 既有值回归测试；augmented fixture + 拆拍样例 + 格式契约样张落盘；全仓测试基线 0 regression |
@@ -195,7 +196,7 @@ continue: <接话>            ← 仅 beats 拍（单选项）；end 节点无 o
 | 模块边界 | 允许（generator/CLAUDE.md 默认禁区的本任务显式豁免清单，仿阶段 1.5 例外体例）：`/generator/promptpack/`（acceptance.py + ingest CLI 接线 + tests）、`content/_e2e_writer_loop/`（E2E 落地**隔离目录**）、`/docs/reviews/master_plan/`（仅新增 E2E 报告）、E2E 中间产物目录。严禁：`/schema` `/state` `/tools`；`/validator` 只读调用；`/engine` 只读运行；**不改任何共享模块**（writer_ingest 枚举已由 T-3P-0 浇好，只消费） |
 | 验收管线 | ingest 成功后自动跑：`validate(graph)`（三层）+ `validate_graph_mechanical(graph, ontology, generation_source="human")` + 逐节点 `detect_anti_patterns`（AP flag 记录进报告不拦截，沿 multipass 引擎同款处理）→ 验收报告 `<scene>.acceptance.md` + `.json`（pass/fail + 分层 issue 清单）。**如实边界**（评审修正，写进 E2E 报告）：路线 A 下编剧触不到结构字段，语义层验收闸守的是结构完整性/本体一致性（防管线 bug、防绕过 P-B 手改、防配置错），对编剧手笔的把关主要在格式层 E1-E8 + AP 记录——这是锁结构的设计后果，不许夸大成"能拦编剧写坏的文字" |
 | 落地 | `--land` = 写 scene.json + `record_version(generation_method="writer_ingest")`；E2E 落地目标 = `content/_e2e_writer_loop/` 隔离目录（fixture 实为 LLM 旧正文的人工改写，挂 human 标只是管线角色标记——审计诚实起见不入正式内容库，报告写明来源；见 §8 确认项 7）；deps sidecar 对 human 回流暂不写（§8 确认项 2） |
-| E2E 实测（A 阶段必做） | lucy 场景：①（好回流）按 T-3P-0 augmented fixture 的新 beats_plan 手工改写 lucy 正文 → render 产 pack 留档 → ingest 合并 → 验收全过 → `--land content/_e2e_writer_loop/` → `engine/player.py` 终端玩通（截录进报告）；②（坏回流，两层分开、如实标注性质）格式层 = 构造 3+ 类 E 错误 → 正确退回单（对编剧错误的真实拦截面）；语义层 = 直接构造非法 graph 喂验收管线（**技术负路径测试**，非编剧回流模拟——编剧触不到这些字段）→ 正确 fail；③ E2E 报告落 `/docs/reviews/master_plan/`（含如实边界说明 + ROADMAP ADR-039 新完成口径逐条判定证据） |
+| E2E 实测（A 阶段必做） | lucy 场景：①（好回流）按 T-3P-0 augmented fixture 的新 beats_plan 手工改写 lucy 正文 → render 产 pack 留档 → ingest 合并 → 验收全过 → `--land content/_e2e_writer_loop/` → **`python -m engine <scene.json>`** 终端玩通（critique F-1 修正命令；报告粘贴实际命令与关键输出片段防空跑）；②（坏回流，两层分开、如实标注性质）格式层 = 构造 3+ 类 E 错误 → 正确退回单（对编剧错误的真实拦截面）；语义层 = 直接构造非法 graph 喂验收管线（**技术负路径测试**，非编剧回流模拟——编剧触不到这些字段）→ 正确 fail；③ E2E 报告落 `/docs/reviews/master_plan/`（含如实边界说明 + ROADMAP ADR-039 新完成口径逐条判定证据） |
 | 测试 | 验收管线单测（三层 fail / 机械 fail human 豁免与否各一 / AP 不拦截 / pass 全绿）；**格式段↔解析器对偶测试**（T-3P-1 pack 输出格式段的示例块必须能被 T-3P-2 parser 解析——P1 并行期无法互测，落本任务机器闭环）；落地 + version sidecar 测试 |
 | **concrete 验收形态** | 作者本人终端玩通回流场景 + 读坏回流退回单——这就是 ADR-039 重定义的阶段 3 完成标志实证 |
 | schema-touch | 不动 |
@@ -249,8 +250,8 @@ Wave P2（实测）:
 
 ## 9. 下一步（governance §5 L2 流程）
 
-1. 作者对本拆解跑 cross-LLM critique——**paste-ready prompt 已备好**：[/docs/reviews/_prompts/2026-06-29_pa_pb_breakdown_critique.md](../_prompts/2026-06-29_pa_pb_breakdown_critique.md)（已内置 governance §10.6 粒度检查五问 + 已定案边界清单；旧模板 REVIEW_PROMPT_L2_STAGE_TASKS 早于 ADR-037 缺五问）；critique 落 `/docs/reviews/master_plan/2026-XX-XX_pa_pb_breakdown_gpt_critique.md` push main。
-2. L2 会话消化 critique → 本文档修订 → 作者明示授权（授权后：删 4 份 prompt 元数据表的"待作者授权"行 + 回填授权来源）。
+1. ~~作者对本拆解跑 cross-LLM critique~~ ✅ **已完成（2026-07-02）**：报告 [2026-07-02_pa_pb_breakdown_gpt_critique.md](2026-07-02_pa_pb_breakdown_gpt_critique.md)（main `52ae755`）——F-1 🔴 播放命令空跑 / F-2 🟡 structure-only 缺 CLI 暴露 / F-3 🟡 IO envelope 未冻结 / F-4 🟢 mode 标签术语；§10.6 五问 = 1/2 过、3/4 有条件过、5 不过；事实抽查无造假；决策忠实度无推翻已定案。
+2. ~~L2 消化 critique~~ ✅ **已完成（2026-07-02，v0.3）**：F-1~F-4 全部采纳并核实修入（播放命令改 `python -m engine` / T-3P-0 增 `--structure-only` CLI + io.py 两 loader / mode 标签改治理枚举写法）。→ **下一步 = 作者明示授权**（授权后：删 4 份 prompt 元数据表的"待作者授权"行 + 回填授权来源）。
 3. 授权后随 PR 落 STAGE_3_TASKS.md 增补（§6 wave 图加 P0-P2 段 + §7 任务表加 T-3P 四行 + §8 prompt 索引四行 + 系列命名规则注；v1.0.3 修订记录）——**L2 文档修订**，经 critique + 作者授权后落（STAGE_X_TASKS 是 L2 产物，不是 L1 fixation 对象）。
 4. L3 开工顺序：T-3P-0 →（T-3P-1 ∥ T-3P-2）→ T-3P-3；每任务起手 `执行 T-3P-X` 或"请按 /docs/prompts/stage_3/T-3P-X.md 的指示执行任务。"
 
@@ -258,6 +259,7 @@ Wave P2（实测）:
 
 ## 版本
 
+- v0.3（2026-07-02）：消化正式 cross-LLM critique（[2026-07-02_pa_pb_breakdown_gpt_critique.md](2026-07-02_pa_pb_breakdown_gpt_critique.md)，Codex/GPT-5.5，main `52ae755`）。四 finding 全采纳并逐条对代码核实：F-1 🔴 终端播放命令 `python -m engine.player`→`python -m engine <scene.json>`（player.py 无 argv 入口，原命令静默空跑；T-3P-3 两处 + §4/§5.4 修正，E2E 报告须贴实际命令输出）；F-2 🟡 T-3P-0 增 `run_multipass_scene.py --structure-only` CLI 暴露（沿 --topology-only 先例）+ smoke；F-3 🟡 IO envelope 冻结（design.json wrapper 读 `payload["design"]`；spec `{config,spec}` wrapper + config↔run_config cross-check）+ `promptpack/io.py` 两共享 loader，P1 禁自写解析；F-4 🟢 四份 prompt mode 标签改治理枚举写法（ABC 粒度/special mode/B 保留/授权来源四段式）。待作者明示授权。
 - v0.2.1（2026-06-29）：作者拍板 §8 三个确认项（deps sidecar 首版不写 / E2E 隔离目录 / 量化契约最小重述进 P-A）✅；critique paste-ready prompt 落 `_prompts/2026-06-29_pa_pb_breakdown_critique.md`（内置 §10.6 五问）。
 - v0.2（2026-06-29）：吸收 L2 会话内部三路对抗性预审（决策忠实度 / 治理合规 / 五文件互洽；每路均实地核对 文件:行号）。主要修正：`run_config` 随 design 落盘（P-B 图级字段来源缺口）、CLI 独立模块入口（P1 并行冲突）、augmented lucy fixture 归 T-3P-0 交付（三下游共用）、beats_plan 载体锁死为 dict、version_recorder 枚举扩值挪入 T-3P-0、assemble 复用符号公共化、格式契约样张进 P0 验收物、退出码三态与 E4/E5/E6 边界定死、T-3P-3 反例口径两层拆分 + 如实边界说明、E2E 落隔离目录、§8 增作者确认项（2/7/8）与如实局限（9）、§9 critique 附 §10.6 五问 + 修正 fixation 措辞、4 份 prompt 加"待授权"标记。**注**：本预审是 L2 自查，不替代 governance §5 的正式 cross-LLM critique。
 - v0.1（2026-06-29）：初版。L2 整合规划师会话产出；含作者两岔口拍板（轻量标签格式 / 文件+CLI 摄入）。待 cross-LLM critique。
