@@ -93,6 +93,13 @@ def _print_node_header(node: dict, out: TextIO, err: TextIO) -> None:
     location = _resolve_display(node.get("location_ref"), err)
     out.write(f"【{speaker} · {location}】\n\n")
     out.write(node["narration"] + "\n\n")
+    # ADR-040：optional dialogue[]（narration=纯旁白；line 为裸正文，「」体例由呈现层施加）
+    dialogue = node.get("dialogue") or []
+    for entry in dialogue:
+        name = _resolve_display(entry["speaker_ref"], err)
+        out.write(f"{name}：「{entry['line']}」\n")
+    if dialogue:
+        out.write("\n")
 
 
 def _render_options(

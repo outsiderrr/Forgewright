@@ -214,3 +214,73 @@ def test_major_mismatch_exits_with_code_1(tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         _run(scene_file, "")
     assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# ADR-040：optional dialogue[] 按说话人渲染（narration=纯旁白；follow-up 落地）
+# ---------------------------------------------------------------------------
+
+_SCENE_D = {
+    "schema_version": "0.1.1",
+    "graph_id": "test_dialogue_render",
+    "entry_node_id": "n_talk",
+    "scene_anchor": "scene_test",
+    "character_refs": ["lucy"],
+    "nodes": {
+        "n_talk": {
+            "node_id": "n_talk",
+            "type": "dialogue",
+            "narration": "露西把杯子往自己这边收了半寸。",
+            "speaker_ref": None,
+            "location_ref": "loc_test",
+            "dialogue": [
+                {"speaker_ref": "lucy", "line": "好，你别抬高声音，我就说方位。"},
+                {"speaker_ref": "lucy", "line": "北边，走土路。"},
+            ],
+            "on_enter_effects": [],
+            "options": [
+                {
+                    "option_id": "opt_continue",
+                    "text": "到了以后找什么？",
+                    "target_node_id": "n_done",
+                    "condition": None,
+                    "effects": [],
+                    "unavailable_behavior": "hide",
+                },
+            ],
+        },
+        "n_done": {
+            "node_id": "n_done",
+            "type": "end",
+            "narration": "你起身离开。",
+            "speaker_ref": None,
+            "location_ref": "loc_test",
+            "dialogue": [],
+            "options": [],
+        },
+    },
+}
+
+
+def test_adr040_dialogue_lines_render_with_speaker(tmp_path):
+    scene_file = tmp_path / "scene_d.json"
+    scene_file.write_text(json.dumps(_SCENE_D, ensure_ascii=False), encoding="utf-8")
+
+    _, out = _run(scene_file, "1\n")
+
+    # 每条 dialogue 按「说话人：「裸正文」」体例渲染（说话人本体未注册 → 回退原 ref）
+    assert "lucy：「好，你别抬高声音，我就说方位。」" in out
+    assert "lucy：「北边，走土路。」" in out
+    # 旁白（narration）在对白之前
+    assert out.index("露西把杯子往自己这边收了半寸。") < out.index("lucy：「好，")
+    # end 节点 dialogue=[] 不产生任何对白行；全场恰好 2 条
+    assert out.count("：「") == 2
+
+
+def test_adr040_absent_dialogue_output_unchanged(tmp_path):
+    # legacy 场景（无 dialogue 字段）输出零变化：不出现对白体例
+    scene_file = tmp_path / "scene_c.json"
+    scene_file.write_text(json.dumps(_SCENE_C, ensure_ascii=False), encoding="utf-8")
+
+    _, out = _run(scene_file, "1\n1\n")
+    assert "：「" not in out
