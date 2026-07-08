@@ -44,6 +44,7 @@ from generator.multipass.assemble import (
     mk_option,
     normalize_line,
 )
+from generator.promptpack.acceptance import run_acceptance, write_acceptance_report
 from generator.promptpack.format_spec import (
     ERRORS,
     EXIT_OK,
@@ -56,6 +57,7 @@ from generator.promptpack.format_spec import (
     NODE_CATEGORY_KEYS,
 )
 from generator.promptpack.io import PromptpackInputError, load_design_artifact
+from generator.version_recorder import record_version, sidecar_path_for
 
 # ---------------------------------------------------------------------------
 # 行级词法（严格按 format_spec §4.1；全角冒号变体单独识别 → E8 + 恢复解析防级联噪音）
@@ -875,11 +877,20 @@ def render_reject_md(graph_id: str, errors: list[IngestError]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _write_scene_json(graph: dict[str, Any], path: Path) -> None:
+    """确定性写 scene.json（同 merge_scene 输出 → 逐字节相同；缩进 2 + 尾换行）。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(graph, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="python -m generator.promptpack.ingest",
         description="P-B 回流合并器：编剧回流 markdown × 锁定骨架 design.json → scene.json；"
-        "任一 E1-E8 整单退回（<reply 去后缀>.reject.md）",
+        "任一 E1-E8 整单退回（<reply 去后缀>.reject.md）。合并成功后跑验收闸"
+        "（三层 + 机械 human + AP 记录）；--land 指定时验收 pass 才落地 + 记版本。",
     )
     parser.add_argument("design", type=Path, help="锁定骨架 design.json（--structure-only 产物，wrapper 形态）")
     parser.add_argument("reply", type=Path, help="编剧回流 markdown 文件")
@@ -887,7 +898,15 @@ def main(argv: list[str] | None = None) -> int:
         "--out",
         type=Path,
         default=None,
-        help="合并产物 scene.json 输出路径（默认 = <reply 去后缀>.scene.json）",
+        help="合并候选 scene.json 输出路径（默认 = <reply 去后缀>.scene.json）；"
+        "--land 给定时被 <land 目录>/scene.json 覆盖",
+    )
+    parser.add_argument(
+        "--land",
+        type=Path,
+        default=None,
+        help="落地目录：验收 pass 时写 <目录>/scene.json + 记版本 sidecar"
+        "（generation_method=writer_ingest）；验收 fail 不落地",
     )
     args = parser.parse_args(argv)
 
@@ -915,7 +934,13 @@ def main(argv: list[str] | None = None) -> int:
 
     graph_id = design["run_config"]["graph_id"]
     reject_path = args.reply.with_suffix(".reject.md")
-    out_path = args.out if args.out is not None else args.reply.with_suffix(".scene.json")
+    # --land 给定时，scene.json 落 <land 目录>/scene.json（--out 让位给落地目录）；
+    # 否则落 --out（默认 <reply>.scene.json 候选路径）
+    if args.land is not None:
+        out_path = args.land / "scene.json"
+    else:
+        out_path = args.out if args.out is not None else args.reply.with_suffix(".scene.json")
+
     if result.errors:
         reject_path.write_text(
             render_reject_md(graph_id, result.errors), encoding="utf-8"
@@ -940,16 +965,51 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_REJECTED
 
     assert result.graph is not None  # ok ⇒ graph 非 None（IngestResult 不变量）
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(
-        json.dumps(result.graph, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    _write_scene_json(result.graph, out_path)
     print(f"[合并成功] {graph_id}：{len(result.graph['nodes'])} 节点 → {out_path}")
     if reject_path != out_path and reject_path.exists():
         # 上一轮拒收的退回单已过时——留着会误导编剧以为还要改，删除并告知。
         # 路径相等守卫：--out 恰好指到 <reply>.reject.md 时不许自删刚写的产物
         reject_path.unlink()
         print(f"[清理] 上一轮退回单已过时，删除 {reject_path}")
+
+    # 验收闸：合并成功后必跑（三层 + 机械 human + AP 记录）；报告成对落 scene 旁
+    report = run_acceptance(result.graph)
+    md_path, json_path = write_acceptance_report(report, out_path)
+    print(f"[验收] {graph_id}：{'PASS' if report.passed else 'FAIL'} → {md_path}")
+    print(f"  {report.one_line_guidance()}")
+
+    if not report.passed:
+        # 验收 fail = 结构错误（编剧改不到），不落地、不记版本。退出码 EXIT_REJECTED（1）。
+        if args.land is not None:
+            # --land 时 out_path = <land 目录>/scene.json，已在上面写出候选——验收 fail
+            # 必须删掉它，否则落地目录里留一份**无版本 sidecar 的 scene.json**，下游/作者
+            # （非程序员）只看"文件在不在"会误当成已落地可用（同 T-3P-2 review 拒收删 stale
+            # 的 F-finding：落地目录里的 scene.json 存在 = 已入库的隐含契约不能被 fail 软化）。
+            # 验收报告 sidecar 留在原地供作者核 fail 原因。非 --land（--out 候选路径）不删：
+            # 那是显式暂存路径，作者要拿它 + 报告排查。
+            out_path.unlink(missing_ok=True)
+            print(
+                f"[未落地] 验收未通过（硬拦错误 {report.blocking_error_count} 条），"
+                f"已删除落地目录的候选 {out_path}、未记版本；验收报告留在 {md_path} 供排查。",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[未落地] 验收未通过（硬拦错误 {report.blocking_error_count} 条），"
+                f"候选 scene.json（{out_path}）与验收报告已留盘，未记版本。",
+                file=sys.stderr,
+            )
+        return EXIT_REJECTED
+
+    if args.land is not None:
+        # 落地：scene.json 已写在 <land 目录>/scene.json（out_path），此处补记版本 sidecar。
+        # record_version 只 *读* HEAD、不 commit（version_recorder 安全约束）。
+        meta = record_version(out_path, generation_method="writer_ingest")
+        print(
+            f"[落地] {graph_id} v{meta.version} → {out_path}"
+            f"（版本 sidecar {sidecar_path_for(out_path)}）"
+        )
     return EXIT_OK
 
 

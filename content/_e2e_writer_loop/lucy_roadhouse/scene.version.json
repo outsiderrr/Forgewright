@@ -1,0 +1,10 @@
+{
+  "scene_id": "lucy_roadhouse_multipass",
+  "version": 1,
+  "first_generated_at": "2026-07-08T17:52:30.558373+00:00",
+  "last_modified_at": "2026-07-08T17:52:30.558373+00:00",
+  "git_commit_at_generation": "3be51d16c380e4bffe84f1c4b4141ec49a9e4770",
+  "git_branch_at_generation": "claude/t3p3-acceptance-e2e",
+  "generation_method": "writer_ingest",
+  "previous_versions": []
+}

@@ -68,6 +68,10 @@ coverage.xml
 !/generator/experiments/multipass_structure/2026-06-29_t3p_fixture/
 !/generator/experiments/multipass_structure/2026-07-08_t3p1_pack/
 !/generator/experiments/multipass_structure/2026-07-08_t3p2_ingest_demo/
+!/generator/experiments/multipass_structure/2026-07-09_t3p3_e2e/
+
+# T-3P-3 版本 sidecar 的 fcntl 哨兵锁文件（transient；version_recorder 落地时生成，非内容）
+*.version.json.lock
 
 # Stage 1.5 visual assets — directories tracked, contents not (copyright + temp artifacts)
 /content/visuals/_reference/*

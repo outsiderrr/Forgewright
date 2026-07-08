@@ -1,0 +1,199 @@
+{
+  "graph_id": "lucy_roadhouse_multipass",
+  "passed": true,
+  "node_count": 35,
+  "blocking_error_count": 0,
+  "guidance": "验收通过：结构完整、闭合无违规、机械预检干净。（另有 37 条本体解析待挂——引用了当前未加载的本体条目，属 fixture/环境依赖，不拦落地）",
+  "schema_errors": [],
+  "graph_errors": [],
+  "consistency_closure_errors": [],
+  "consistency_ontology_notes": [
+    {
+      "level": "cons",
+      "location": "scene_anchor",
+      "message": "scene_anchor 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "character_refs[0]",
+      "message": "character_refs entry 'char_lucy' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "opening",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b1",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b2",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b3",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b4",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b5",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b6",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b7",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "soft_private_line_b8",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "end_soft_leave",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b1",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b2",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b3",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b4",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b5",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "money_line_b6",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "end_money_leave",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "watch_corner",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b1",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b2",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b3",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b4",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b5",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "observed_soft_line_b6",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "end_observed_leave",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "basement_line_b1",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "basement_line_b2",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "basement_line_b3",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "basement_line_b4",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "end_basement_leave",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "pressure_line_b1",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "pressure_line_b2",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "pressure_line_b3",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "pressure_line_b4",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "end_pressure_leave",
+      "message": "location_ref 'scene_hibo_roadhouse' does not resolve in ontology"
+    }
+  ],
+  "mechanical_errors": [],
+  "ap_flags": []
+}
