@@ -76,6 +76,12 @@ _TRANSIENT_ERROR_SUBSTRINGS = (
 _INPUT_USD_PER_MTOK = 2.00
 _OUTPUT_USD_PER_MTOK = 12.00
 
+# R3.4（2026-07-08 实测）：key77qiqi 中转站的 gpt-5.5 若请求不带 max_tokens，
+# 会返回 content=None（completion token 烧在 reasoning 上不透出正文）——
+# 必须显式给输出上限。env `POLOAI_MAX_OUTPUT_TOKENS` 可调，默认 8000
+# （engine 结构 call 估算上限 2000 的 4 倍余量；这是 cap 不是 target，不增成本）。
+_DEFAULT_MAX_OUTPUT_TOKENS = 8000
+
 
 class PoloAIProvider:
     """OpenAI-compatible chat completions against poloai.top.
@@ -130,6 +136,15 @@ class PoloAIProvider:
             self.strict_schema = env_strict in ("1", "true", "yes")
         else:
             self.strict_schema = strict_schema
+        raw_max = os.environ.get("POLOAI_MAX_OUTPUT_TOKENS", "").strip()
+        try:
+            self.max_output_tokens = (
+                int(raw_max) if raw_max else _DEFAULT_MAX_OUTPUT_TOKENS
+            )
+        except ValueError as exc:
+            raise ProviderError(
+                f"POLOAI_MAX_OUTPUT_TOKENS 不是整数: {raw_max!r}"
+            ) from exc
         self._api_key = key
         self._client_cache: OpenAI | None = None
 
@@ -169,6 +184,8 @@ class PoloAIProvider:
         kwargs: dict[str, Any] = {
             "model": self.model_id,
             "messages": messages,
+            # R3.4：不带 max_tokens 时中转站 gpt-5.5 返回空 content（见文件头注释）
+            "max_tokens": self.max_output_tokens,
         }
         if self.json_mode == "json_schema":
             kwargs["response_format"] = {
