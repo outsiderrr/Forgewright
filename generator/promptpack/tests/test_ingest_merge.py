@@ -269,6 +269,29 @@ def test_cli_success_removes_stale_reject(tmp_path) -> None:
     assert not stale.exists()
 
 
+def test_cli_bad_reply_removes_stale_scene(tmp_path) -> None:
+    """B 阶段 finding：同一 --out 先成功产 scene、再坏回流拒收，旧 scene 必须被删。
+    否则「任一 E → 不产 scene.json」在文件系统层被软化成「目录里仍有可用场景」。"""
+    design_path = write_mini_design(tmp_path)
+    reply_path = tmp_path / "reply.md"
+    out_path = tmp_path / "scene.json"
+
+    # 第一次：合法回流成功产 scene.json
+    reply_path.write_text(MINI_GOOD_REPLY, encoding="utf-8")
+    assert main([str(design_path), str(reply_path), "--out", str(out_path)]) == EXIT_OK
+    assert out_path.exists()
+
+    # 第二次：同一路径坏回流拒收 → 旧 scene 必须被删
+    bad = MINI_GOOD_REPLY.replace("  2: 我什么都不问，先走了。", "  3: 我跳号了。")
+    reply_path.write_text(bad, encoding="utf-8")
+    assert (
+        main([str(design_path), str(reply_path), "--out", str(out_path)])
+        == EXIT_REJECTED
+    )
+    assert not out_path.exists()  # 拒收删旧 scene，不留可被误用的成功产物
+    assert (tmp_path / "reply.reject.md").exists()
+
+
 def test_cli_missing_design_exit_2(tmp_path) -> None:
     reply_path = tmp_path / "reply.md"
     reply_path.write_text(MINI_GOOD_REPLY, encoding="utf-8")

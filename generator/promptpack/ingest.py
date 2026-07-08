@@ -926,10 +926,15 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - [{err.code} {ERRORS[err.code].slug}] {where}：{err.actual}", file=sys.stderr)
         print(f"退回单已写入 {reject_path}", file=sys.stderr)
         if out_path.exists() and out_path != reject_path:
-            # 上一轮成功的合并产物还在盘上、已与当前 reply 不对应。可能是用户
-            # 指定路径，不敢代删——警告勿用（/review Angle A：防下游误吞过时图）
+            # B 阶段 finding（2026-07-08_T-3P-2 review）：拒收若留下上一轮成功产的
+            # 旧 scene.json，就在文件系统层面把「任一 E → 不产 scene.json」软化成
+            # 「目录里仍有可用场景」——作者非程序员、下游只看文件是否存在会误吞过时图。
+            # 对称成功分支删 stale reject 的逻辑：拒收删本轮 --out 的 stale scene。
+            # out_path 是本 CLI 自己的产物路径（默认 <reply>.scene.json 或用户 --out），
+            # 删它安全；路径相等守卫已在 if 条件里排除误删刚写的退回单。
+            out_path.unlink()
             print(
-                f"[注意] 检测到上一轮的合并产物已过时（本轮拒收未覆盖），勿直接使用：{out_path}",
+                f"[清理] 上一轮合并产物已过时（本轮拒收），删除 {out_path}",
                 file=sys.stderr,
             )
         return EXIT_REJECTED
