@@ -24,7 +24,11 @@ from generator.promptpack.format_spec import (
     EXIT_USAGE,
     NODE_CATEGORY_KEYS,
 )
-from generator.promptpack.io import load_design_artifact, load_scene_spec
+from generator.promptpack.io import (
+    PromptpackInputError,
+    load_design_artifact,
+    load_scene_spec,
+)
 from generator.promptpack.render_pack import main, render_pack
 
 _EXPERIMENTS = Path(__file__).resolve().parents[2] / "experiments" / "multipass_structure"
@@ -378,3 +382,35 @@ def test_cli_unreachable_node_is_usage_error(tmp_path: Path, capsys: pytest.Capt
     design_path, spec_path = _write_inputs(tmp_path, design)
     assert main(["--design", str(design_path), "--spec", str(spec_path)]) == EXIT_USAGE
     assert "不可达" in capsys.readouterr().err
+
+
+class TestContractValidation:
+    """B 阶段 finding：contract 缺失/半缺失必须硬报错，不许静默产空契约 pack。"""
+
+    @staticmethod
+    def _with_contract(lucy_design, contract):
+        import copy
+        design = copy.deepcopy(lucy_design)
+        if contract is None:
+            design.pop("contract", None)
+        else:
+            design["contract"] = contract
+        return design
+
+    def test_missing_contract_rejected(self, lucy_design, lucy_spec):
+        with pytest.raises(PromptpackInputError, match="contract"):
+            render_pack(self._with_contract(lucy_design, None), lucy_spec)
+
+    def test_empty_goal_rejected(self, lucy_design, lucy_spec):
+        import copy
+        contract = copy.deepcopy(lucy_design["contract"])
+        contract["npc_fear"] = "  "
+        with pytest.raises(PromptpackInputError, match="npc_fear"):
+            render_pack(self._with_contract(lucy_design, contract), lucy_spec)
+
+    def test_empty_forbidden_rejected(self, lucy_design, lucy_spec):
+        import copy
+        contract = copy.deepcopy(lucy_design["contract"])
+        contract["forbidden"] = []
+        with pytest.raises(PromptpackInputError, match="forbidden"):
+            render_pack(self._with_contract(lucy_design, contract), lucy_spec)

@@ -252,6 +252,33 @@ def _render_header(design: dict[str, Any], total_blocks: int) -> str:
 - 分支路由、检定、状态变更等结构字段全部由系统固定，不在你的交稿里出现。"""
 
 
+def _check_contract(contract: Any) -> None:
+    """B 阶段 finding（2026-07-08_T-3P-1_render_pack_review）：contract 缺失/半缺失
+    不许静默降级成空契约 pack——场景契约是编剧防写崩的核心约束面，坏输入必须
+    在渲染期硬报错（退出码 2 路径），不能等编剧回稿才暴露。"""
+    if not isinstance(contract, dict):
+        raise PromptpackInputError(
+            "design.contract 缺失或不是 dict——场景契约是 pack 必备段，"
+            "请先修 design.json 或重跑 structure-only"
+        )
+    for field in ("player_goal", "npc_goal", "npc_fear"):
+        value = contract.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise PromptpackInputError(
+                f"design.contract[{field!r}] 缺失或为空——场景契约不完整，拒绝渲染"
+            )
+    forbidden = contract.get("forbidden")
+    if (
+        not isinstance(forbidden, list)
+        or not forbidden
+        or not all(isinstance(x, str) and x.strip() for x in forbidden)
+    ):
+        raise PromptpackInputError(
+            "design.contract['forbidden'] 必须是非空字符串列表（禁则为空的场景"
+            "契约视为不完整，拒绝渲染）"
+        )
+
+
 def _render_contract(contract: dict[str, Any]) -> str:
     forbidden = contract.get("forbidden") or []
     return f"""## 二、场景契约
@@ -665,8 +692,10 @@ def render_pack(
     """结构锁定 design + scene spec（+ 可选前情摘要）→ 整场写作提示词包 markdown。
 
     纯确定性：同输入两次渲染逐字节相等（无时间戳 / 无环境依赖 / 无随机性）。
-    输入 dict 必须来自 promptpack.io 的两个 loader（形态校验在 loader 边界做）。
+    输入 dict 必须来自 promptpack.io 的两个 loader（形态校验在 loader 边界做；
+    contract 完整性属 P-A 本地约束面，在此处把关——B 阶段 finding）。
     """
+    _check_contract(design.get("contract"))
     return _render_with_stats(design, spec, summaries, preset=preset)[0]
 
 
