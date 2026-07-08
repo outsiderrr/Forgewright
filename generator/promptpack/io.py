@@ -203,13 +203,37 @@ def _check_skeleton_route_coverage(skeletons: Any, topology: dict[str, Any], pat
 
 
 def _check_run_config_shape(run_config: Any, path: Path) -> None:
-    """run_config 载体形态校验：dict 且冻结五字段齐全。"""
+    """run_config 载体形态校验：冻结五字段恰好齐全 + 叶类型（B 阶段 F-002）。
+
+    契约目标是把 run_config 冻结成 P-A/P-B 共享载体——只查存在不查类型/额外
+    字段，坏 design 会穿透到渲染与合并（如字符串 character_refs 被逐字符迭代）。
+    """
     if not isinstance(run_config, dict):
         raise PromptpackInputError(f"{path}: run_config 不是 dict")
     missing = [f for f in RUN_CONFIG_FIELDS if f not in run_config]
     if missing:
         raise PromptpackInputError(
             f"{path}: run_config 缺字段 {missing}（冻结五字段 = {RUN_CONFIG_FIELDS}）"
+        )
+    extra = sorted(set(run_config) - set(RUN_CONFIG_FIELDS))
+    if extra:
+        raise PromptpackInputError(
+            f"{path}: run_config 含冻结五字段之外的 key {extra}——"
+            "契约不接受额外字段（防下游误消费造成契约漂移）"
+        )
+    for field in ("graph_id", "scene_anchor", "speaker_ref", "npc_name"):
+        if not isinstance(run_config[field], str) or not run_config[field]:
+            raise PromptpackInputError(
+                f"{path}: run_config[{field!r}] 必须是非空字符串，"
+                f"实际 {type(run_config[field]).__name__}"
+            )
+    refs = run_config["character_refs"]
+    if not isinstance(refs, list) or not refs or not all(
+        isinstance(x, str) and x for x in refs
+    ):
+        raise PromptpackInputError(
+            f"{path}: run_config['character_refs'] 必须是非空字符串列表，"
+            f"实际 {refs!r}"
         )
 
 

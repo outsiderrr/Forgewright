@@ -317,3 +317,44 @@ def test_run_config_contract_matches_scene_run_config_dataclass() -> None:
     fs = {f.name: f for f in fields(SceneRunConfig)}
     assert tuple(fs) == ppio.RUN_CONFIG_FIELDS
     assert fs["npc_name"].default == ppio._NPC_NAME_DEFAULT
+
+
+class TestRunConfigLeafTypes:
+    """B 阶段 F-002：run_config 冻结五字段的叶类型/额外字段硬校验。"""
+
+    def _design_with_run_config(self, tmp_path, run_config):
+        import copy
+        design = copy.deepcopy(_DESIGN)
+        design["run_config"] = run_config
+        return _write_design(tmp_path, design)
+
+    def _good(self):
+        return {"graph_id": "g", "scene_anchor": "loc", "speaker_ref": "char_x",
+                "character_refs": ["char_x"], "npc_name": "X"}
+
+    def test_good_run_config_passes(self, tmp_path):
+        from generator.promptpack.io import load_design_artifact
+        load_design_artifact(self._design_with_run_config(tmp_path, self._good()))
+
+    def test_non_string_leaves_rejected(self, tmp_path):
+        import pytest
+        from generator.promptpack.io import PromptpackInputError, load_design_artifact
+        for field, bad in [("graph_id", 123), ("scene_anchor", None),
+                           ("speaker_ref", ["char_x"]), ("npc_name", {"name": "露西"})]:
+            rc = self._good(); rc[field] = bad
+            with pytest.raises(PromptpackInputError, match=field):
+                load_design_artifact(self._design_with_run_config(tmp_path, rc))
+
+    def test_character_refs_string_rejected(self, tmp_path):
+        import pytest
+        from generator.promptpack.io import PromptpackInputError, load_design_artifact
+        rc = self._good(); rc["character_refs"] = "char_x"
+        with pytest.raises(PromptpackInputError, match="character_refs"):
+            load_design_artifact(self._design_with_run_config(tmp_path, rc))
+
+    def test_extra_key_rejected(self, tmp_path):
+        import pytest
+        from generator.promptpack.io import PromptpackInputError, load_design_artifact
+        rc = self._good(); rc["extra_future_field"] = "unexpected"
+        with pytest.raises(PromptpackInputError, match="extra_future_field"):
+            load_design_artifact(self._design_with_run_config(tmp_path, rc))
