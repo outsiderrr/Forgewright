@@ -770,3 +770,34 @@ def test_strip_codefence_leaves_non_fenced_with_prose_alone() -> None:
     json.loads surfaces the real error rather than us silently mangling."""
     text = 'prefix\n```json\n{"x": 1}\n```\nsuffix'
     assert _strip_json_codefence(text) == text
+
+
+def test_generate_structured_always_sends_max_tokens(monkeypatch):
+    """R3.4（2026-07-08）：中转站 gpt-5.5 不带 max_tokens 返回空 content——必须显式携带。"""
+    provider = PoloAIProvider(api_key="k", json_mode="prompt_only")
+    seen = {}
+
+    class _Msg:
+        content = '{"ok": true}'
+
+    class _Choice:
+        message = _Msg()
+        finish_reason = "stop"
+
+    class _Resp:
+        choices = [_Choice()]
+        usage = None
+
+    def fake_call(*, kwargs):
+        seen.update(kwargs)
+        return _Resp()
+
+    monkeypatch.setattr(provider, "_call_with_transient_retry", fake_call)
+    provider.generate_structured("s", "u", {"type": "object"})
+    assert seen["max_tokens"] == 8000  # 默认值
+
+
+def test_max_output_tokens_env_override(monkeypatch):
+    monkeypatch.setenv("POLOAI_MAX_OUTPUT_TOKENS", "12345")
+    provider = PoloAIProvider(api_key="k")
+    assert provider.max_output_tokens == 12345
