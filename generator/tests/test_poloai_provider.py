@@ -801,3 +801,75 @@ def test_max_output_tokens_env_override(monkeypatch):
     monkeypatch.setenv("POLOAI_MAX_OUTPUT_TOKENS", "12345")
     provider = PoloAIProvider(api_key="k")
     assert provider.max_output_tokens == 12345
+
+
+class _FakeDelta:
+    def __init__(self, content):
+        self.content = content
+
+
+class _FakeStreamChoice:
+    def __init__(self, content=None, finish_reason=None):
+        self.delta = _FakeDelta(content)
+        self.finish_reason = finish_reason
+
+
+class _FakeChunk:
+    def __init__(self, content=None, finish_reason=None, usage=None):
+        self.choices = [_FakeStreamChoice(content, finish_reason)] if (
+            content is not None or finish_reason
+        ) else []
+        self.usage = usage
+
+
+class _FakeUsage:
+    prompt_tokens = 30
+    completion_tokens = 12
+
+
+def test_generate_structured_streams_and_aggregates(monkeypatch):
+    """R3.5（2026-07-08）：中转站非流式聚合器损坏——同 payload 非流式 content=None
+    且计费，流式返回完整正文。默认走流式并本地聚合。"""
+    provider = PoloAIProvider(api_key="k", json_mode="prompt_only")
+    assert provider.stream is True  # 默认开
+    seen = {}
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    seen.update(kwargs)
+                    return iter([
+                        _FakeChunk('{"gree'),
+                        _FakeChunk('ting": "你好"}'),
+                        _FakeChunk(finish_reason="stop", usage=_FakeUsage()),
+                    ])
+
+    monkeypatch.setattr(PoloAIProvider, "_client", property(lambda self: _FakeClient))
+    r = provider.generate_structured("s", "u", {"type": "object"})
+    assert seen["stream"] is True
+    assert r.content == {"greeting": "你好"}
+    assert r.input_tokens == 30 and r.output_tokens == 12
+    assert r.finish_reason == "stop"
+
+
+def test_stream_env_off_reverts_to_non_stream(monkeypatch):
+    monkeypatch.setenv("POLOAI_STREAM", "off")
+    provider = PoloAIProvider(api_key="k")
+    assert provider.stream is False
+
+
+def test_stream_empty_aggregate_raises_provider_error(monkeypatch):
+    provider = PoloAIProvider(api_key="k", json_mode="prompt_only")
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return iter([_FakeChunk(finish_reason="stop")])
+
+    monkeypatch.setattr(PoloAIProvider, "_client", property(lambda self: _FakeClient))
+    with pytest.raises(ProviderError, match="empty message content"):
+        provider.generate_structured("s", "u", {"type": "object"})
