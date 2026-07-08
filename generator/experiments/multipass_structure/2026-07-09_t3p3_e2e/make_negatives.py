@@ -25,12 +25,19 @@ from generator.promptpack.acceptance import (  # noqa: E402
     run_acceptance,
     write_acceptance_report,
 )
-LANDED_SCENE = (
+from generator.promptpack.ingest import ingest_reply  # noqa: E402
+from generator.promptpack.io import load_design_artifact  # noqa: E402
+
+# lucy 合并产物直接由 fixture design × reply_good 合并得到（不依赖已落地 scene.json——
+# 新口径下 lucy 验收 FAIL 不落地，落地目录没有 scene.json 可读）。
+FIXTURE_DESIGN = (
     _REPO_ROOT
-    / "content"
-    / "_e2e_writer_loop"
-    / "lucy_roadhouse"
-    / "scene.json"
+    / "generator"
+    / "experiments"
+    / "multipass_structure"
+    / "2026-06-29_t3p_fixture"
+    / "lucy"
+    / "design.json"
 )
 
 
@@ -66,16 +73,20 @@ def make_format_negative() -> None:
 
 
 def make_semantic_negative() -> None:
-    """从已落地的合法 scene.json 派生非法 graph（闭合违规 + 机械违规）→ 验收 fail。
+    """从 lucy 合并产物派生**额外**注入的非法 graph（闭合违规 + 机械违规）→ 验收 fail。
 
-    确定性变异：
+    注：lucy 合并产物本身就已因引用未发布本体（char_lucy / scene_hibo_roadhouse）而
+    验收 FAIL（本体解析硬拦，C 阶段 Option 1 / ADR-006）。本反例在其上**再**注入两处
+    非本体解析类的结构违规，演示验收管线对**闭合 + 机械**类问题同样硬拦：
       - 闭合违规：entry 节点 dialogue[] 加一句 speaker_ref=char_ghost_writer
         （不在 character_refs=['char_lucy'] 里）；
       - 机械违规：某 choice 首选项加 effects op=not_a_real_op（EFFECT_OP_INVALID）
         + path 首段 flags（PATH_NS_INVALID）。
     """
-    good = json.loads(LANDED_SCENE.read_text(encoding="utf-8"))
-    bad = copy.deepcopy(good)
+    design = load_design_artifact(FIXTURE_DESIGN)
+    result = ingest_reply(design, (HERE / "reply_good.md").read_text(encoding="utf-8"))
+    assert result.ok, [(e.code, e.node_id, e.actual) for e in result.errors]
+    bad = copy.deepcopy(result.graph)
     entry = bad["entry_node_id"]
     bad["nodes"][entry]["dialogue"].append(
         {"speaker_ref": "char_ghost_writer", "line": "我是不该出现的说话人。"}

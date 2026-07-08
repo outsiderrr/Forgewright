@@ -2,8 +2,8 @@
   "graph_id": "lucy_roadhouse_multipass",
   "passed": false,
   "node_count": 35,
-  "blocking_error_count": 4,
-  "guidance": "验收未通过，未落地：schema 层 1 错（scene.json 结构不合 Schema）；一致性闭合 1 错（说话人未在花名册声明 / option_id 重复）；机械预检 2 错（effects / condition 形态违规）。这些都是编剧改不到的结构字段——问题出在管线或被手改过的 scene.json，别退回给编剧改正文；核对 design.json / 合并流程 / 是否有人手动动过 scene.json。",
+  "blocking_error_count": 41,
+  "guidance": "验收未通过，未落地：schema 层 1 错（scene.json 结构不合 Schema）；一致性层 38 错（说话人闭合 / option_id 唯一 / 本体引用未解析）；机械预检 2 错（effects / condition 形态违规）。闭合 / 机械 / schema / graph 类是编剧改不到的结构字段（核对 design.json / 合并流程 / 是否有人手改 scene.json）；本体解析类是场景引用了当前未加载的本体条目（补齐本体或修正 ref 后重跑；本体一致性 = 真相之源守门 ADR-006）。",
   "schema_errors": [
     {
       "level": "schema",
@@ -12,14 +12,7 @@
     }
   ],
   "graph_errors": [],
-  "consistency_closure_errors": [
-    {
-      "level": "cons",
-      "location": "opening/dialogue[3]",
-      "message": "dialogue[3].speaker_ref 'char_ghost_writer' is not declared in character_refs"
-    }
-  ],
-  "consistency_ontology_notes": [
+  "consistency_errors": [
     {
       "level": "cons",
       "location": "scene_anchor",
@@ -29,6 +22,11 @@
       "level": "cons",
       "location": "character_refs[0]",
       "message": "character_refs entry 'char_lucy' does not resolve in ontology"
+    },
+    {
+      "level": "cons",
+      "location": "opening/dialogue[3]",
+      "message": "dialogue[3].speaker_ref 'char_ghost_writer' is not declared in character_refs"
     },
     {
       "level": "cons",

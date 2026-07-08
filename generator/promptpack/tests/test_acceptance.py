@@ -1,12 +1,17 @@
 """T-3P-3 验收管线单测 + 落地 + 格式段↔解析器对偶.
 
-覆盖（任务规格 §D 9-11）：
-  - 验收 pass 全绿（lucy fixture 合并产物）；
-  - 三层 fail（schema / graph / 一致性闭合各构造一路）；
+pass/fail 口径（作者 2026-07-09 拍板 Option 1；ADR-006）：**validator 三层
+（schema/graph/cons）全部 issue 硬拦 + 机械预检 error 硬拦；只有 AP flag 记录不拦截**。
+本体解析（does not resolve in ontology）与闭合违规同为硬拦。
+
+覆盖（任务规格 §D 9-11 + C 阶段口径修订）：
+  - 验收 PASS 全绿：用 refs 能在**已加载 waystation 本体**解析的最小图（char_vellin
+    等），证明三层全过 + 机械干净时 PASS + --land 写入 + version sidecar；
+  - 验收 FAIL：三层各构造一路（schema / graph / 一致性闭合 / **本体解析**）；
   - 机械 fail（human 豁免 monotonic vs 非豁免 EFFECT_OP_INVALID 各一）；
-  - AP flag 记录不拦截（pass 仍 True）；
-  - 本体解析 issue 单列为 note、不计入 blocking；
-  - `--land` 落地 + version sidecar（method=writer_ingest）；验收 fail 不落地；
+  - AP flag 记录不拦截（其余全过时 pass 仍 True）；
+  - lucy 正例：验收 **FAIL、不落地**（引用未发布本体，守门在工作）；播放另测（直接喂合并产物）；
+  - `--land`：PASS 才写 + version sidecar；验收 fail 不落地且不留 scene.json；
   - **格式段↔解析器对偶**：P-A（render_pack）渲染的输出格式段模板块，填满后能被
     P-B（ingest）parser 成功解析 + 对齐 + 合并（P1 并行期两任务无法互测，落本任务）。
 """
@@ -14,6 +19,8 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -32,7 +39,9 @@ from generator.promptpack.tests.helpers import (
     FIXTURE_DESIGN,
     build_placeholder_reply,
     make_mini_design_wrapper,
+    make_resolvable_mini_design_wrapper,
     write_mini_design,
+    write_resolvable_mini_design,
 )
 
 lucy_fixture = pytest.mark.skipif(
@@ -47,64 +56,79 @@ LUCY_REPLY_GOOD = (
 )
 
 
-def _mini_graph() -> dict:
-    """合法 mini 合并产物（走 io loader + ingest_reply，与真实产物同路径）。"""
-    design = load_design_artifact_from_wrapper(make_mini_design_wrapper())
-    result = ingest_reply(design, build_placeholder_reply(design))
-    assert result.ok, [(e.code, e.node_id, e.actual) for e in result.errors]
-    return result.graph
-
-
 def load_design_artifact_from_wrapper(wrapper: dict) -> dict:
     """把内存 wrapper 落临时盘再走 loader——保持"只经 io.load_design_artifact 读"契约。"""
-    import tempfile
-    from pathlib import Path
-
     with tempfile.TemporaryDirectory() as td:
         p = Path(td) / "design.json"
         p.write_text(json.dumps(wrapper, ensure_ascii=False), encoding="utf-8")
         return load_design_artifact(p)
 
 
+def _mini_graph() -> dict:
+    """mini 合并产物（run_config refs = char_npc / scene_mini，**不在已加载本体**）。
+
+    结构层干净，但本体解析会硬 fail——用于本体解析类 fail 测试（C 阶段口径）。
+    """
+    design = load_design_artifact_from_wrapper(make_mini_design_wrapper())
+    result = ingest_reply(design, build_placeholder_reply(design))
+    assert result.ok, [(e.code, e.node_id, e.actual) for e in result.errors]
+    return result.graph
+
+
+def _resolvable_mini_graph() -> dict:
+    """本体可解析的 mini 合并产物（refs = waystation id → 验收三层全过 PASS）。"""
+    design = load_design_artifact_from_wrapper(make_resolvable_mini_design_wrapper())
+    result = ingest_reply(design, build_placeholder_reply(design))
+    assert result.ok, [(e.code, e.node_id, e.actual) for e in result.errors]
+    return result.graph
+
+
 # ---------------------------------------------------------------------------
-# pass 全绿
+# PASS 全绿（refs 在已加载本体解析 → 三层全过）
 # ---------------------------------------------------------------------------
 
 
-def test_acceptance_pass_on_clean_merge() -> None:
-    graph = _mini_graph()
+def test_acceptance_pass_on_resolvable_merge() -> None:
+    graph = _resolvable_mini_graph()
     report = run_acceptance(graph)
-    assert report.passed
+    assert report.passed, acceptance_report_dict(report)
     assert report.blocking_error_count == 0
     assert report.schema_errors == []
     assert report.graph_errors == []
-    assert report.consistency_closure_errors == []
+    assert report.consistency_errors == []  # 本体全解析、闭合无违规
     assert report.mechanical_errors == []
-    # mini refs (char_npc / scene_mini) 不在已加载本体 → 本体解析 note，但不拦
-    assert report.consistency_ontology_notes  # 有 note
     assert "验收通过" in report.one_line_guidance()
 
 
-@lucy_fixture
-def test_acceptance_pass_on_lucy_merge() -> None:
-    design = load_design_artifact(FIXTURE_DESIGN)
-    result = ingest_reply(design, build_placeholder_reply(design))
-    assert result.ok
-    report = run_acceptance(result.graph)
-    assert report.passed
-    assert report.blocking_error_count == 0
-    # 全部 cons issue 都是本体解析（与 test_reassemble_lucy_adr040 同口径）
-    assert report.consistency_closure_errors == []
-    assert report.consistency_ontology_notes
+def test_land_pass_resolvable_writes_scene_and_version_sidecar(tmp_path) -> None:
+    """PASS happy-path 全绿：本体可解析场景 → 验收 PASS → --land 写入 + version sidecar。"""
+    design_path = write_resolvable_mini_design(tmp_path)
+    design = load_design_artifact(design_path)
+    reply_path = tmp_path / "reply.md"
+    reply_path.write_text(build_placeholder_reply(design), encoding="utf-8")
+
+    land_dir = tmp_path / "landed"
+    rc = main([str(design_path), str(reply_path), "--land", str(land_dir)])
+    assert rc == EXIT_OK
+    scene = land_dir / "scene.json"
+    assert scene.exists()
+    sidecar = land_dir / "scene.version.json"
+    assert sidecar.exists()
+    meta = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert meta["generation_method"] == "writer_ingest"
+    assert meta["version"] == 1
+    md, js = acceptance_paths_for(scene)
+    assert md.exists() and js.exists()
+    assert json.loads(js.read_text(encoding="utf-8"))["passed"] is True
 
 
 # ---------------------------------------------------------------------------
-# 三层 fail
+# 三层 fail（schema / graph / 一致性闭合 / 本体解析）
 # ---------------------------------------------------------------------------
 
 
 def test_acceptance_fail_schema_layer() -> None:
-    graph = _mini_graph()
+    graph = _resolvable_mini_graph()
     # 删掉一个节点的必填 narration → schema 层报错
     some_nid = next(iter(graph["nodes"]))
     del graph["nodes"][some_nid]["narration"]
@@ -115,7 +139,7 @@ def test_acceptance_fail_schema_layer() -> None:
 
 
 def test_acceptance_fail_graph_layer() -> None:
-    graph = _mini_graph()
+    graph = _resolvable_mini_graph()
     # 把某选项的 target 指向不存在的节点 → 图论悬空
     for node in graph["nodes"].values():
         if node.get("options"):
@@ -129,23 +153,36 @@ def test_acceptance_fail_graph_layer() -> None:
 
 def test_acceptance_fail_consistency_closure() -> None:
     """一致性闭合违规（dialogue[].speaker_ref 越出 character_refs）= 硬拦。"""
-    graph = _mini_graph()
+    graph = _resolvable_mini_graph()
     entry = graph["entry_node_id"]
     graph["nodes"][entry]["dialogue"].append(
         {"speaker_ref": "char_undeclared", "line": "我不在花名册里。"}
     )
     report = run_acceptance(graph)
     assert not report.passed
-    assert report.consistency_closure_errors
+    assert report.consistency_errors
     assert any(
         "not declared in character_refs" in i.message
-        for i in report.consistency_closure_errors
+        for i in report.consistency_errors
     )
-    # 本体解析 note 与闭合违规分开——闭合违规里不该混进本体解析
-    assert all(
-        "does not resolve in ontology" not in i.message
-        for i in report.consistency_closure_errors
+
+
+def test_acceptance_fail_ontology_resolution_is_blocking() -> None:
+    """本体解析 issue（does not resolve in ontology）现在硬拦（C 阶段 Option 1；ADR-006）。
+
+    mini 图 refs = char_npc / scene_mini，不在已加载 waystation 本体 → cons 层报本体
+    解析错误 → 验收 FAIL、blocking_error_count>0。这是本体一致性守门。
+    """
+    graph = _mini_graph()  # 不可解析 refs
+    report = run_acceptance(graph)
+    assert not report.passed
+    assert report.consistency_errors
+    assert any(
+        "does not resolve in ontology" in i.message for i in report.consistency_errors
     )
+    # 本体解析计入 blocking（不再降级为 note）
+    assert report.blocking_error_count == len(report.consistency_errors)
+    assert report.blocking_error_count > 0
 
 
 # ---------------------------------------------------------------------------
@@ -154,19 +191,19 @@ def test_acceptance_fail_consistency_closure() -> None:
 
 
 def test_acceptance_mechanical_human_exempts_monotonic() -> None:
-    """monotonic 违规在 human 路径豁免——不应进 blocking（对比 llm 路径会报）。
+    """monotonic 违规在 human 路径豁免——不进 blocking（对比 llm 路径会报）。
 
     构造一个对同一 relationship 路径先 inc 再 dec 的选项（ADR-034 D11 monotonic
-    违规）；human 路径豁免，验收仍 pass（该场景其余干净）。
+    违规）；human 路径豁免，机械层无 error。用本体可解析图，避免本体解析噪音干扰
+    passed 断言（本 case 只验机械层豁免）。
     """
-    graph = _mini_graph()
-    # 找一个有选项的节点，注入 monotonic 违规 effects（human 应豁免）
+    graph = _resolvable_mini_graph()
     injected = False
     for node in graph["nodes"].values():
         if node.get("options"):
             node["options"][0]["effects"] = [
-                {"op": "inc", "path": "relationship.char_npc.trust", "value": 1},
-                {"op": "dec", "path": "relationship.char_npc.trust", "value": 1},
+                {"op": "inc", "path": "relationship.char_vellin.trust", "value": 1},
+                {"op": "dec", "path": "relationship.char_vellin.trust", "value": 1},
             ]
             injected = True
             break
@@ -181,7 +218,7 @@ def test_acceptance_mechanical_human_exempts_monotonic() -> None:
 
 def test_acceptance_mechanical_non_exempt_effect_op_invalid() -> None:
     """非豁免机械违规（EFFECT_OP_INVALID）在 human 路径照样硬拦。"""
-    graph = _mini_graph()
+    graph = _resolvable_mini_graph()
     for node in graph["nodes"].values():
         if node.get("options"):
             node["options"][0].setdefault("effects", []).append(
@@ -194,13 +231,13 @@ def test_acceptance_mechanical_non_exempt_effect_op_invalid() -> None:
 
 
 # ---------------------------------------------------------------------------
-# AP flag 记录不拦截
+# AP flag 记录不拦截（唯一的非阻断层）
 # ---------------------------------------------------------------------------
 
 
 def test_acceptance_ap_flag_recorded_not_blocking() -> None:
     """AP-8（选项第三人称）flag 记录进报告，但不影响 passed。"""
-    graph = _mini_graph()
+    graph = _resolvable_mini_graph()
     # AP-8：选项文本以第三人称意图动词"先"开头（程序化可检；见 _AP8_THIRD_PERSON_VERBS）
     for node in graph["nodes"].values():
         if node.get("options"):
@@ -215,69 +252,110 @@ def test_acceptance_ap_flag_recorded_not_blocking() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 本体解析单列、报告渲染
+# 报告渲染
 # ---------------------------------------------------------------------------
 
 
-def test_ontology_notes_not_counted_blocking() -> None:
-    graph = _mini_graph()
-    report = run_acceptance(graph)
-    # mini refs 不解析 → 有 note，但 blocking=0、passed=True
-    assert report.consistency_ontology_notes
-    assert report.blocking_error_count == 0
-    assert report.passed
-
-
-def test_report_dict_and_md_render() -> None:
-    graph = _mini_graph()
+def test_report_dict_and_md_render_pass() -> None:
+    graph = _resolvable_mini_graph()
     report = run_acceptance(graph)
     d = acceptance_report_dict(report)
     assert d["passed"] is True
-    assert d["graph_id"] == "mini_scene"
-    assert "consistency_ontology_notes" in d
+    assert d["graph_id"] == "mini_resolvable_scene"
+    assert "consistency_errors" in d
+    assert "consistency_ontology_notes" not in d  # 降级字段已取消
     md = render_acceptance_md(report)
     assert "回流验收报告" in md
     assert "PASS" in md
-    assert "本体解析待挂" in md
+
+
+def test_report_dict_and_md_render_fail_ontology() -> None:
+    graph = _mini_graph()  # 本体不可解析 → FAIL
+    report = run_acceptance(graph)
+    d = acceptance_report_dict(report)
+    assert d["passed"] is False
+    assert d["blocking_error_count"] > 0
+    md = render_acceptance_md(report)
+    assert "FAIL" in md
+    assert "本体引用" in md or "本体" in report.one_line_guidance()
 
 
 # ---------------------------------------------------------------------------
-# 落地（--land）+ version sidecar；验收 fail 不落地
+# lucy 正例：验收 FAIL、不落地（守门行为）；播放另测
 # ---------------------------------------------------------------------------
 
 
 @lucy_fixture
-def test_land_writes_scene_and_version_sidecar(tmp_path) -> None:
-    land_dir = tmp_path / "landed"
+def test_lucy_merge_fails_acceptance_unpublished_ontology() -> None:
+    """lucy 合并产物结构有效，但引用未发布本体 → 验收 **FAIL**（本体守门 ADR-006）。"""
+    design = load_design_artifact(FIXTURE_DESIGN)
+    result = ingest_reply(design, build_placeholder_reply(design))
+    assert result.ok  # 合并本身成功（结构有效）
+    report = run_acceptance(result.graph)
+    assert not report.passed  # 验收 FAIL
+    assert report.consistency_errors
+    # lucy 的 cons issue 全是本体解析（char_lucy / scene_hibo_roadhouse 未发布）
+    assert all(
+        "does not resolve in ontology" in i.message for i in report.consistency_errors
+    ), [i.message for i in report.consistency_errors]
+    assert report.blocking_error_count > 0
+
+
+@lucy_fixture
+def test_lucy_land_refused_acceptance_fail(tmp_path) -> None:
+    """lucy 正例经 CLI --land：验收 FAIL → 不落地、不留 scene.json、不记版本。"""
     if not LUCY_REPLY_GOOD.exists():
         pytest.skip("reply_good.md demo not present")
-    rc = main(
-        [
-            str(FIXTURE_DESIGN),
-            str(LUCY_REPLY_GOOD),
-            "--land",
-            str(land_dir),
-        ]
-    )
-    assert rc == EXIT_OK
-    scene = land_dir / "scene.json"
-    assert scene.exists()
-    sidecar = land_dir / "scene.version.json"
-    assert sidecar.exists()
-    meta = json.loads(sidecar.read_text(encoding="utf-8"))
-    assert meta["generation_method"] == "writer_ingest"
-    assert meta["version"] == 1
-    # 验收报告成对落在 scene 旁
-    md, js = acceptance_paths_for(scene)
+    land_dir = tmp_path / "landed"
+    rc = main([str(FIXTURE_DESIGN), str(LUCY_REPLY_GOOD), "--land", str(land_dir)])
+    assert rc == EXIT_REJECTED  # 验收 fail 归 EXIT_REJECTED
+    assert not (land_dir / "scene.json").exists()  # 不留无版本 scene
+    assert not (land_dir / "scene.version.json").exists()  # 不记版本
+    # 验收报告 sidecar 留下供排查（显示 FAIL 是正确产物）
+    md, js = acceptance_paths_for(land_dir / "scene.json")
     assert md.exists() and js.exists()
-    assert json.loads(js.read_text(encoding="utf-8"))["passed"] is True
+    assert json.loads(js.read_text(encoding="utf-8"))["passed"] is False
+
+
+@lucy_fixture
+def test_lucy_merge_product_plays_through_engine(tmp_path) -> None:
+    """播放链路演示：直接把 P-B 合并产物喂 engine.play 能玩通到结局.
+
+    如实注明：播放**不经验收闸**、engine 对未解析 ref 降级显示（原 ref）；落地才经闸。
+    此测证明"合并产物结构可玩"，与"验收是否放行落地"正交。
+    """
+    from engine.player import play
+
+    design = load_design_artifact(FIXTURE_DESIGN)
+    result = ingest_reply(design, build_placeholder_reply(design))
+    assert result.ok
+    scene_path = tmp_path / "scene.json"
+    scene_path.write_text(
+        json.dumps(result.graph, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+    # 驱动一条到结局的路径：opening 选 4（pressure 链）→ 每拍选 1 → end
+    import io
+
+    stdin = io.StringIO("4\n1\n1\n1\n1\n")
+    stdout = io.StringIO()
+    play(str(scene_path), stdin=stdin, stdout=stdout)
+    out = stdout.getvalue()
+    assert "—— 结局 ——" in out  # 玩到结局
+    # engine 对未解析 ref 降级显示原 ref（不 crash）
+    assert "char_lucy" in out
+
+
+# ---------------------------------------------------------------------------
+# 落地（--land）：验收 fail 不落地（技术负路径 monkeypatch）
+# ---------------------------------------------------------------------------
 
 
 def test_land_refused_when_acceptance_fails(tmp_path, monkeypatch) -> None:
     """验收 fail → 不落地、不记版本、退出码 EXIT_REJECTED（合并本身成功）。
 
-    路线 A 下合法回流不会产结构坏图，故用 monkeypatch 让验收对合并产物返回 fail
-    （技术负路径：模拟"管线 bug / 被手改的 scene.json"这一验收闸真正防的东西）。
+    用 monkeypatch 让验收对合并产物返回 fail（技术负路径：模拟"管线 bug / 被手改的
+    scene.json"这一验收闸真正防的东西，与本体解析 fail 路径互补）。
     """
     design_path = write_mini_design(tmp_path)
     reply_path = tmp_path / "reply.md"
@@ -287,7 +365,6 @@ def test_land_refused_when_acceptance_fails(tmp_path, monkeypatch) -> None:
     land_dir = tmp_path / "landed"
 
     fail_report = AcceptanceReport(graph_id="mini_scene", passed=False)
-    # 造一个假的 schema error 让 blocking_error_count>0、guidance 走 fail 分支
     from validator.report import Issue
 
     fail_report.schema_errors = [Issue(level="schema", location="x", message="forced fail")]
@@ -297,7 +374,6 @@ def test_land_refused_when_acceptance_fails(tmp_path, monkeypatch) -> None:
 
     rc = main([str(design_path), str(reply_path), "--land", str(land_dir)])
     assert rc == EXIT_REJECTED
-    # 未记版本 sidecar（不落地）
     assert not (land_dir / "scene.version.json").exists()
     # 且**不留**无版本 sidecar 的 scene.json 在落地目录（防"文件在=已落地"误读）
     assert not (land_dir / "scene.json").exists()
@@ -333,7 +409,6 @@ def _fill_placeholders(template: str) -> str:
     out_lines = []
     for line in template.splitlines():
         if "<…>" in line:
-            # narration / dialogue / continue / options 各自填一句中性 filler
             line = line.replace("<…>", "灯光落在吧台边，杯子摆成一排。")
         out_lines.append(line)
     return "\n".join(out_lines) + "\n"
@@ -344,7 +419,8 @@ def test_format_section_templates_parse_back_through_ingest() -> None:
     """P-A 渲染的输出格式段模板块，填满后能被 P-B parser 解析 + 对齐 + 合并。
 
     这是格式契约的机器闭环：P-A 生成什么样的填空模板，P-B 就必须能解析什么——
-    两任务 P1 并行期无法互测，落本任务。
+    两任务 P1 并行期无法互测，落本任务。**只验解析↔合并闭环**，不验本体解析
+    （lucy refs 未发布 → 验收会 FAIL，那是本体守门的正交议题）。
     """
     design = load_design_artifact(FIXTURE_DESIGN)
     spec = json.loads(LUCY_SPEC.read_text(encoding="utf-8"))["spec"]
@@ -357,9 +433,11 @@ def test_format_section_templates_parse_back_through_ingest() -> None:
     assert result.ok, [(e.code, e.node_id, e.actual) for e in result.errors]
     # 合并出的图节点数 = 期望 35（choice/beat/end 全覆盖）
     assert len(result.graph["nodes"]) == 35
-    # 且填出来的图能过验收（模板 filler 结构上干净）
+    # 结构 / 图 / 机械层干净（本体解析除外——lucy refs 未发布，属正交议题）
     report = run_acceptance(result.graph)
-    assert report.blocking_error_count == 0
+    assert report.schema_errors == []
+    assert report.graph_errors == []
+    assert report.mechanical_errors == []
 
 
 def test_mini_format_section_templates_parse_back(tmp_path) -> None:

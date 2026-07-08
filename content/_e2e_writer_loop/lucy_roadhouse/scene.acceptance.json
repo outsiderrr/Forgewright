@@ -1,13 +1,12 @@
 {
   "graph_id": "lucy_roadhouse_multipass",
-  "passed": true,
+  "passed": false,
   "node_count": 35,
-  "blocking_error_count": 0,
-  "guidance": "验收通过：结构完整、闭合无违规、机械预检干净。（另有 37 条本体解析待挂——引用了当前未加载的本体条目，属 fixture/环境依赖，不拦落地）",
+  "blocking_error_count": 37,
+  "guidance": "验收未通过，未落地：一致性层 37 错（说话人闭合 / option_id 唯一 / 本体引用未解析）。闭合 / 机械 / schema / graph 类是编剧改不到的结构字段（核对 design.json / 合并流程 / 是否有人手改 scene.json）；本体解析类是场景引用了当前未加载的本体条目（补齐本体或修正 ref 后重跑；本体一致性 = 真相之源守门 ADR-006）。",
   "schema_errors": [],
   "graph_errors": [],
-  "consistency_closure_errors": [],
-  "consistency_ontology_notes": [
+  "consistency_errors": [
     {
       "level": "cons",
       "location": "scene_anchor",

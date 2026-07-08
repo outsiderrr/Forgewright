@@ -980,7 +980,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  {report.one_line_guidance()}")
 
     if not report.passed:
-        # 验收 fail = 结构错误（编剧改不到），不落地、不记版本。退出码 EXIT_REJECTED（1）。
+        # 验收 fail（validator 三层任一 error 或机械 error——含本体解析未通过，ADR-006
+        # 本体守门），不落地、不记版本。退出码 EXIT_REJECTED（1）。具体 fail 原因见报告 +
+        # report.one_line_guidance()（区分"编剧改不到的结构错" vs "补齐本体/修 ref"）。
         if args.land is not None:
             # --land 时 out_path = <land 目录>/scene.json，已在上面写出候选——验收 fail
             # 必须删掉它，否则落地目录里留一份**无版本 sidecar 的 scene.json**，下游/作者

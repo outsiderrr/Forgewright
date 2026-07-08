@@ -89,6 +89,39 @@ def write_mini_design(tmp_path: Path) -> Path:
     return path
 
 
+# 已加载 waystation 本体（state/ontology/waystation.json）里可解析的 id——给需要
+# 验收 PASS 的用例用（T-3P-3 C 阶段口径：本体解析硬拦，refs 不解析 → 验收 FAIL）。
+_ONTOLOGY_SCENE = "scene_waystation_of_iron_oath"
+_ONTOLOGY_CHAR = "char_vellin"
+
+
+def make_resolvable_mini_design_wrapper() -> dict[str, Any]:
+    """mini design wrapper，但 run_config refs 换成**已加载本体可解析**的 waystation id。
+
+    合并出的图 scene_anchor / location_ref / speaker_ref / character_refs 全部 resolve
+    → validator 三层全过 → 验收 PASS。用于"本体齐全场景"的 PASS happy-path 用例。
+    结构（topology / beats_plan / skeletons）与 make_mini_design_wrapper 完全一致。
+    """
+    wrapper = make_mini_design_wrapper()
+    wrapper["design"]["run_config"] = {
+        "graph_id": "mini_resolvable_scene",
+        "scene_anchor": _ONTOLOGY_SCENE,
+        "speaker_ref": _ONTOLOGY_CHAR,
+        "character_refs": [_ONTOLOGY_CHAR],
+        "npc_name": "Vellin",
+    }
+    return wrapper
+
+
+def write_resolvable_mini_design(tmp_path: Path) -> Path:
+    path = tmp_path / "design.json"
+    path.write_text(
+        json.dumps(make_resolvable_mini_design_wrapper(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return path
+
+
 # mini design 的合法回流（5 节点全交齐；正文避开 AP 反模式）
 MINI_GOOD_REPLY = """\
 [node: start]
@@ -158,5 +191,7 @@ __all__ = [
     "MINI_GOOD_REPLY",
     "build_placeholder_reply",
     "make_mini_design_wrapper",
+    "make_resolvable_mini_design_wrapper",
     "write_mini_design",
+    "write_resolvable_mini_design",
 ]

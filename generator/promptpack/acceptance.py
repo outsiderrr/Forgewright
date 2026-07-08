@@ -13,20 +13,20 @@ P-B 合并器（ingest.py）产出的 scene.json 在**落地前**必须过本模
   结构完整性 + 本体一致性**（防管线 bug / 防绕过 P-B 手改 scene.json / 防配置错误），
   对编剧手笔的把关主要落在 ingest 的格式层 E1-E8 + 本模块的 AP 记录。
 
-pass/fail 判定（哪些算硬拦、哪些只记录）：
-  - **硬拦（fail）**：schema 层 / graph 层 / 一致性层的**闭合违规**（speaker_ref /
-    dialogue[].speaker_ref 未在 character_refs 声明、option_id 重复）/ 机械预检 error。
-    这些都是编剧触不到、只可能因管线 bug 或手改 scene.json 冒出来的**结构错误**。
-  - **只记录不拦（warning / note）**：
-    * AP flag —— 反模式是给编剧/制作人的 QA 信息，不是验收闸（沿 multipass engine.py
-      同款处理：flag 记录进报告，不影响 pass/fail）。
-    * 一致性层的**本体解析**（`... does not resolve in ontology`）—— 这类 issue 取决于
-      **当前加载了哪份本体**（state.ontology 扫 /state/ontology/*.json）。露西等实验
-      fixture 引用的 char_lucy / scene_hibo_roadhouse 不在已发布的驿站本体内，是**环境/
-      fixture 依赖**的已知假阳性（与 test_reassemble_lucy_adr040.py:118 同口径，作者已在
-      T-3P-2 演示物 README 复核）。据此把本体解析 issue 单列为「本体解析待挂」记录，
-      不当作管线产坏图的硬 fail——真正的本体守门在正式内容入库时对着已发布本体跑，
-      隔离目录 E2E 场景刻意用未发布本体，故此处降级为 note 并在报告写明。
+pass/fail 判定（作者 2026-07-09 拍板 Option 1；ADR-006 生产语义）：
+  - **硬拦（fail）= `validator.validate(graph)` 的三层全部 issue**（schema / graph /
+    consistency）**+ 机械预检 error**。consistency 层**不拆分、不降级**——闭合违规
+    （speaker_ref / dialogue[].speaker_ref 未在 character_refs 声明、option_id 重复）
+    **与本体解析**（scene_anchor / character_refs / location_ref / effect·condition
+    的 ontology_ref 未在已加载本体解析）**同为硬拦**。本体一致性是真相之源守门
+    （ADR-006 / CLAUDE.md 规则 5），回流验收若允许 ref 全部 unresolved 仍 PASS，
+    就不能称为"本体一致性守门"。
+  - **只记录不拦**：**只有 AP flag**——反模式是给编剧/制作人的 QA 信息，不是验收闸
+    （沿 multipass engine.py:475 先例：flag 记录进报告，不影响 pass/fail）。
+
+后果（如实）：引用未发布本体的 fixture 场景（如 lucy 引用 char_lucy /
+scene_hibo_roadhouse——不在 /state/ontology/ 已发布本体内）会**正确 FAIL**、被拒收落地。
+这是守门在工作，不是缺陷。全绿 happy-path（验收→落地→玩）留待本体齐全的场景。
 
 0 LLM。本模块只做只读校验调用 + 报告渲染；落地写盘 / version sidecar = ingest CLI 的
 `--land`（ingest.py 消费本模块）。
@@ -40,12 +40,6 @@ from typing import Any
 
 from validator import Issue, validate, validate_graph_mechanical
 from validator.anti_pattern_detector import AntiPatternFlag, detect_anti_patterns
-
-# 一致性层里"本体解析"类 issue 的判据串——consistency_check.py 对所有 ontology
-# 解析失败统一用这句尾缀（scene_anchor / character_refs / location_ref /
-# StateEffect.ontology_ref / StateCondition.ontology_ref 五处）。闭合违规
-# （speaker_ref / dialogue[].speaker_ref / duplicate option_id）不含此串。
-_ONTOLOGY_RESOLUTION_MARKER = "does not resolve in ontology"
 
 
 @dataclass
@@ -71,19 +65,18 @@ class ApFlagRow:
 
 @dataclass
 class AcceptanceReport:
-    """回流验收结果：pass/fail + 分层 issue 清单 + AP flag 清单 + 本体解析待挂。
+    """回流验收结果：pass/fail + 分层 issue 清单 + AP flag 清单。
 
-    passed 只由**硬拦层**决定（schema / graph / 闭合 / 机械 error）；
-    ap_flags 与 ontology_resolution 仅记录，不影响 passed。
+    passed 由**硬拦层**决定 = validator 三层（schema / graph / consistency）全部 issue
+    + 机械预检 error；**只有 ap_flags 仅记录、不影响 passed**。
     """
 
     graph_id: str
     passed: bool
     schema_errors: list[Issue] = field(default_factory=list)
     graph_errors: list[Issue] = field(default_factory=list)
-    # 一致性层拆两半：闭合违规（硬拦）vs 本体解析（记录）
-    consistency_closure_errors: list[Issue] = field(default_factory=list)
-    consistency_ontology_notes: list[Issue] = field(default_factory=list)
+    # 一致性层整体硬拦（闭合违规 + 本体解析同为硬拦；ADR-006 本体守门，不拆不降级）
+    consistency_errors: list[Issue] = field(default_factory=list)
     mechanical_errors: list[MechanicalIssueRow] = field(default_factory=list)
     ap_flags: list[ApFlagRow] = field(default_factory=list)
     node_count: int = 0
@@ -93,7 +86,7 @@ class AcceptanceReport:
         return (
             len(self.schema_errors)
             + len(self.graph_errors)
-            + len(self.consistency_closure_errors)
+            + len(self.consistency_errors)
             + len(self.mechanical_errors)
         )
 
@@ -101,43 +94,27 @@ class AcceptanceReport:
         """给编剧 / 作者看得懂的一句话指引（pass 与各类 fail 分别给）。"""
         if self.passed:
             note = ""
-            if self.consistency_ontology_notes:
-                note = (
-                    f"（另有 {len(self.consistency_ontology_notes)} 条本体解析待挂——"
-                    "引用了当前未加载的本体条目，属 fixture/环境依赖，不拦落地）"
-                )
             if self.ap_flags:
-                note += f"（另记录 {len(self.ap_flags)} 条反模式 flag，供编剧复核，不拦落地）"
-            return f"验收通过：结构完整、闭合无违规、机械预检干净。{note}"
+                note = f"（另记录 {len(self.ap_flags)} 条反模式 flag，供编剧复核，不拦落地）"
+            return f"验收通过：validator 三层全过、机械预检干净。{note}"
         parts: list[str] = []
         if self.schema_errors:
             parts.append(f"schema 层 {len(self.schema_errors)} 错（scene.json 结构不合 Schema）")
         if self.graph_errors:
             parts.append(f"graph 层 {len(self.graph_errors)} 错（图论：悬空 / 不可达 / 结局缺失等）")
-        if self.consistency_closure_errors:
+        if self.consistency_errors:
             parts.append(
-                f"一致性闭合 {len(self.consistency_closure_errors)} 错"
-                "（说话人未在花名册声明 / option_id 重复）"
+                f"一致性层 {len(self.consistency_errors)} 错"
+                "（说话人闭合 / option_id 唯一 / 本体引用未解析）"
             )
         if self.mechanical_errors:
             parts.append(f"机械预检 {len(self.mechanical_errors)} 错（effects / condition 形态违规）")
         return (
             "验收未通过，未落地：" + "；".join(parts) + "。"
-            "这些都是编剧改不到的结构字段——问题出在管线或被手改过的 scene.json，"
-            "别退回给编剧改正文；核对 design.json / 合并流程 / 是否有人手动动过 scene.json。"
+            "闭合 / 机械 / schema / graph 类是编剧改不到的结构字段（核对 design.json / 合并流程 / "
+            "是否有人手改 scene.json）；本体解析类是场景引用了当前未加载的本体条目"
+            "（补齐本体或修正 ref 后重跑；本体一致性 = 真相之源守门 ADR-006）。"
         )
-
-
-def _split_consistency(cons_issues: list[Issue]) -> tuple[list[Issue], list[Issue]]:
-    """一致性层拆分：本体解析 notes（记录）vs 闭合违规 errors（硬拦）。"""
-    ontology_notes: list[Issue] = []
-    closure_errors: list[Issue] = []
-    for issue in cons_issues:
-        if _ONTOLOGY_RESOLUTION_MARKER in issue.message:
-            ontology_notes.append(issue)
-        else:
-            closure_errors.append(issue)
-    return closure_errors, ontology_notes
 
 
 def run_acceptance(
@@ -145,20 +122,19 @@ def run_acceptance(
 ) -> AcceptanceReport:
     """跑完整验收：三层 + 机械（human）+ AP 记录 → AcceptanceReport。
 
-    只读调用 /validator，不改任何图内容。`ontology` 透传给机械预检（当前 human
-    路径下机械预检不做 ontology 引用查询，留参数对齐 dialogue_validator 签名 +
-    未来多本体场景）。
+    只读调用 /validator，不改任何图内容。三层全部 issue 硬拦（含本体解析；ADR-006）；
+    机械预检按 human 只豁免 monotonic、其余硬拦；只有 AP flag 记录不拦截。
+    `ontology` 透传给机械预检（当前 human 路径下机械预检不做 ontology 引用查询，
+    留参数对齐 dialogue_validator 签名 + 未来多本体场景）。
     """
     graph_id = graph.get("graph_id", "<unknown>")
     nodes = graph.get("nodes")
     node_count = len(nodes) if isinstance(nodes, dict) else 0
 
-    report = validate(graph)  # 三层：schema / graph / cons
+    report = validate(graph)  # 三层：schema / graph / cons（全部硬拦）
     schema_errors = list(report.issues_by_level.get("schema", []))
     graph_errors = list(report.issues_by_level.get("graph", []))
-    closure_errors, ontology_notes = _split_consistency(
-        list(report.issues_by_level.get("cons", []))
-    )
+    consistency_errors = list(report.issues_by_level.get("cons", []))
 
     # 机械预检：human 只豁免 monotonic，其余照跑（ADR-034 D11 对手填内容豁免）
     mech_results = validate_graph_mechanical(
@@ -178,7 +154,7 @@ def run_acceptance(
                 )
             )
 
-    # AP 预检：flag 记录不拦截（沿 multipass engine.py:475 先例）
+    # AP 预检：flag 记录不拦截（沿 multipass engine.py:475 先例；唯一的非阻断层）
     ap_flags: list[ApFlagRow] = []
     if isinstance(nodes, dict):
         for nid, node in nodes.items():
@@ -187,14 +163,15 @@ def run_acceptance(
             for flag in detect_anti_patterns(node):
                 ap_flags.append(_ap_flag_row(nid, flag))
 
-    passed = not (schema_errors or graph_errors or closure_errors or mechanical_errors)
+    passed = not (
+        schema_errors or graph_errors or consistency_errors or mechanical_errors
+    )
     return AcceptanceReport(
         graph_id=graph_id,
         passed=passed,
         schema_errors=schema_errors,
         graph_errors=graph_errors,
-        consistency_closure_errors=closure_errors,
-        consistency_ontology_notes=ontology_notes,
+        consistency_errors=consistency_errors,
         mechanical_errors=mechanical_errors,
         ap_flags=ap_flags,
         node_count=node_count,
@@ -226,12 +203,7 @@ def acceptance_report_dict(report: AcceptanceReport) -> dict[str, Any]:
         "guidance": report.one_line_guidance(),
         "schema_errors": [asdict(i) for i in report.schema_errors],
         "graph_errors": [asdict(i) for i in report.graph_errors],
-        "consistency_closure_errors": [
-            asdict(i) for i in report.consistency_closure_errors
-        ],
-        "consistency_ontology_notes": [
-            asdict(i) for i in report.consistency_ontology_notes
-        ],
+        "consistency_errors": [asdict(i) for i in report.consistency_errors],
         "mechanical_errors": [asdict(r) for r in report.mechanical_errors],
         "ap_flags": [asdict(r) for r in report.ap_flags],
     }
@@ -266,8 +238,8 @@ def render_acceptance_md(report: AcceptanceReport) -> str:
     lines += _issue_lines("Schema 层", report.schema_errors)
     lines += _issue_lines("Graph 层（图论）", report.graph_errors)
     lines += _issue_lines(
-        "一致性层 · 闭合违规（说话人闭合 / option_id 唯一）",
-        report.consistency_closure_errors,
+        "一致性层（说话人闭合 / option_id 唯一 / 本体引用解析）",
+        report.consistency_errors,
     )
     # 机械预检
     if report.mechanical_errors:
@@ -284,20 +256,6 @@ def render_acceptance_md(report: AcceptanceReport) -> str:
         "## 只记录层（不影响 pass/fail）",
         "",
     ]
-    # 本体解析待挂
-    if report.consistency_ontology_notes:
-        lines += [
-            f"### 本体解析待挂：{len(report.consistency_ontology_notes)}",
-            "",
-            "> 这些引用未在**当前加载的本体**里解析——属 fixture / 环境依赖（隔离目录 E2E "
-            "场景刻意引用未发布本体）。正式内容入库时对着已发布本体重跑才是本体守门；此处不拦落地。",
-            "",
-        ]
-        for i in report.consistency_ontology_notes:
-            lines.append(f"- `{i.location}`：{i.message}")
-        lines.append("")
-    else:
-        lines += ["### 本体解析待挂：0", ""]
     # AP flags
     if report.ap_flags:
         lines += [
