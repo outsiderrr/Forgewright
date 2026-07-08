@@ -194,3 +194,84 @@ def test_call_relay_retries_connection_failures():
     content, _ = call_relay("p", base_url="http://x", api_key="k", model="gpt-test",
                             transport=flaky)
     assert calls["n"] == 2 and content.startswith("# Code Review")
+
+
+def test_collect_context_packs_required_docs(tmp_path):
+    from tools.cross_review import collect_context_files
+    ctx = collect_context_files(REPO_ROOT, _META, [])
+    for rel in ("CLAUDE.md", "docs/ROADMAP.md", "docs/DECISIONS.md",
+                "docs/SCHEMA_v0.md", "docs/STAGE_1_ACCEPTANCE.md", "docs/governance.md"):
+        assert rel in ctx and ctx[rel], rel
+    assert any(k.startswith("docs/HANDOFF_STAGE_") for k in ctx)  # 最新 HANDOFF
+    # DECISIONS 超限时保尾（最近 ADR 在尾部）
+    if "已截去开头" in ctx["docs/DECISIONS.md"]:
+        assert "ADR-04" in ctx["docs/DECISIONS.md"]
+
+
+def test_collect_context_marks_missing_files(tmp_path):
+    from tools.cross_review import collect_context_files
+    bare = tmp_path / "repo"
+    (bare / "docs").mkdir(parents=True)
+    ctx = collect_context_files(bare, {"files": []}, [])
+    assert ctx["docs/ROADMAP.md"].startswith("（未找到")
+    assert "（未找到任何 HANDOFF" in ctx["docs/HANDOFF_STAGE_*.md"]
+
+
+@pytest.mark.parametrize("bad", ["sonnet-4", "anthropic/opus", "haiku-3.5", "claude-fable-5"])
+def test_claude_family_aliases_rejected(bad):
+    with pytest.raises(CrossReviewError):
+        call_relay("p", base_url="http://x", api_key="k", model=bad)
+
+
+def test_budget_refunded_on_relay_failure(tmp_path, monkeypatch):
+    import tools.cross_review as cr
+    events = []
+
+    class _FakeBudget:
+        def refund_estimated(self, record_id, reason):
+            events.append(("refund", record_id, reason))
+        def reconcile_after_call(self, *a, **k):
+            events.append(("reconcile",))
+
+    monkeypatch.setattr(cr, "_charge_budget", lambda chars, model: (_FakeBudget(), "rec1"))
+
+    def broken_transport(url, payload, headers):
+        raise ConnectionError("boom")
+
+    with pytest.raises(RuntimeError):  # main() 将其转为退出码 1
+        cr.run_review(
+            repo_root=REPO_ROOT, pr_meta=_META, diff_text="diff --git a/x b/x\n+1\n",
+            task_prompt_paths=[], l2_context=None, out_path=tmp_path / "r.md",
+            model="gpt-test", base_url="http://x", api_key="k",
+            transport=broken_transport,
+        )
+    assert ("refund", "rec1", "cross_review call failed") in events
+    assert ("reconcile",) not in events
+
+
+def test_http_transport_aggregates_sse(monkeypatch):
+    import tools.cross_review as cr
+
+    frames = [
+        b'data: {"choices":[{"delta":{"content":"# Code "}}]}\n',
+        b': keep-alive heartbeat\n',
+        b'data: not-json\n',
+        b'data: {"choices":[{"delta":{"content":"Review"}}]}\n',
+        b'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"completion_tokens":7}}\n',
+        b'data: [DONE]\n',
+        'data: {"choices":[{"delta":{"content":"AFTER-DONE should not appear"}}]}\n'.encode("utf-8"),
+    ]
+
+    class _FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def __iter__(self):
+            return iter(frames)
+
+    monkeypatch.setattr(cr.urllib.request, "urlopen", lambda req, timeout: _FakeResp())
+    out = cr._http_transport("http://x/chat/completions", {"model": "m"}, {})
+    assert out["choices"][0]["message"]["content"] == "# Code Review"
+    assert out["choices"][0]["finish_reason"] == "stop"
+    assert out["usage"]["completion_tokens"] == 7

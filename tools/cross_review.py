@@ -39,6 +39,21 @@ _TIMEOUT_SEC = 600
 # reasoning 上不透出）——必须显式给上限。评审报告 12k 足够。
 _MAX_OUTPUT_TOKENS = 12_000
 _RETRIES = 2  # 连接级失败（远端掐线等）重试次数
+# B 阶段 F-02：Claude 系模型别名 denylist（中转站常用别名不含 "claude" 字样）
+_CLAUDE_FAMILY_ALIASES = (
+    "claude", "anthropic", "sonnet", "opus", "haiku", "fable", "mythos",
+)
+# F-01：模板"启动前必读"的固定上下文（打包附上；缺失显式标注不静默省略）
+_REQUIRED_CONTEXT = [
+    "CLAUDE.md",
+    "docs/ROADMAP.md",
+    "docs/DECISIONS.md",
+    "docs/SCHEMA_v0.md",
+    "docs/STAGE_1_ACCEPTANCE.md",
+    "docs/governance.md",
+]
+_CONTEXT_FILE_CAP = 30_000  # 单个上下文文件字符上限（DECISIONS 取尾部=最近 ADR）
+_TAIL_CAPPED = {"docs/DECISIONS.md"}  # 追加式文档：截断时保尾弃头
 
 _API_PREAMBLE = """【API 交付形态说明（governance v0.6 §13）】
 本次评审经中转站 API 进行：你没有仓库访问能力，全部上下文已打包在下文。
@@ -142,9 +157,11 @@ def call_relay(
     transport: Callable[[str, dict, dict], dict] | None = None,
 ) -> tuple[str, dict]:
     """调中转站 chat/completions。返回 (报告文本, usage dict)。transport 可注入供测试。"""
-    if "claude" in model.lower():
+    lowered = model.lower()
+    if any(alias in lowered for alias in _CLAUDE_FAMILY_ALIASES):
         raise CrossReviewError(
-            f"REVIEW_MODEL={model!r} 是 Claude 系——cross-LLM 独立性硬要求（governance §13.1），拒绝执行"
+            f"REVIEW_MODEL={model!r} 疑似 Claude 系（命中别名）——"
+            "cross-LLM 独立性硬要求（governance §13.1），拒绝执行"
         )
     payload = {
         "model": model,
@@ -255,15 +272,43 @@ def gather_pr(pr: int, repo_root: Path) -> tuple[dict, str]:
     return json.loads(meta_raw), diff
 
 
+def _read_capped(path: Path, rel: str) -> str:
+    """读上下文文件并按 _CONTEXT_FILE_CAP 截断（追加式文档保尾，其余保头）。"""
+    text = path.read_text(encoding="utf-8")
+    if len(text) <= _CONTEXT_FILE_CAP:
+        return text
+    if rel in _TAIL_CAPPED:
+        return (
+            f"…（{rel} 超 {_CONTEXT_FILE_CAP} 字符，已截去开头、保留尾部=最近条目）…\n"
+            + text[-_CONTEXT_FILE_CAP:]
+        )
+    return text[:_CONTEXT_FILE_CAP] + f"\n…（{rel} 超 {_CONTEXT_FILE_CAP} 字符，已截断尾部）…"
+
+
+def _latest_handoff(repo_root: Path) -> str | None:
+    """最新一份 HANDOFF_STAGE_*.md（按文件名排序取末位；命名含阶段号，字典序≈时序）。"""
+    candidates = sorted((repo_root / "docs").glob("HANDOFF_STAGE_*.md"))
+    return f"docs/{candidates[-1].name}" if candidates else None
+
+
 def collect_context_files(
     repo_root: Path, pr_meta: dict, task_prompt_paths: list[str]
 ) -> dict[str, str]:
-    """根 CLAUDE.md + diff 触及模块的 CLAUDE.md + 任务规格文件。"""
+    """模板"启动前必读"固定上下文 + diff 触及模块的 CLAUDE.md + 任务规格文件。
+
+    B 阶段 F-01：_API_PREAMBLE 承诺"必读材料已打包"——固定清单必须真打包；
+    缺失文件显式标注（不静默省略），超限按 _read_capped 截断。
+    """
     out: dict[str, str] = {}
-    for rel in ["CLAUDE.md"]:
+    required = list(_REQUIRED_CONTEXT)
+    handoff = _latest_handoff(repo_root)
+    if handoff:
+        required.append(handoff)
+    else:
+        out["docs/HANDOFF_STAGE_*.md"] = "（未找到任何 HANDOFF 文件）"
+    for rel in required:
         p = repo_root / rel
-        if p.exists():
-            out[rel] = p.read_text(encoding="utf-8")
+        out[rel] = _read_capped(p, rel) if p.exists() else f"（未找到 {rel}）"
     top_dirs = {f["path"].split("/")[0] for f in pr_meta.get("files", []) if "/" in f["path"]}
     for d in sorted(top_dirs):
         p = repo_root / d / "CLAUDE.md"
@@ -313,9 +358,16 @@ def run_review(
         return 0
 
     budget_mod, record_id = _charge_budget(len(packed), model)
-    report, usage = call_relay(
-        packed, base_url=base_url, api_key=api_key, model=model, transport=transport
-    )
+    try:
+        report, usage = call_relay(
+            packed, base_url=base_url, api_key=api_key, model=model, transport=transport
+        )
+    except Exception:
+        # B 阶段 F-03：失败路径必须对账——沿 multipass/calls.py 先例退款，
+        # 否则 cost_log 留下"预扣未对账"记录，周对账无法区分失败与丢 usage。
+        if budget_mod is not None and record_id is not None:
+            budget_mod.refund_estimated(record_id, reason="cross_review call failed")
+        raise
     if budget_mod is not None and record_id is not None:
         budget_mod.reconcile_after_call(
             record_id,
