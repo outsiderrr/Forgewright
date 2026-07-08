@@ -1,0 +1,18 @@
+{
+  "schema_version": "0.1.0",
+  "description": "Godot host runtime policy derived from ADR-016 v0.4. Kept as host-local data so state_evaluator.gd does not hard-code world-specific state paths.",
+  "monotonic_paths": [
+    {
+      "id": "player_action_flags",
+      "pattern": "^flag\\.player_[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+      "forbidden_ops": ["dec", "remove"],
+      "forbidden_set_values": [false, null]
+    },
+    {
+      "id": "player_knowledge",
+      "pattern": "^knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+      "forbidden_ops": ["dec", "remove"],
+      "forbidden_set_values": [false, null]
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/option.schema.json",
+  "title": "Option",
+  "description": "SCHEMA_v0.md v0.1.1 §3.3 的 Option。D2：unavailable_behavior 枚举 hide/disable/disable_with_hint。D7：option_id 正则与长度。D8：generation_trace 整体可省，若填则 source 必填、六键固定。__留给 /validator 的跨对象约束__：option_id 在单 Node 内唯一性（JSON Schema 无法跨兄弟元素表达）、target_node_id 存在于同图 nodes map、effects 内 ontology_ref 的闭合性——均留给 /validator。",
+  "type": "object",
+  "required": ["option_id", "text", "target_node_id", "condition", "effects", "unavailable_behavior"],
+  "additionalProperties": false,
+  "properties": {
+    "option_id": {
+      "description": "D7：节点内唯一（唯一性本身留给 /validator）。正则仅允许 [a-zA-Z0-9_-]。",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "text": {
+      "description": "玩家可见文本。",
+      "type": "string"
+    },
+    "target_node_id": {
+      "description": "D7 同 node_id。必须存在于同一图 nodes map（闭合性留给 /validator）。",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "condition": {
+      "description": "前置条件；null 表示无条件可选。",
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "state_condition.schema.json"}
+      ]
+    },
+    "effects": {
+      "description": "选中时触发的状态效果数组；可空。",
+      "type": "array",
+      "items": {"$ref": "state_effect.schema.json"}
+    },
+    "unavailable_behavior": {
+      "description": "D2：不满足 condition 时的呈现语义。",
+      "enum": ["hide", "disable", "disable_with_hint"]
+    },
+    "generation_trace": {
+      "description": "🟡 D8：整体可省；若填则 source 必填，六键结构冻结。",
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"enum": ["human", "llm"]},
+        "generated_at": {"type": ["string", "null"]},
+        "model_id": {"type": ["string", "null"]},
+        "prompt_hash": {"type": ["string", "null"]},
+        "reviewed_by": {"type": ["string", "null"]},
+        "reviewed_at": {"type": ["string", "null"]}
+      }
+    },
+    "plugin_metadata": {
+      "description": "🟡 编剧理论插件的挂载点；核心层不解释内容。",
+      "type": "object"
+    }
+  }
+}

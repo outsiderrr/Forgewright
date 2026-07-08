@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgewright.local/schemas/dialogue_graph.schema.json",
+  "title": "DialogueGraph",
+  "description": "SCHEMA_v0.md v0.1.1 §3.1 的 DialogueGraph 根对象。schema_version 锁定为 '0.1.1'；graph_id 全仓库唯一、D7 正则。nodes 采用 id→Node 的对象映射，node_id 唯一性由映射键天然保证。__留给 /validator 的跨对象约束__：graph_id 全仓库唯一性（跨文件/跨图）、entry_node_id ∈ nodes、任何 option.target_node_id ∈ nodes、speaker_ref ⊆ character_refs、可达性/死锁拓扑校验、本体锚点（scene_anchor / character_refs / location_ref / ontology_ref）在本体花名册中可解析——均留给 /validator。JSON Schema 能做的只有本文件/本对象范围内的结构与枚举。",
+  "type": "object",
+  "required": ["schema_version", "graph_id", "entry_node_id", "nodes", "scene_anchor", "character_refs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "SCHEMA_v0.md §1：仅出现在根对象；本文件固定为 0.1.1。MAJOR 不同由 /engine /validator 按 §1.3 行为判断，不由本 JSON Schema 兼容。",
+      "const": "0.1.1"
+    },
+    "graph_id": {
+      "description": "D7：全仓库唯一（唯一性本身留给 /validator）。仅允许小写字母、数字、下划线、连字符；禁用空格、Unicode、'.'、':'、'/'。",
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "entry_node_id": {
+      "description": "必须存在于 nodes map（闭合性留给 /validator）。D7 正则同 node_id。",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+$",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "nodes": {
+      "description": "对象映射 node_id → Node。映射键天然保证 node_id 在图内唯一。至少 1 个节点。",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-zA-Z0-9_-]+$",
+        "minLength": 1,
+        "maxLength": 128
+      },
+      "additionalProperties": {"$ref": "node.schema.json"}
+    },
+    "scene_anchor": {
+      "description": "本体场景/地点引用（闭合性留给 /validator + 本体 Schema 任务）。",
+      "type": "string",
+      "minLength": 1
+    },
+    "character_refs": {
+      "description": "声明本图涉及的本体角色 ID（闭合性留给 /validator）。",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "scene_metaparams": {
+      "description": "⭐ T-3Y-1 / ADR-034 D4：场景元参数（场景级元变量影响整个场景生成期）；dict[str, JSON] 自由形态，字段名由项目配置层定义（参考 ADR-029 模式 + ADR-027 世界观不可知性原则）。典型字段：culprit_id（真凶 ID）/ difficulty_level（难度等级）/ apparition_level（显现等级）。具体 enum 不在 schema 层固化。本字段 optional，可省；不影响现有 gold scene。",
+      "type": "object",
+      "additionalProperties": true
+    },
+    "scene_reveals": {
+      "description": "⭐ T-3Y-1 / ADR-034 D5：场景揭露清单；ordered flag set 模式（对齐 Ink LIST 主流）。每 trigger_node 触发时 set knowledge.<reveal_id>.stage_<n>；completion_node 入口检查 required_stages ⊆ set_stages。__留给 /validator__：(1) trigger_node_ids / completion_node_id 必须在本图 nodes map 内可解析；(2) reveal_id 与节点级 foreground_goal 双向引用一致。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["reveal_id", "trigger_node_ids", "completion_node_id", "required_stages"],
+        "additionalProperties": false,
+        "properties": {
+          "reveal_id": {
+            "description": "Codex review finding 4.2 收紧：pattern 只允许小写蛇形 [a-z0-9_]，确保 D5 派生 `knowledge.<reveal_id>.stage_<n>` 合法（ADR-016 v0.4 knowledge.* pattern 只允许小写段）。",
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "trigger_node_ids": {
+            "description": "本 reveal 触发节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-]+$", "minLength": 1}
+          },
+          "completion_node_id": {
+            "description": "本 reveal 完成节点（入口检查 required_stages ⊆ set_stages）。",
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1
+          },
+          "required_stages": {
+            "description": "completion_node 入口要求 set 完的 stage 整数列表（如 [1, 2] 表示要求 knowledge.<reveal_id>.stage_1 + .stage_2 都已 set）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "integer", "minimum": 1}
+          }
+        }
+      }
+    },
+    "scene_seeds": {
+      "description": "⭐ T-3Y-1 / ADR-034 D6：场景种子清单 + coverage_strategy 覆盖策略；v0.1 弱保证（场景退出 flag set 检查；无 path enumeration 即不做完备路径枚举）。__留给 /validator__：(1) planted_in_node_ids 必须在本图 nodes map 内可解析；(2) seed_id 与节点级 background_seeds 双向引用一致；(3) coverage_strategy='mandatory_all_paths' 时场景退出需检查 flag 已埋（v0.1 弱形式）。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["seed_id", "planted_in_node_ids", "coverage_strategy"],
+        "additionalProperties": false,
+        "properties": {
+          "seed_id": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+$",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "planted_in_node_ids": {
+            "description": "本 seed 被埋入的节点列表（每个节点 ID 必须在本图 nodes map 可解析）。",
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-zA-Z0-9_-]+$", "minLength": 1}
+          },
+          "coverage_strategy": {
+            "description": "ADR-034 D6 3 枚举：mandatory_all_paths（强制全路径覆盖）/ mandatory_with_fallback（强制带回退）/ conditional_reward（条件性奖励）。",
+            "enum": ["mandatory_all_paths", "mandatory_with_fallback", "conditional_reward"]
+          },
+          "condition": {
+            "description": "🟡 optional：仅在条件成立的路径埋（典型 conditional_reward 模式）；可省略或 null。",
+            "oneOf": [
+              {"type": "null"},
+              {"$ref": "state_condition.schema.json"}
+            ]
+          }
+        }
+      }
+    },
+    "player_known_info": {
+      "description": "⭐ T-3Y-1 / T-3Y 进展报告 §5.1 双层结构的结构化部分（relevant_known_info：retrieval 短列表）。每项指向一个 knowledge.* state path + 当前 stage 整数。全局背景一段话 all_known_info_summary 在 prompt assembly 阶段生成，__不入 schema__。本字段 optional。",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["knowledge_path"],
+        "additionalProperties": false,
+        "properties": {
+          "knowledge_path": {
+            "description": "ADR-016 v0.4 第 6 命名空间 knowledge.* 的 state path。",
+            "type": "string",
+            "pattern": "^knowledge\\.[a-z0-9_]+(\\.[a-z0-9_]+)*$",
+            "minLength": 1
+          },
+          "stage": {
+            "description": "🟡 optional：当 knowledge_path 是 progressive disclosure（渐进揭露）形态时记录当前 stage 整数；不分阶段的揭露省略此字段。",
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "authoring": {
+      "description": "🟡 生成来源 / 审阅状态 / 主编签名；阶段 0 手写场景可空。内部结构后续任务固化。",
+      "type": "object"
+    },
+    "plugin_metadata": {
+      "description": "🟡 编剧理论插件的挂载点；核心层不解释内容。",
+      "type": "object"
+    },
+    "faction_clocks_touched": {
+      "description": "🟡 图可能推进/受影响的阵营时钟 ID 列表。阶段 0 可空。",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

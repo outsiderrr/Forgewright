@@ -1,0 +1,6 @@
+.godot/
+export/*.app/
+export/*.dmg
+export/*.zip
+*.import
+*.uid
