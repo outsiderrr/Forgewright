@@ -153,6 +153,95 @@ def test_load_design_artifact_rejects_beats_plan_topology_mismatch(tmp_path) -> 
         load_design_artifact(path)
 
 
+def test_load_design_artifact_rejects_empty_beats_chain(tmp_path) -> None:
+    """空拍链拒收：0-reveal 链约定必须有 1 个过场拍，空链会让 {pid}_b1 入口悬空。"""
+    design = json.loads(json.dumps(_DESIGN))
+    design["topology"]["nodes"][0]["reveals"] = []  # 0-reveal 链
+    design["beats_plan"] = {"soft_line": []}  # 走形：空链而非 1 个过场拍
+    with pytest.raises(PromptpackInputError, match="空链"):
+        load_design_artifact(_write_design(tmp_path, design))
+
+
+def test_load_design_artifact_rejects_directory_path(tmp_path) -> None:
+    """传目录 → PromptpackInputError（退出码 2 契约），不裸 IsADirectoryError。"""
+    with pytest.raises(PromptpackInputError, match="无法读取"):
+        load_design_artifact(tmp_path)
+
+
+def test_load_design_artifact_rejects_non_utf8_file(tmp_path) -> None:
+    """非 UTF-8 文件 → PromptpackInputError，不裸 UnicodeDecodeError。"""
+    p = tmp_path / "design.json"
+    p.write_bytes("{}".encode("utf-16"))  # BOM + 双字节，UTF-8 解不开
+    with pytest.raises(PromptpackInputError, match="UTF-8"):
+        load_design_artifact(p)
+
+
+# ---------------------------------------------------------------------------
+# choice 骨架出边覆盖复算（C 阶段 finding 7：残留路由缺口在 loader 边界硬拦）
+# ---------------------------------------------------------------------------
+
+def _design_with_choice(option_routes: list[str]) -> dict:
+    """带 choice 节点的最小 design：opening 两条出边 soft_line / press_line。"""
+    return {
+        "contract": {},
+        "topology": {
+            "entry_node_id": "opening",
+            "nodes": [
+                {"node_id": "opening", "kind": "choice", "function": "", "reveals": [],
+                 "routes": [{"to": "soft_line", "stance": ""},
+                            {"to": "press_line", "stance": ""}]},
+                {"node_id": "soft_line", "kind": "beats", "function": "",
+                 "reveals": ["线索甲"], "next": "end_soft"},
+                {"node_id": "press_line", "kind": "beats", "function": "",
+                 "reveals": ["线索乙"], "next": "end_soft"},
+                {"node_id": "end_soft", "kind": "end", "function": "", "reveals": []},
+            ],
+        },
+        "skeletons": {
+            "opening": {
+                "node_id": "opening",
+                "options": [{"intent": "", "route_to": rt} for rt in option_routes],
+            }
+        },
+        "beats_plan": {
+            "soft_line": [{"beat_id": "soft_line_b1", "reveals": ["线索甲"], "is_last": True}],
+            "press_line": [{"beat_id": "press_line_b1", "reveals": ["线索乙"], "is_last": True}],
+        },
+        "run_config": dict(_RUN_CONFIG),
+    }
+
+
+def test_load_design_artifact_accepts_full_route_coverage(tmp_path) -> None:
+    """出边全覆盖（含多选项收敛到同一出边）→ 正常放行。"""
+    design = _design_with_choice(["soft_line", "press_line", "soft_line"])
+    loaded = load_design_artifact(_write_design(tmp_path, design))
+    assert set(loaded["beats_plan"]) == {"soft_line", "press_line"}
+
+
+def test_load_design_artifact_rejects_uncovered_out_edge(tmp_path) -> None:
+    """出边未被任何选项覆盖（不可达链）→ 硬拦 + 引导重跑 structure-only / 人工修。"""
+    design = _design_with_choice(["soft_line", "soft_line"])  # press_line 无人路由
+    with pytest.raises(PromptpackInputError, match="press_line") as ei:
+        load_design_artifact(_write_design(tmp_path, design))
+    assert "不可达" in str(ei.value)
+    assert "structure-only" in str(ei.value)
+
+
+def test_load_design_artifact_rejects_illegal_route_to(tmp_path) -> None:
+    """route_to 非法（不在出边内）→ 同径硬拦（语义对照 engine._route_violations）。"""
+    design = _design_with_choice(["soft_line", "press_line", "nowhere"])
+    with pytest.raises(PromptpackInputError, match="nowhere"):
+        load_design_artifact(_write_design(tmp_path, design))
+
+
+def test_load_design_artifact_rejects_missing_choice_skeleton(tmp_path) -> None:
+    """topology 有 choice 但 skeletons 缺该骨架 → 出边必然未覆盖，硬拦。"""
+    design = _design_with_choice(["soft_line", "press_line"])
+    design["skeletons"] = {}
+    with pytest.raises(PromptpackInputError, match="没有骨架"):
+        load_design_artifact(_write_design(tmp_path, design))
+
+
 def test_load_scene_spec_rejects_non_dict_spec(tmp_path) -> None:
     p = tmp_path / "spec.json"
     p.write_text(json.dumps({"config": dict(_RUN_CONFIG), "spec": None}), encoding="utf-8")

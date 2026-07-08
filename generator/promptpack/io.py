@@ -44,7 +44,10 @@ def load_design_artifact(path: str | Path) -> dict[str, Any]:
       - 失败运行产物（status != success）→ 透出 status + failure_reason；
       - 成功但缺 beats_plan / run_config → 非 structure-only 产物（legacy 或
         全量生成），引导先跑 --structure-only；
-      - beats_plan / run_config 载体形态不符（非 dict / 缺字段 / BeatSlot 走形）。
+      - beats_plan / run_config 载体形态不符（非 dict / 缺字段 / BeatSlot 走形）；
+      - beats_plan 与 topology 错位 / 空拍链（0-reveal 链也必须有 1 个过场拍）；
+      - 锁定骨架路由缺口（choice 出边未被任何选项覆盖 / route_to 非法 / 缺骨架）
+        → 引导重跑 --structure-only 或人工修 design。
     """
     path = Path(path)
     payload = _load_json(path)
@@ -75,6 +78,7 @@ def load_design_artifact(path: str | Path) -> dict[str, Any]:
     _check_beats_plan_shape(design["beats_plan"], path)
     _check_run_config_shape(design["run_config"], path)
     _check_beats_plan_consistency(design["beats_plan"], design.get("topology"), path)
+    _check_skeleton_route_coverage(design.get("skeletons"), design["topology"], path)
     return design
 
 
@@ -129,6 +133,13 @@ def _check_beats_plan_consistency(
             f"{sorted(beats_nodes)} 不一致——topology 与拆拍计划疑似不同批产物"
         )
     for pid, slots in beats_plan.items():
+        if not slots:
+            # 0-reveal 链的约定是 1 个过场拍（beat_split 的空链规则），不是空链——
+            # {pid}_b1 是图接线入口（assemble.entry_graph_node_id），空链会让入口悬空
+            raise PromptpackInputError(
+                f"{path}: beats_plan[{pid!r}] 是空链（0 拍）——0-reveal 链约定必须有 "
+                f"1 个过场拍，空链会让 {pid}_b1 图接线入口悬空；请重跑 --structure-only"
+            )
         flattened = [r for slot in slots for r in slot["reveals"]]
         expected = list(beats_nodes[pid].get("reveals") or [])
         if flattened != expected:
@@ -144,6 +155,51 @@ def _check_beats_plan_consistency(
                 f"{path}: beats_plan[{pid!r}] 的 beat_id 编号 / is_last 不符合 "
                 "{pid}_b{{1..N}} 连续 + 末拍 is_last 约定"
             )
+
+
+def _check_skeleton_route_coverage(skeletons: Any, topology: dict[str, Any], path: Path) -> None:
+    """choice 骨架 ↔ topology 出边覆盖复算——残留路由缺口在 loader 边界硬拦。
+
+    structure-only 锁定时的残留路由缺口（`locked_route_violations`）只落
+    metrics/warnings（软信号）；而 T-3P-1 被强制只经本 loader 读 design——若这里
+    不拦，含不可达链的 design 会被渲染成提示词包、编剧写完才发现有分支白写。
+
+    语义对照 generator/multipass/engine.py 的 `_route_violations`（route_to 非法 /
+    出边未被任何选项使用）。该符号是 engine 私有实现，跨包不 import——此处复制
+    小实现；两处语义改动必须同步。收集全部缺口后一次报错（与 _cross_check_config
+    同风格）。
+    """
+    violations: list[str] = []
+    for node in topology.get("nodes") or []:
+        if not isinstance(node, dict) or node.get("kind") != "choice":
+            continue
+        pid = node.get("node_id")
+        allowed = [r.get("to") for r in node.get("routes") or []]
+        skeleton = skeletons.get(pid) if isinstance(skeletons, dict) else None
+        if not isinstance(skeleton, dict):
+            violations.append(f"choice {pid!r} 在 design.skeletons 里没有骨架")
+            continue
+        # ↓ 与 engine._route_violations 同一判定（复制实现，注释见 docstring）
+        used: set[Any] = set()
+        for i, o in enumerate(skeleton.get("options") or []):
+            rt = o.get("route_to")
+            if rt not in allowed:
+                violations.append(
+                    f"choice {pid!r} options[{i}].route_to={rt!r} 不在出边 {allowed}"
+                )
+            else:
+                used.add(rt)
+        missing = [t for t in allowed if t not in used]
+        if missing:
+            violations.append(
+                f"choice {pid!r} 出边 {missing} 没有任何选项使用（对应分支不可达）"
+            )
+    if violations:
+        raise PromptpackInputError(
+            f"{path}: 锁定骨架存在路由缺口，直接消费会产出含不可达分支的提示词包：\n  - "
+            + "\n  - ".join(violations)
+            + "\n  修复：重跑 --structure-only 产出无缺口的 design，或人工修 design 后重试"
+        )
 
 
 def _check_run_config_shape(run_config: Any, path: Path) -> None:
@@ -185,10 +241,20 @@ def load_scene_spec(
 
 
 def _load_json(path: Path) -> Any:
+    # 异常面 = 整个"读不到合法 JSON 文本"的坏输入谱系（契约：坏输入 →
+    # PromptpackInputError → CLI 退出码 2，不裸 traceback）：
+    #   FileNotFoundError / IsADirectoryError / PermissionError 等都是 OSError 子类；
+    #   UnicodeDecodeError 覆盖非 UTF-8 文件（它是 ValueError 子类、不在 OSError 下）。
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as e:
         raise PromptpackInputError(f"{path}: 文件不存在") from e
+    except OSError as e:
+        raise PromptpackInputError(
+            f"{path}: 无法读取（{type(e).__name__}: {e}）"
+        ) from e
+    except UnicodeDecodeError as e:
+        raise PromptpackInputError(f"{path}: 不是 UTF-8 编码的文本文件（{e}）") from e
     except json.JSONDecodeError as e:
         raise PromptpackInputError(f"{path}: 不是合法 JSON（{e}）") from e
 

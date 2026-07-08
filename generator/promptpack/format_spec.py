@@ -18,6 +18,8 @@
 
 编剧不得增删节点、不得改 node_id、不得增删选项序号（结构已由我们锁定）。
 dialogue 行说话人归属：v1 = 图级单说话人（run_config.speaker_ref），编剧不写说话人名。
+多行值范围：**只有 narration 是多行值**（MULTILINE_VALUE_KEYS）；continue 的值、
+options 每条序号行、dialogue 每条 `- ` 行都是单行值，其后的续行落 E8（parse_error）。
 """
 from __future__ import annotations
 
@@ -41,6 +43,12 @@ DIALOGUE_ITEM_PREFIX = "- "
 
 # options 块内每行 = 序号 + ": " + 玩家第一人称台词；序号必须 1..N 连续完整
 OPTION_LINE_TEMPLATE = "{index}: {text}"
+
+# 多行值白名单：值可以吃后续行（直到下一个 key 行 / 节点头）的 key **只有 narration**。
+# continue 的值 / options 序号行 / dialogue `- ` 行都是单行值——其后的续行不属于
+# 任何多行值，按 E8（parse_error）归类。用 list 不用 tuple：同 NODE_CATEGORY_KEYS
+# 的 JSON round-trip 理由。
+MULTILINE_VALUE_KEYS: list[str] = [KEY_NARRATION]
 
 # 节点类别 → 必交 / 可选 key 表（结构锁定后编剧唯一要填的三类正文槽位）
 #   choice = 多选项决策点；beat = beats 链单选项拍（锁定微节点）；end = 收束节点
@@ -93,8 +101,9 @@ ERRORS: dict[str, ErrorSpec] = {
             "E4",
             "option_count_mismatch",
             "选项序号缺号 / 多号 / 不连续 / 与锁定数不符",
-            "options: 块存在但序号缺号、多号、不连续或总数 ≠ 锁定选项数时为 E4；"
-            "块整体缺失不落此类（那是 E5）",
+            "options: 块存在且**至少有 1 条序号行**、但序号缺号、多号、不连续或总数 ≠ "
+            "锁定选项数时为 E4；块整体缺失不落此类（那是 E5）；块在但一条序号行都没有"
+            "（0 条）也不落此类（唯一归属 E7 空块——E4 只管序号行存在但对不上）",
         ),
         ErrorSpec(
             "E5",
@@ -106,15 +115,20 @@ ERRORS: dict[str, ErrorSpec] = {
         ErrorSpec(
             "E6",
             "unknown_key",
-            "不认识的字段 key（含错位块：该类别不该出现的 key）",
+            "不认识或不该出现的字段 key（含错位块与重复出现的已知 key）",
             "不在 NODE_CATEGORY_KEYS required+optional 之内的 key 即 E6；"
-            "错位块同类处理（如 end 带 options、choice 带 continue）",
+            "错位块同类处理（如 end 带 options、choice 带 continue）；"
+            "同一节点块内**已知 key 第二次出现**（如两个 narration: 行、两个 options: 块）"
+            "同样落 E6，从第二次出现处记（首次出现的块正常归属，不受影响）",
         ),
         ErrorSpec(
             "E7",
             "empty_text",
-            "key 在但正文为空",
-            "key 行存在但冒号后（及其块内）无任何非空白正文即 E7；"
+            "key 行或序号行存在但正文为空",
+            "key 行存在但冒号后（及其块内）无任何非空白正文即 E7；逐 case："
+            "options 序号行有序号无正文（如 `3: ` 后为空）= E7；"
+            "dialogue 块内空 `- ` 条目（连字符后无正文）= E7；"
+            "options: key 行在但块内 0 条序号行 = E7（空块唯一归属此类，不落 E4）；"
             "dialogue: 块 0 行是合法可选，不落此类",
         ),
         ErrorSpec(
@@ -122,7 +136,8 @@ ERRORS: dict[str, ErrorSpec] = {
             "parse_error",
             "无法归属任何 key 的行",
             "不构成节点头、key 行、dialogue 行、options 序号行且不属于任何多行值的"
-            "游离行即 E8",
+            "游离行即 E8；多行值只有 narration（MULTILINE_VALUE_KEYS）——continue 的值、"
+            "options 序号行、dialogue 行都是单行值，其后的续行落 E8",
         ),
     )
 }
@@ -146,6 +161,7 @@ __all__ = [
     "KEY_CONTINUE",
     "DIALOGUE_ITEM_PREFIX",
     "OPTION_LINE_TEMPLATE",
+    "MULTILINE_VALUE_KEYS",
     "NODE_CATEGORY_KEYS",
     "ErrorSpec",
     "ERRORS",

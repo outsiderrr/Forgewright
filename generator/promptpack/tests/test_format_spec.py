@@ -16,6 +16,7 @@ from generator.promptpack.format_spec import (
     KEY_DIALOGUE,
     KEY_NARRATION,
     KEY_OPTIONS,
+    MULTILINE_VALUE_KEYS,
     NODE_CATEGORY_KEYS,
     NODE_HEADER_TEMPLATE,
     OPTION_LINE_TEMPLATE,
@@ -75,6 +76,44 @@ def test_error_boundary_cases_documented() -> None:
     for kw in ("缺号", "多号", "不连续"):
         assert kw in ERRORS["E4"].boundary
     assert "end" in ERRORS["E6"].boundary and "options" in ERRORS["E6"].boundary
+
+
+def test_duplicate_known_key_is_e6() -> None:
+    """块内重复已知 key（两个 narration: / 两个 options: 块）→ 定死归 E6（扩义），
+    从第二次出现处记；首次出现的块正常归属。"""
+    assert "第二次出现" in ERRORS["E6"].boundary
+    assert "重复" in ERRORS["E6"].meaning
+
+
+def test_empty_option_line_and_empty_dialogue_item_are_e7() -> None:
+    """options 序号行空文本（`3: ` 后无正文）与 dialogue 块内空 `- ` 条目 → 定死归 E7。"""
+    assert "序号行" in ERRORS["E7"].meaning
+    assert "序号行有序号无正文" in ERRORS["E7"].boundary
+    assert "空 `- ` 条目" in ERRORS["E7"].boundary
+    # dialogue 0 行合法可选的既有口径保留
+    assert "合法可选" in ERRORS["E7"].boundary
+
+
+def test_empty_options_block_uniquely_owned_by_e7_not_e4() -> None:
+    """options: key 在但块内 0 条序号行——唯一归属 E7（空块），E4 显式让出。
+
+    此前 E4（0≠N）与 E7（key 行存在但块内无正文）双落；C 阶段写死唯一归属：
+    E4 只管序号行存在但对不上的 case。"""
+    assert "0 条序号行 = E7" in ERRORS["E7"].boundary
+    assert "不落 E4" in ERRORS["E7"].boundary
+    assert "0 条）也不落此类" in ERRORS["E4"].boundary
+    assert "至少有 1 条序号行" in ERRORS["E4"].boundary
+
+
+def test_multiline_value_scope_only_narration() -> None:
+    """多行值范围定死：只有 narration；continue / options 序号行的续行落 E8。"""
+    import json
+
+    assert MULTILINE_VALUE_KEYS == [KEY_NARRATION]
+    # 契约数据 JSON-native（与 NODE_CATEGORY_KEYS 同理由）
+    assert json.loads(json.dumps(MULTILINE_VALUE_KEYS)) == MULTILINE_VALUE_KEYS
+    assert "narration" in ERRORS["E8"].boundary
+    assert "单行值" in ERRORS["E8"].boundary and "续行落 E8" in ERRORS["E8"].boundary
 
 
 def test_exit_codes_three_states() -> None:

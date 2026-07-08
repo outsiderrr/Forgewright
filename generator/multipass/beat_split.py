@@ -5,8 +5,8 @@
 每拍带 reveal 子集，编剧（BYOM）在整场提示词包里逐拍填正文（T-3P-1 消费）。
 
 拆拍规则（数值参数化；默认值 = 常量）：
-  - 每拍最多 DEFAULT_MAX_REVEALS_PER_BEAT（=2）条线索，沿 beat_pacing.py 现行
-    "每拍只揭 1-2 条"约定的上限；按输入顺序贪心分块（8 条 → 2/2/2/2）。
+  - 每拍最多 DEFAULT_MAX_REVEALS_PER_BEAT（=1）条线索（作者拍板 2026-07-08：
+    玩家每个来回只听 1 条线索）；按输入顺序贪心分块（8 条 → 1×8）。
   - 0 条 reveals 的链给 1 个过场拍（beats 链在图里至少要有 1 拍才能接线）。
   - beat_id = f"{pid}_b{i}"（1 起编），与 assemble.entry_graph_node_id 的
     "{pid}_b1 = 链入口"约定一致——T-3P-2 回流合并按此 id 对齐。
@@ -27,8 +27,9 @@ class BeatSlot(TypedDict):
     is_last: bool
 
 
-# 每拍线索上限默认值（起点参考 beat_pacing.py "每拍只揭 1-2 条"的现行约定上限）
-DEFAULT_MAX_REVEALS_PER_BEAT = 2
+# 每拍线索上限默认值（作者拍板 2026-07-08：玩家每个来回只听 1 条线索；
+# 初版曾沿 beat_pacing.py "每拍只揭 1-2 条"取 2，C 阶段按作者对话节奏改 1）
+DEFAULT_MAX_REVEALS_PER_BEAT = 1
 
 
 def chunk_reveals(reveals: list[str], size: int) -> list[list[str]]:

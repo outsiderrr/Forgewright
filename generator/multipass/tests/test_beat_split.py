@@ -7,7 +7,7 @@
   - beat_id 与 assemble.entry_graph_node_id 的 {pid}_b1 约定一致；
   - 末拍 is_last=True；
   - 0 条 reveals 的链给 1 个过场拍；
-  - 每拍上限参数化（默认 ≤2 条）。
+  - 每拍上限参数化（默认 1 条；作者拍板 2026-07-08：玩家每个来回只听 1 条线索）。
 """
 from __future__ import annotations
 
@@ -33,8 +33,9 @@ def _beats_node(pid: str = "soft_line", reveals: list[str] | None = None) -> dic
     }
 
 
-def test_default_cap_is_two() -> None:
-    assert DEFAULT_MAX_REVEALS_PER_BEAT == 2
+def test_default_cap_is_one() -> None:
+    """作者拍板 2026-07-08：玩家每个来回只听 1 条线索。"""
+    assert DEFAULT_MAX_REVEALS_PER_BEAT == 1
 
 
 def test_deterministic_same_input_same_output() -> None:
@@ -63,13 +64,14 @@ def test_only_last_slot_is_last() -> None:
     assert [s["is_last"] for s in slots] == [False] * (len(slots) - 1) + [True]
 
 
-def test_default_cap_two_splits_eight_into_four() -> None:
+def test_default_cap_one_splits_eight_into_eight() -> None:
     slots = split_beats(_beats_node())
-    assert [len(s["reveals"]) for s in slots] == [2, 2, 2, 2]
+    assert [len(s["reveals"]) for s in slots] == [1] * 8
 
 
 def test_odd_count_leaves_remainder_in_last_beat() -> None:
-    slots = split_beats(_beats_node(reveals=["a", "b", "c", "d", "e"]))
+    """cap 显式传 2：不整除时余数落末拍（默认 cap=1 不产生余数，显式参数才可见）。"""
+    slots = split_beats(_beats_node(reveals=["a", "b", "c", "d", "e"]), max_reveals_per_beat=2)
     assert [len(s["reveals"]) for s in slots] == [2, 2, 1]
 
 
@@ -109,7 +111,7 @@ def test_beat_ids_match_assemble_numbering_for_all_beats() -> None:
     """
     from generator.multipass.assemble import assemble_graph
 
-    node = _beats_node(pid="soft_line", reveals=["a", "b", "c", "d", "e"])  # 3 拍
+    node = _beats_node(pid="soft_line", reveals=["a", "b", "c", "d", "e"])  # 默认 cap=1 → 5 拍
     slots = split_beats(node)
     plan = {
         "entry_node_id": "soft_line",
