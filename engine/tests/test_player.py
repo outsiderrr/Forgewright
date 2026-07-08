@@ -277,10 +277,33 @@ def test_adr040_dialogue_lines_render_with_speaker(tmp_path):
     assert out.count("：「") == 2
 
 
+# legacy 场景完整 stdout golden（B 阶段 finding：只断言"无对白体例"防不住
+# 间距/编号/顺序被误改——零变化必须钉整段输出。改播放器呈现需同步改这里）
+_SCENE_C_GOLDEN = (
+    "\n" + "-" * 60 + "\n"
+    "[警告] 本体条目未找到: loc_test（使用原 ref 显示）\n"
+    "【（旁白） · loc_test】\n\n"
+    "桌上放着一把黄铜钥匙。\n\n"
+    "  1. 拿起黄铜钥匙。\n"
+    "  2. 看都不看径直离开。\n\n"
+    "> 选择（1-2）: \n" + "-" * 60 + "\n"
+    "[警告] 本体条目未找到: loc_test（使用原 ref 显示）\n"
+    "【（旁白） · loc_test】\n\n"
+    "一道紧锁的铁门挡在前面。\n\n"
+    "  1. 用黄铜钥匙开门。\n"
+    "  2. 原路返回。\n\n"
+    "> 选择（1-2）: \n" + "-" * 60 + "\n"
+    "[警告] 本体条目未找到: loc_test（使用原 ref 显示）\n"
+    "【（旁白） · loc_test】\n\n"
+    "铁门哐当一声开了。\n\n"
+    "—— 结局 ——\n"
+)
+
+
 def test_adr040_absent_dialogue_output_unchanged(tmp_path):
-    # legacy 场景（无 dialogue 字段）输出零变化：不出现对白体例
+    # legacy 场景（无 dialogue 字段）输出零变化：整段 stdout 精确对比
     scene_file = tmp_path / "scene_c.json"
     scene_file.write_text(json.dumps(_SCENE_C, ensure_ascii=False), encoding="utf-8")
 
     _, out = _run(scene_file, "1\n1\n")
-    assert "：「" not in out
+    assert out == _SCENE_C_GOLDEN
