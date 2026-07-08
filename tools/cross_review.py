@@ -26,6 +26,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Callable
@@ -34,6 +35,10 @@ TEMPLATE_PATH = "docs/REVIEW_PROMPT_CODE_GPT.md"
 DEFAULT_PER_FILE_CAP = 20_000  # 单文件 diff 字符上限（超出截断留告示）
 DEFAULT_TOTAL_CAP = 120_000  # 打包 prompt 里 diff 总字符上限
 _TIMEOUT_SEC = 600
+# 实测（2026-07-08）：中转站 gpt-5.5 不带 max_tokens 会返回 content=None（token 烧在
+# reasoning 上不透出）——必须显式给上限。评审报告 12k 足够。
+_MAX_OUTPUT_TOKENS = 12_000
+_RETRIES = 2  # 连接级失败（远端掐线等）重试次数
 
 _API_PREAMBLE = """【API 交付形态说明（governance v0.6 §13）】
 本次评审经中转站 API 进行：你没有仓库访问能力，全部上下文已打包在下文。
@@ -145,6 +150,7 @@ def call_relay(
         "model": model,
         "messages": [{"role": "user", "content": packed_prompt}],
         "temperature": 0.2,
+        "max_tokens": _MAX_OUTPUT_TOKENS,
     }
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -152,11 +158,30 @@ def call_relay(
     }
     if transport is None:
         transport = _http_transport
-    resp = transport(base_url.rstrip("/") + "/chat/completions", payload, headers)
+    url = base_url.rstrip("/") + "/chat/completions"
+    last_exc: Exception | None = None
+    for attempt in range(1 + _RETRIES):
+        try:
+            resp = transport(url, payload, headers)
+            break
+        except (OSError, urllib.error.URLError) as e:  # 连接级失败可重试
+            last_exc = e
+            print(
+                f"[cross_review] 连接失败（第 {attempt + 1} 次）: {e}", file=sys.stderr
+            )
+    else:
+        raise RuntimeError(f"中转站连接连续失败 {1 + _RETRIES} 次: {last_exc}")
     try:
-        content = resp["choices"][0]["message"]["content"]
+        choice = resp["choices"][0]
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError) as e:
         raise RuntimeError(f"中转站响应形态异常: {e}: {str(resp)[:500]}") from e
+    if not content:
+        raise RuntimeError(
+            "中转站返回空 content"
+            f"（finish_reason={choice.get('finish_reason')!r}, "
+            f"usage={resp.get('usage')}）——检查 max_tokens / 模型行为"
+        )
     return content, resp.get("usage", {}) or {}
 
 

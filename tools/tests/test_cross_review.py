@@ -166,3 +166,31 @@ def test_run_review_dry_run_no_transport(tmp_path):
     rc, out = _run(tmp_path, transport=None, dry_run=True)
     assert rc == 0
     assert not out.exists()
+
+
+def test_call_relay_sets_max_tokens_and_raises_on_empty_content():
+    seen = {}
+
+    def transport(url, payload, headers):
+        seen.update(payload)
+        return {"choices": [{"message": {"content": None}, "finish_reason": "stop"}],
+                "usage": {"completion_tokens": 741}}
+
+    with pytest.raises(RuntimeError, match="空 content"):
+        call_relay("p", base_url="http://x", api_key="k", model="gpt-test",
+                   transport=transport)
+    assert seen["max_tokens"] > 0  # 中转站 gpt-5.5 不带 max_tokens 会返回空 content
+
+
+def test_call_relay_retries_connection_failures():
+    calls = {"n": 0}
+
+    def flaky(url, payload, headers):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ConnectionError("Remote end closed connection without response")
+        return {"choices": [{"message": {"content": "# Code Review — ok"}}], "usage": {}}
+
+    content, _ = call_relay("p", base_url="http://x", api_key="k", model="gpt-test",
+                            transport=flaky)
+    assert calls["n"] == 2 and content.startswith("# Code Review")
