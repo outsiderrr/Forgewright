@@ -774,6 +774,7 @@ def test_strip_codefence_leaves_non_fenced_with_prose_alone() -> None:
 
 def test_generate_structured_always_sends_max_tokens(monkeypatch):
     """R3.4（2026-07-08）：中转站 gpt-5.5 不带 max_tokens 返回空 content——必须显式携带。"""
+    monkeypatch.delenv("POLOAI_MAX_OUTPUT_TOKENS", raising=False)  # 环境隔离（.env 可能有覆盖值）
     provider = PoloAIProvider(api_key="k", json_mode="prompt_only")
     seen = {}
 

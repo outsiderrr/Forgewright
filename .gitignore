@@ -59,7 +59,13 @@ coverage.xml
 /generator/cost_log.jsonl
 /generator/playtest_cost_log.jsonl
 *.jsonl.lock
-/generator/experiments/
+# experiments 整体 ignore，但 T-3P 共用 fixture 目录整目录放行（golden 测试引用，
+# 未来新增 golden 不许静默漏 commit）。git 不能在被 ignore 的父目录下重新 include，
+# 所以必须 `目录/*` + `!子目录/` 逐级放行，不能只加一条 `!` 负规则。
+/generator/experiments/*
+!/generator/experiments/multipass_structure/
+/generator/experiments/multipass_structure/*
+!/generator/experiments/multipass_structure/2026-06-29_t3p_fixture/
 
 # Stage 1.5 visual assets — directories tracked, contents not (copyright + temp artifacts)
 /content/visuals/_reference/*

@@ -11,6 +11,12 @@
             → ⑧validator（schema + mechanical + AP-7/8/10 程序化检测）
             → 产物：scene.json / design.json / scene.md / metrics.json
 
+structure-only 运行（T-3P-0；ADR-039 写作提示词包转向）：只跑 ①②③ 结构调用，
+④⑤⑥ 正文调用跳过（Pass 2 退役为可选生成路径、代码不删——决策五），⑦⑧不执行；
+拆拍改走确定性拆拍器（beat_split.py），design 增 beats_plan + run_config 两 key，
+产物只有 design.json + metrics.json——这份 design.json 是 P-A 提示词包渲染器与
+P-B 回流合并（generator/promptpack，经 io.load_design_artifact 读取）的共同输入。
+
 与 system.py 单 pass 路径**并存**（不同工位：那边是"给定骨架填单节点正文"，
 本引擎是"从场景 spec 设计 + 写整场"）；本引擎 = 结构层默认生成路径。
 

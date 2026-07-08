@@ -9,6 +9,12 @@
   # 只 smoke 契约 + 拓扑规划两个调用（验证新 call 类型过中转站；~$0.05）
   PYTHONPATH=. python generator/scripts/run_multipass_scene.py --spec ... --topology-only
 
+  # structure-only（T-3P-0 / ADR-039）：只跑 contract+topology+skeleton 结构调用，
+  # 跳过全部正文调用；只落 design.json（含 beats_plan + run_config 两 key）+ metrics.json，
+  # 不落 scene.json / scene.md——这份 design.json 就是 P-A 提示词包渲染器（T-3P-1）
+  # 与 P-B 回流合并（T-3P-2）的共同输入
+  PYTHONPATH=. python generator/scripts/run_multipass_scene.py --spec ... --structure-only
+
   # 多候选（复核用：同 spec 重跑 N 次，各自独立产物目录）
   PYTHONPATH=. python generator/scripts/run_multipass_scene.py --spec ... --candidates 2
 
@@ -100,7 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="多 pass + 分拍 + 动态拓扑场景生成")
     parser.add_argument("--spec", type=Path, required=True, help="spec JSON（含 config + spec 两段）")
     parser.add_argument("--candidates", type=int, default=1, help="候选数（同 spec 重跑 N 次）")
-    parser.add_argument("--topology-only", action="store_true", help="只 smoke 契约+拓扑两个调用")
+    mode = parser.add_mutually_exclusive_group()  # 两种局部模式互斥，argparse 直接拒收组合
+    mode.add_argument("--topology-only", action="store_true", help="只 smoke 契约+拓扑两个调用")
+    mode.add_argument(
+        "--structure-only",
+        action="store_true",
+        help="只跑结构调用（contract+topology+skeleton），只落 design.json+metrics.json（ADR-039）",
+    )
     parser.add_argument("--out-root", type=Path, default=None, help="产物根目录")
     args = parser.parse_args(argv)
 
@@ -127,7 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         exit_code = 0
         for cand in range(1, args.candidates + 1):
             t0 = time.time()
-            result = run_multipass_scene(provider, spec, config)
+            result = run_multipass_scene(
+                provider, spec, config, structure_only=args.structure_only
+            )
             out_dir = out_root / f"candidate_{cand}" if args.candidates > 1 else out_root
             paths = write_artifacts(result, out_dir)
             m = result.metrics
@@ -135,19 +149,29 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"candidate {cand}: {result.status}"
                 + (f"（{result.failure_reason}）" if result.failure_reason else "")
+                + ("（structure-only）" if args.structure_only else "")
             )
-            if result.status == "success":
+            if result.status != "success":
+                exit_code = 1
+            elif args.structure_only:
+                bp = result.design.get("beats_plan") or {}
+                print(
+                    f"结构调用 {m['total_calls']} 次 · ${m['total_cost_usd']:.4f} · "
+                    f"{time.time() - t0:.1f}s · beats 链 {len(bp)} 条 / "
+                    f"锁定 {sum(len(v) for v in bp.values())} 拍 · "
+                    f"拓扑 {'回退' if result.topology_fallback else '动态'}"
+                )
+            else:
                 print(
                     f"节点 {m.get('node_count')} 个 · 调用 {m['total_calls']} 次 · "
                     f"${m['total_cost_usd']:.4f} · {time.time() - t0:.1f}s · "
                     f"硬校验 {'✅' if m.get('hard_pass') else '❌'} · AP flag {m.get('ap_flag_count', 0)} · "
                     f"拓扑 {'回退' if result.topology_fallback else '动态'}"
                 )
-            else:
-                exit_code = 1
             for w in result.warnings:
                 print(f"  ⚠️ {w}")
-            print(f"  scene: {paths.get('scene_md', paths['design'])}")
+            label = "design" if args.structure_only else "scene"
+            print(f"  {label}: {paths.get('scene_md', paths['design'])}")
         return exit_code
     except BudgetExceeded as e:
         print(f"❌ budget_exceeded: {e}", file=sys.stderr)

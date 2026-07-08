@@ -168,13 +168,6 @@ class MockProvider:
         }
 
 
-@pytest.fixture()
-def isolated_budget(tmp_path, monkeypatch):
-    monkeypatch.setenv("FORGEWRIGHT_COST_LOG", str(tmp_path / "cost_log.jsonl"))
-    monkeypatch.setenv("DAILY_BUDGET_USD", "100")
-    monkeypatch.setenv("PER_CALL_BUDGET_USD", "10")
-
-
 def test_end_to_end_dynamic_topology(isolated_budget, tmp_path) -> None:
     provider = MockProvider()
     result = run_multipass_scene(provider, _SPEC, _CONFIG)
@@ -450,3 +443,125 @@ def test_result_is_dataclass_with_metrics(isolated_budget) -> None:
     assert m["node_count"] == len(result.graph["nodes"])
     assert m["hard_pass"] is True
     assert m["topology_fallback"] is False
+
+
+# ---------------------------------------------------------------------------
+# structure-only 运行模式（T-3P-0；ADR-039 决策五：Pass 2 退役为生成路径不删除）
+# ---------------------------------------------------------------------------
+
+
+def test_structure_only_skips_all_prose_calls(isolated_budget) -> None:
+    """structure-only：只跑 contract+topology+skeleton，0 次 prose/beats/end 调用。"""
+    provider = MockProvider()
+    result = run_multipass_scene(provider, _SPEC, _CONFIG, structure_only=True)
+
+    assert result.status == "success"
+    assert provider.calls.count("contract") == 1
+    assert provider.calls.count("topology") == 1
+    assert provider.calls.count("skeleton") == 1  # _PLAN 唯一 choice 节点 opening
+    assert provider.calls.count("prose") == 0
+    assert provider.calls.count("beats") == 0
+    assert provider.calls.count("end") == 0
+    # 无正文可装配 → 不产 graph
+    assert result.graph is None
+    # 结构 pass 照跑：骨架仍在 design 里
+    assert "opening" in result.design["skeletons"]
+
+
+def test_structure_only_design_carries_beats_plan_and_run_config(isolated_budget) -> None:
+    """design 增两个 key（载体形态 T-3P-0 锁死，T-3P-1/2 共同消费）。"""
+    from generator.multipass.beat_split import build_beats_plan
+
+    result = run_multipass_scene(MockProvider(), _SPEC, _CONFIG, structure_only=True)
+
+    # beats_plan = dict 按链分组，与确定性拆拍器输出一致
+    assert result.design["beats_plan"] == build_beats_plan(_PLAN)
+    assert set(result.design["beats_plan"]) == {"soft_line", "press_line"}
+    # run_config = SceneRunConfig 五字段落盘（此前只在内存、从不落盘）
+    assert result.design["run_config"] == {
+        "graph_id": "test_lucy_multipass",
+        "scene_anchor": "scene_hibo_roadhouse",
+        "speaker_ref": "char_lucy",
+        "character_refs": ["char_lucy"],
+        "npc_name": "露西",
+    }
+    # 生产形态钉死：structure-only 产物的正文段是空 dict（真实产物长这样；
+    # augmented fixture 是"legacy 全量 + 两 key"的超集，下游不得依赖其正文段非空）
+    assert result.design["proses"] == {}
+    assert result.design["beats"] == {}
+    assert result.design["ends"] == {}
+    # 骨架级结构观测项在 structure-only 下照记（该模式的全部产出就是这层结构）
+    assert "route_convergence" in result.metrics
+    assert "choice_intent_overlaps" in result.metrics
+
+
+def test_structure_only_failed_run_metrics_still_marked(isolated_budget) -> None:
+    """失败产物也自述模式：metrics.json 带 structure_only 标记（与成功路径对称）。"""
+
+    class ExplodingProvider(MockProvider):
+        def generate_structured(self, **kwargs):  # type: ignore[override]
+            raise ProviderError("relay 502")
+
+    result = run_multipass_scene(
+        ExplodingProvider(), _SPEC, _CONFIG, structure_only=True
+    )
+    assert result.status == "provider_error"
+    assert result.structure_only is True
+    assert result.metrics.get("structure_only") is True
+
+
+def test_structure_only_locks_repaired_routes(isolated_budget) -> None:
+    """路由违规重试用尽时，锁定前施加与 assemble 同径的兜底修复（回退第一出边）。
+
+    全量模式下 assemble 装配时才修复；structure-only 不装配——若不修复，违规骨架
+    会原样成为权威锁定物，T-3P-2 装配时的静默回退将与编剧写的正文错位。
+    """
+
+    class AlwaysBadRouteProvider(MockProvider):
+        def _skeleton(self, json_schema: dict, user_prompt: str) -> dict:
+            skeleton = super()._skeleton(json_schema, user_prompt)
+            for o in skeleton["options"]:
+                o["route_to"] = "nowhere"
+            return skeleton
+
+    result = run_multipass_scene(
+        AlwaysBadRouteProvider(), _SPEC, _CONFIG, structure_only=True
+    )
+    assert result.status == "success"
+    locked = result.design["skeletons"]["opening"]
+    allowed = {"soft_line", "press_line"}
+    assert all(o["route_to"] in allowed for o in locked["options"])
+    assert any("回退到第一条出边" in w for w in result.warnings)
+    # 修复只兜非法 route_to；全部选项被兜到第一出边后 press_line 不可达——
+    # 该缺口必须以 metrics 硬信号上报（全量模式有 validator 兜底，这里没有）
+    residual = result.metrics["locked_route_violations"]
+    assert "opening" in residual and any("press_line" in v for v in residual["opening"])
+    assert any("路由缺口" in w for w in result.warnings)
+
+
+def test_structure_only_write_artifacts_only_design_and_metrics(
+    isolated_budget, tmp_path
+) -> None:
+    """structure-only 落盘：只 design.json + metrics.json；无 scene.json / scene.md。"""
+    import json as _json
+
+    result = run_multipass_scene(MockProvider(), _SPEC, _CONFIG, structure_only=True)
+    out = tmp_path / "out"
+    paths = write_artifacts(result, out)
+
+    assert set(paths) == {"design", "metrics"}
+    assert not (out / "scene.json").exists()
+    assert not (out / "scene.md").exists()
+    # design.json 沿现有 wrapper 形态（顶层 {design, call_metas, ...}），两 key 已入 design 段
+    payload = _json.loads((out / "design.json").read_text(encoding="utf-8"))
+    assert payload["status"] == "success"
+    assert payload["design"]["beats_plan"]["press_line"][0]["beat_id"] == "press_line_b1"
+    assert payload["design"]["run_config"]["graph_id"] == "test_lucy_multipass"
+
+
+def test_default_mode_unchanged_no_new_design_keys(isolated_budget) -> None:
+    """默认行为不变（硬边界）：全量模式 design 不带 beats_plan / run_config。"""
+    result = run_multipass_scene(MockProvider(), _SPEC, _CONFIG)
+    assert "beats_plan" not in result.design
+    assert "run_config" not in result.design
+    assert result.structure_only is False
