@@ -82,6 +82,12 @@ _OUTPUT_USD_PER_MTOK = 12.00
 # （engine 结构 call 估算上限 2000 的 4 倍余量；这是 cap 不是 target，不增成本）。
 _DEFAULT_MAX_OUTPUT_TOKENS = 8000
 
+# R3.5（2026-07-08 实测）：中转站**非流式聚合器损坏**——同一 payload 非流式返回
+# content=None（completion token 照计费），流式返回完整正文。R3.4 的 max_tokens
+# 只修了小请求；结构级调用（如 topology）必须走流式聚合。env `POLOAI_STREAM=off`
+# 可退回非流式（中转站将来修好后的逃生口）。
+_STREAM_DEFAULT = True
+
 
 class PoloAIProvider:
     """OpenAI-compatible chat completions against poloai.top.
@@ -145,6 +151,10 @@ class PoloAIProvider:
             raise ProviderError(
                 f"POLOAI_MAX_OUTPUT_TOKENS 不是整数: {raw_max!r}"
             ) from exc
+        env_stream = os.environ.get("POLOAI_STREAM", "").strip().lower()
+        self.stream = _STREAM_DEFAULT if not env_stream else env_stream not in (
+            "0", "off", "false", "no"
+        )
         self._api_key = key
         self._client_cache: OpenAI | None = None
 
@@ -187,6 +197,9 @@ class PoloAIProvider:
             # R3.4：不带 max_tokens 时中转站 gpt-5.5 返回空 content（见文件头注释）
             "max_tokens": self.max_output_tokens,
         }
+        if self.stream:
+            # R3.5：非流式聚合器损坏，流式取回后本地聚合（见文件头注释）
+            kwargs["stream"] = True
         if self.json_mode == "json_schema":
             kwargs["response_format"] = {
                 "type": "json_schema",
@@ -247,10 +260,37 @@ class PoloAIProvider:
             + output_tokens * _OUTPUT_USD_PER_MTOK
         ) / 1_000_000
 
+    def _create_and_aggregate(self, kwargs: dict[str, Any]) -> Any:
+        """发起请求；流式模式下在本地聚合成与非流式同形的响应对象。
+
+        聚合放在 transient-retry 边界**内**：流中途断线按整次调用重试。
+        """
+        response = self._client.chat.completions.create(**kwargs)
+        # 非流式请求、或对端忽略 stream 返回了完整响应（带 .choices）→ 直接透传
+        if not kwargs.get("stream") or hasattr(response, "choices"):
+            return response
+        parts: list[str] = []
+        finish_reason: str | None = None
+        usage: Any = None
+        for chunk in response:
+            choices = getattr(chunk, "choices", None) or []
+            if choices:
+                delta = getattr(choices[0], "delta", None)
+                piece = getattr(delta, "content", None) if delta else None
+                if piece:
+                    parts.append(piece)
+                fr = getattr(choices[0], "finish_reason", None)
+                if fr:
+                    finish_reason = fr
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                usage = chunk_usage
+        return _AggregatedResponse("".join(parts) or None, finish_reason, usage)
+
     def _call_with_transient_retry(self, *, kwargs: dict[str, Any]) -> Any:
         try:
             return retry_on_transient(
-                lambda: self._client.chat.completions.create(**kwargs),
+                lambda: self._create_and_aggregate(kwargs),
                 is_transient=_should_retry,
             )
         except OpenAIError as exc:
@@ -264,6 +304,27 @@ class PoloAIProvider:
             raise ProviderError.from_exception(
                 exc, message=f"PoloAI call failed: {exc}"
             ) from exc
+
+
+class _AggregatedMessage:
+    def __init__(self, content: str | None) -> None:
+        self.content = content
+
+
+class _AggregatedChoice:
+    def __init__(self, content: str | None, finish_reason: str | None) -> None:
+        self.message = _AggregatedMessage(content)
+        self.finish_reason = finish_reason
+
+
+class _AggregatedResponse:
+    """流式聚合后的响应，形状对齐非流式（choices[0].message.content / usage）。"""
+
+    def __init__(
+        self, content: str | None, finish_reason: str | None, usage: Any
+    ) -> None:
+        self.choices = [_AggregatedChoice(content, finish_reason)]
+        self.usage = usage
 
 
 def _should_retry(exc: BaseException) -> bool:
