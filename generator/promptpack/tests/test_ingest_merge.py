@@ -19,6 +19,7 @@ from generator.promptpack.tests.helpers import (
     MINI_GOOD_REPLY,
     build_placeholder_reply,
     write_mini_design,
+    write_resolvable_mini_design,
 )
 from validator import consistency_check, graph_check, schema_check
 from validator.anti_pattern_detector import detect_anti_patterns
@@ -220,19 +221,21 @@ def test_deterministic_reply_block_order_independent(mini_design) -> None:
 
 
 def test_cli_good_reply_exit_0_writes_scene(tmp_path, capsys) -> None:
-    design_path = write_mini_design(tmp_path)
+    # T-3P-3：合并成功后 CLI 会跑验收闸；用**本体可解析**的 design 让验收 PASS → EXIT_OK
+    # （mini design 的 char_npc/scene_mini 不在已加载本体，验收会 FAIL — 那是本体守门）。
+    design_path = write_resolvable_mini_design(tmp_path)
     reply_path = tmp_path / "reply.md"
     reply_path.write_text(MINI_GOOD_REPLY, encoding="utf-8")
     out_path = tmp_path / "out" / "scene.json"
     assert main([str(design_path), str(reply_path), "--out", str(out_path)]) == EXIT_OK
     graph = json.loads(out_path.read_text(encoding="utf-8"))
-    assert graph["graph_id"] == "mini_scene"
+    assert graph["graph_id"] == "mini_resolvable_scene"
     assert not (tmp_path / "reply.reject.md").exists()
     assert "[合并成功]" in capsys.readouterr().out
 
 
 def test_cli_default_out_is_reply_scene_json(tmp_path) -> None:
-    design_path = write_mini_design(tmp_path)
+    design_path = write_resolvable_mini_design(tmp_path)
     reply_path = tmp_path / "reply.md"
     reply_path.write_text(MINI_GOOD_REPLY, encoding="utf-8")
     assert main([str(design_path), str(reply_path)]) == EXIT_OK
@@ -260,7 +263,8 @@ def test_cli_bad_reply_exit_1_writes_reject_and_no_scene(tmp_path, capsys) -> No
 
 def test_cli_success_removes_stale_reject(tmp_path) -> None:
     """上一轮的退回单在修好重交后自动清掉（留着会误导编剧）。"""
-    design_path = write_mini_design(tmp_path)
+    # 验收 PASS 才走成功分支（清 stale reject）→ 用本体可解析 design（T-3P-3 口径）
+    design_path = write_resolvable_mini_design(tmp_path)
     reply_path = tmp_path / "reply.md"
     reply_path.write_text(MINI_GOOD_REPLY, encoding="utf-8")
     stale = tmp_path / "reply.reject.md"
@@ -272,7 +276,8 @@ def test_cli_success_removes_stale_reject(tmp_path) -> None:
 def test_cli_bad_reply_removes_stale_scene(tmp_path) -> None:
     """B 阶段 finding：同一 --out 先成功产 scene、再坏回流拒收，旧 scene 必须被删。
     否则「任一 E → 不产 scene.json」在文件系统层被软化成「目录里仍有可用场景」。"""
-    design_path = write_mini_design(tmp_path)
+    # 第一次要走成功分支（产 scene）→ 用本体可解析 design 让验收 PASS（T-3P-3 口径）
+    design_path = write_resolvable_mini_design(tmp_path)
     reply_path = tmp_path / "reply.md"
     out_path = tmp_path / "scene.json"
 
