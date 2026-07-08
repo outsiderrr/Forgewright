@@ -186,11 +186,47 @@ def call_relay(
 
 
 def _http_transport(url: str, payload: dict, headers: dict) -> dict:
+    """SSE 流式取回并本地聚合成非流式同形 dict。
+
+    R3.5 同根因（2026-07-08 实测）：中转站非流式聚合器损坏——大请求返回
+    content=None 照计费、或直接掐线。流式取回则正常，且长生成不再空占连接。
+    """
+    payload = {**payload, "stream": True}
     req = urllib.request.Request(
         url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST"
     )
+    parts: list[str] = []
+    finish_reason = None
+    usage: dict = {}
     with urllib.request.urlopen(req, timeout=_TIMEOUT_SEC) as r:
-        return json.loads(r.read().decode("utf-8"))
+        for raw in r:
+            line = raw.decode("utf-8", "replace").strip()
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)
+            except json.JSONDecodeError:
+                continue  # 半行/心跳等非 JSON 帧，跳过
+            choice = (chunk.get("choices") or [{}])[0]
+            piece = (choice.get("delta") or {}).get("content")
+            if piece:
+                parts.append(piece)
+            if choice.get("finish_reason"):
+                finish_reason = choice["finish_reason"]
+            if chunk.get("usage"):
+                usage = chunk["usage"]
+    return {
+        "choices": [
+            {
+                "message": {"content": "".join(parts) or None},
+                "finish_reason": finish_reason,
+            }
+        ],
+        "usage": usage,
+    }
 
 
 def _charge_budget(packed_chars: int, model: str):
